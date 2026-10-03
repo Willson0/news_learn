@@ -13,6 +13,8 @@ import AccountDataView from '@/views/AccountDataView.vue'
 import AccountChangeView from '@/views/AccountChangeView.vue'
 import AccountSuccessView from '@/views/AccountSuccessView.vue'
 import SubscriptionView from '@/views/SubscriptionView.vue'
+import ChatView from '@/views/ChatView.vue'
+import ChatInfoView from '@/views/ChatInfoView.vue'
 
 const routes = [
   { path: '/', redirect: '/login' },
@@ -55,6 +57,20 @@ const routes = [
     path: '/community',
     name: 'community',
     component: CommunityView,
+  },
+  // Экран чата
+  {
+    path: '/community/chat/:id',
+    name: 'chat',
+    component: ChatView,
+    meta: { hideNav: true },
+  },
+  // Информация о чате
+  {
+    path: '/community/chat/:id/info',
+    name: 'chat-info',
+    component: ChatInfoView,
+    meta: { hideNav: true },
   },
   // Экран «Профиль»
   {
