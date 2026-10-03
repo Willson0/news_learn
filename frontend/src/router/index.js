@@ -8,7 +8,7 @@ import CommunityView from '@/views/CommunityView.vue'
 import ProfileView from '@/views/ProfileView.vue'
 
 const routes = [
-  { path: '/', redirect: '/home' },
+  { path: '/', redirect: '/login' },
 
   // Экран «Вход и регистрация»
   {
