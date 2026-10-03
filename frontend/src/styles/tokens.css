@@ -1,0 +1,75 @@
+/*
+ * Дизайн-токены «Карта Ликвидности»
+ * Значения взяты из макета Figma (страница «Дизайн»).
+ * Тёмная тема, мобильный Telegram Web App.
+ */
+:root {
+  /* --- Цвета поверхностей --- */
+  --color-bg: #1a1b1d;            /* фон экрана */
+  --color-surface: #25262a;      /* фон плашки / карточки */
+  --color-surface-2: #313131;    /* second color */
+  --color-surface-muted: rgba(49, 49, 49, 0.2); /* чипы, навбар */
+  --color-navbar-bg: rgba(22, 22, 22, 0.2);
+  --color-badge: #555555;        /* бейдж «Актуальный» */
+
+  /* --- Текст --- */
+  --color-text: #ffffff;
+  --color-text-secondary: rgba(255, 255, 255, 0.65);
+  --color-text-muted: rgba(255, 255, 255, 0.4);
+  --color-black: #000000;
+
+  /* --- Акценты / градиенты --- */
+  /* Основной акцент: жёлто-зелёный градиент (кнопки, активная вкладка) */
+  --gradient-accent: linear-gradient(
+      90deg,
+      rgba(255, 217, 0, 0.9) 0%,
+      rgba(28, 74, 0, 0.9) 100%
+    ),
+    linear-gradient(
+      38deg,
+      rgba(255, 255, 0, 0.9) 4%,
+      rgba(27, 235, 0, 0.9) 70%
+    );
+  /* Приглушённый вариант того же акцента (мягкие плашки/кнопки на карточке) */
+  --gradient-accent-soft: linear-gradient(
+      90deg,
+      rgba(255, 217, 0, 0.2) 0%,
+      rgba(28, 74, 0, 0.2) 100%
+    ),
+    linear-gradient(
+      7deg,
+      rgba(255, 255, 0, 0.2) 4%,
+      rgba(27, 235, 0, 0.2) 70%
+    );
+  /* Пурпурный акцент (активный чип «Все») */
+  --gradient-accent-purple: linear-gradient(
+    84deg,
+    rgba(87, 37, 70, 0.6) 30%,
+    rgba(189, 81, 151, 0.6) 111%
+  );
+
+  /* --- Типографика --- */
+  /* Заголовки — Kreadon; основной текст — Min Sans. Это платные шрифты:
+     подключаются в styles/fonts.css, фолбэк — системные. */
+  --font-heading: "Kreadon", "Min Sans", -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-body: "Min Sans", -apple-system, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+
+  --font-size-title: 24px;   /* заголовок экрана */
+  --font-size-lg: 17px;
+  --font-size-md: 16px;
+  --font-size-base: 14px;
+  --font-size-sm: 12px;
+
+  /* --- Радиусы --- */
+  --radius-card: 24px;
+  --radius-chip: 20px;
+  --radius-pill: 60px;
+  --radius-input: 24px;
+
+  /* --- Отступы --- */
+  --space-screen-x: 16px;
+
+  /* --- Размеры мобильного кадра --- */
+  --app-width: 393px;
+  --app-height: 856px;
+}

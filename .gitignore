@@ -1,0 +1,11 @@
+# Корневой .gitignore. У backend/ и frontend/ есть свои .gitignore.
+
+# OS / редакторы
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Логи
+*.log

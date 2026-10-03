@@ -1,0 +1,40 @@
+/*
+ * Шрифты макета: Kreadon (заголовки) и Min Sans (основной текст).
+ * Это платные шрифты, их файлов в репозитории нет. Когда появятся
+ * лицензионные файлы, положите их в src/assets/fonts/ и раскомментируйте
+ * @font-face ниже. До этого момента работает системный фолбэк из tokens.css.
+ */
+
+/*
+@font-face {
+  font-family: "Kreadon";
+  src: url("@/assets/fonts/Kreadon-Demi.woff2") format("woff2");
+  font-weight: 600;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Min Sans";
+  src: url("@/assets/fonts/MinSans-Light.woff2") format("woff2");
+  font-weight: 300;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Min Sans";
+  src: url("@/assets/fonts/MinSans-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Min Sans";
+  src: url("@/assets/fonts/MinSans-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Min Sans";
+  src: url("@/assets/fonts/MinSans-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}
+*/
