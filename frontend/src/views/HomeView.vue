@@ -1,10 +1,8 @@
 <script>
 import MaterialChips from '@/components/home/MaterialChips.vue'
 import ReportCard from '@/components/home/ReportCard.vue'
-import { markRaw } from 'vue'
-import IconOil from '@/components/icons/materials/IconOil.vue'
-import IconGold from '@/components/icons/materials/IconGold.vue'
-import IconBtc from '@/components/icons/materials/IconBtc.vue'
+import { fetchReports } from '@/api/resources'
+import { decorateReport } from '@/api/materialIcon'
 
 export default {
   name: 'HomeView',
@@ -12,46 +10,35 @@ export default {
   data() {
     return {
       filter: 'all',
-      // Демо-данные. Реальные материалы придут с бэкенда.
-      reports: [
-        {
-          id: 1,
-          title: 'Нефть в 2026 году, как она?',
-          date: '12.02.2026',
-          description:
-            'Здесь мы расскажем о состоянии нефти на момент 2026 года и возможное ее будущее',
-          badge: 'Актуальный',
-          icon: markRaw(IconOil),
-          material: 'wti',
-        },
-        {
-          id: 2,
-          title: 'Золото: тихая гавань или пузырь?',
-          date: '10.02.2026',
-          description:
-            'Разбираем динамику золота и что ждёт драгоценные металлы в ближайшие месяцы',
-          badge: 'Актуальный',
-          icon: markRaw(IconGold),
-          material: 'gold',
-        },
-        {
-          id: 3,
-          title: 'Биткоин после халвинга',
-          date: '05.02.2026',
-          description: 'Что происходит с криптовалютой и стоит ли ждать нового максимума',
-          icon: markRaw(IconBtc),
-          material: 'btc',
-        },
-      ],
+      reports: [],
+      loading: false,
     }
+  },
+  watch: {
+    filter() {
+      this.load()
+    },
+  },
+  mounted() {
+    this.load()
   },
   computed: {
     visibleReports() {
-      if (this.filter === 'all') return this.reports
-      return this.reports.filter((r) => r.material === this.filter)
+      return this.reports
     },
   },
   methods: {
+    async load() {
+      this.loading = true
+      try {
+        const data = await fetchReports({ instrument: this.filter })
+        this.reports = data.map(decorateReport)
+      } catch {
+        this.reports = []
+      } finally {
+        this.loading = false
+      }
+    },
     openReport(report) {
       this.$router.push({ name: 'report-detail', params: { id: report.id } })
     },

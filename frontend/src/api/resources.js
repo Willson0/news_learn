@@ -1,0 +1,78 @@
+/*
+ * Запросы к ресурсам API: отчёты, инструменты, профиль, подписка, чаты.
+ */
+import { api } from './client'
+
+// --- Отчёты / материалы ---
+export function fetchReports({ instrument, search, status } = {}) {
+  const params = new URLSearchParams()
+  if (instrument && instrument !== 'all') params.set('instrument', instrument)
+  if (search) params.set('search', search)
+  if (status) params.set('status', Array.isArray(status) ? status.join(',') : status)
+  const qs = params.toString()
+  return api.get(`/reports${qs ? `?${qs}` : ''}`).then((r) => r.data)
+}
+
+export function fetchReport(id) {
+  return api.get(`/reports/${id}`).then((r) => r.data)
+}
+
+export function fetchInstruments() {
+  return api.get('/instruments').then((r) => r.data)
+}
+
+// --- Профиль ---
+export function fetchProfile() {
+  return api.get('/profile')
+}
+
+export function updateProfile(payload) {
+  return api.put('/profile', payload)
+}
+
+export function syncInstruments(keys) {
+  return api.put('/profile/instruments', { instruments: keys })
+}
+
+export function updateNotifications(payload) {
+  return api.put('/profile/notifications', payload)
+}
+
+// --- Подписка ---
+export function fetchSubscription() {
+  return api.get('/subscription').then((r) => r.data)
+}
+
+export function updateSubscription(payload) {
+  return api.put('/subscription', payload)
+}
+
+// --- Данные аккаунта ---
+export function changeEmail(email) {
+  return api.put('/account/email', { email })
+}
+
+export function changePhone(phone) {
+  return api.put('/account/phone', { phone })
+}
+
+export function changePassword(password, passwordConfirmation, currentPassword) {
+  return api.put('/account/password', {
+    password,
+    password_confirmation: passwordConfirmation,
+    current_password: currentPassword,
+  })
+}
+
+// --- Сообщество ---
+export function fetchChats() {
+  return api.get('/chats').then((r) => r.data)
+}
+
+export function fetchMessages(slug) {
+  return api.get(`/chats/${slug}/messages`)
+}
+
+export function sendMessage(slug, body) {
+  return api.post(`/chats/${slug}/messages`, { body }).then((r) => r.data)
+}

@@ -2,6 +2,7 @@
 import BackButton from '@/components/ui/BackButton.vue'
 import AppToggle from '@/components/ui/AppToggle.vue'
 import InstrumentChip from '@/components/ui/InstrumentChip.vue'
+import { fetchProfile, updateNotifications, syncInstruments } from '@/api/resources'
 
 export default {
   name: 'NotificationsView',
@@ -10,17 +11,42 @@ export default {
     return {
       allNotifications: true,
       byInstrument: false,
-      instruments: [
-        { key: 'gold', label: 'Золото', on: true },
-        { key: 'silver', label: 'Серебро', on: false },
-        { key: 'platinum', label: 'Платина', on: true },
-        { key: 'wti', label: 'Нефть WTI', on: false },
-        { key: 'brent', label: 'Нефть Brent', on: true },
-        { key: 'eurusd', label: 'EUR/USD', on: false },
-        { key: 'gas', label: 'Нат. газ', on: false },
-        { key: 'btc', label: 'Биткоин', on: false },
-      ],
+      instruments: [],
     }
+  },
+  watch: {
+    allNotifications(value) {
+      this.saveSettings({ all: value })
+    },
+    byInstrument(value) {
+      this.saveSettings({ by_instrument: value })
+    },
+  },
+  async mounted() {
+    try {
+      const profile = await fetchProfile()
+      this.allNotifications = profile.notifications?.all ?? true
+      this.byInstrument = profile.notifications?.by_instrument ?? false
+      if (Array.isArray(profile.instruments)) this.instruments = profile.instruments
+    } catch {
+      /* значения по умолчанию */
+    }
+  },
+  methods: {
+    async saveSettings(payload) {
+      try {
+        await updateNotifications(payload)
+      } catch {
+        /* игнорируем ошибку сохранения */
+      }
+    },
+    async saveInstruments() {
+      try {
+        await syncInstruments(this.instruments.filter((i) => i.on).map((i) => i.key))
+      } catch {
+        /* игнорируем */
+      }
+    },
   },
 }
 </script>
@@ -59,6 +85,7 @@ export default {
           :key="item.key"
           v-model="item.on"
           :label="item.label"
+          @update:model-value="saveInstruments"
         />
       </div>
     </div>

@@ -1,6 +1,7 @@
 <script>
 import BackButton from '@/components/ui/BackButton.vue'
 import MessageBubble from '@/components/community/MessageBubble.vue'
+import { fetchMessages, sendMessage } from '@/api/resources'
 import IconPlus from '@/components/icons/IconPlus.vue'
 import IconMic from '@/components/icons/IconMic.vue'
 import IconReply from '@/components/icons/IconReply.vue'
@@ -23,6 +24,8 @@ export default {
   data() {
     return {
       draft: '',
+      serverMessages: null,
+      serverChat: null,
       replyTo: null,
       menuFor: null,
       selectMode: false,
@@ -74,11 +77,15 @@ export default {
       return this.$route.params.id === 'admin'
     },
     chat() {
+      if (this.serverChat) {
+        return { title: this.serverChat.title, subtitle: this.serverChat.subtitle }
+      }
       return this.isDirect
         ? { title: 'Игорь Гломозда', subtitle: 'Был в сети 1 час назад' }
         : { title: 'Нефть 12.12.27', subtitle: '15 участников' }
     },
     messages() {
+      if (this.serverMessages) return this.serverMessages
       return this.isDirect ? this.directMessages : this.groupMessages
     },
     menuMessage() {
@@ -91,7 +98,21 @@ export default {
       return this.draft.includes('@')
     },
   },
+  mounted() {
+    this.load()
+  },
   methods: {
+    async load() {
+      try {
+        const resp = await fetchMessages(this.$route.params.id)
+        this.serverChat = resp.chat
+        this.serverMessages = resp.data
+      } catch {
+        // чат не найден на бэкенде — показываем демо-ленту
+        this.serverMessages = null
+        this.serverChat = null
+      }
+    },
     openInfo() {
       this.$router.push({ name: 'chat-info', params: { id: this.$route.params.id } })
     },
@@ -152,10 +173,21 @@ export default {
     isSelected(id) {
       return this.selected.includes(id)
     },
-    send() {
+    async send() {
       if (!this.showSend) return
+      const body = this.draft.trim()
       this.draft = ''
       this.replyTo = null
+      if (!body) return
+      // Отправляем на бэкенд только если чат загружен с сервера.
+      if (this.serverMessages) {
+        try {
+          const message = await sendMessage(this.$route.params.id, body)
+          this.serverMessages.push(message)
+        } catch {
+          /* не удалось отправить — молча игнорируем в демо-режиме */
+        }
+      }
     },
   },
 }

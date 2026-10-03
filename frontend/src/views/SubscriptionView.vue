@@ -2,24 +2,51 @@
 import BackButton from '@/components/ui/BackButton.vue'
 import AppToggle from '@/components/ui/AppToggle.vue'
 import IconPlus from '@/components/icons/IconPlus.vue'
+import { fetchSubscription, updateSubscription } from '@/api/resources'
 
 export default {
   name: 'SubscriptionView',
   components: { BackButton, AppToggle, IconPlus },
   data() {
     return {
-      active: true,
-      until: '14.09.2026',
-      plan: '1300 руб. месяц',
+      active: false,
+      until: '',
+      plan: '',
       // Привязанный способ оплаты (null — если не привязан)
-      account: { label: 'СБП 1488' },
-      autoPay: true,
+      account: null,
+      autoPay: false,
+    }
+  },
+  watch: {
+    autoPay(value) {
+      this.save({ auto_pay: value })
+    },
+  },
+  async mounted() {
+    try {
+      const sub = await fetchSubscription()
+      if (sub) {
+        this.active = sub.active
+        this.until = sub.until
+        this.plan = sub.plan
+        this.autoPay = sub.auto_pay
+        this.account = sub.payment_method ? { label: sub.payment_method } : null
+      }
+    } catch {
+      /* значения по умолчанию */
     }
   },
   methods: {
+    async save(payload) {
+      try {
+        await updateSubscription(payload)
+      } catch {
+        /* игнорируем */
+      }
+    },
     toggleAccount() {
-      // TODO: привязка/отвязка счёта через бэкенд
       this.account = this.account ? null : { label: 'СБП 1488' }
+      this.save({ payment_method: this.account ? this.account.label : null })
     },
   },
 }

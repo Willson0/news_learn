@@ -15,11 +15,44 @@ cd backend
 composer install
 cp .env.example .env
 php artisan key:generate
-php artisan migrate
-php artisan serve        # http://localhost:8000
+php artisan migrate --seed   # создаст таблицы и демо-данные
+php artisan serve           # http://localhost:8000
 ```
 
 Проверка: `GET http://localhost:8000/api/ping`.
+
+Демо-пользователь для входа по логину/паролю: `demo@karta.app` / `password`.
+
+### REST API
+
+Авторизация — токены Laravel Sanctum (`Authorization: Bearer <token>`).
+
+| Метод | Путь | Назначение |
+| --- | --- | --- |
+| POST | `/api/auth/telegram` | Вход через Telegram Web App (проверка подписи `initData`) |
+| POST | `/api/auth/register` | Регистрация по email, телефону и паролю |
+| POST | `/api/auth/login` | Вход по email/телефону и паролю |
+| POST | `/api/auth/recovery` | Запрос временного кода на почту |
+| POST | `/api/auth/recovery/reset` | Установка нового пароля |
+| POST | `/api/auth/logout` | Выход (удаление токена) |
+| GET | `/api/user` | Текущий пользователь |
+| GET | `/api/instruments` | Справочник инструментов |
+| GET | `/api/reports` | Отчёты (`?instrument=`, `?search=`, `?status=`) |
+| GET | `/api/reports/{id}` | Детальный отчёт |
+| GET / PUT | `/api/profile` | Профиль / его изменение |
+| PUT | `/api/profile/instruments` | Отслеживаемые инструменты |
+| PUT | `/api/profile/notifications` | Настройки уведомлений |
+| GET / PUT | `/api/subscription` | Подписка / автоплатёж |
+| PUT | `/api/account/email` · `/phone` · `/password` | Данные аккаунта |
+| GET | `/api/chats` | Список чатов по секциям |
+| GET / POST | `/api/chats/{slug}/messages` | Сообщения чата / отправка |
+
+#### Telegram Web App
+
+`TELEGRAM_BOT_TOKEN` в `backend/.env` — токен бота; по нему проверяется подпись
+`initData` мини-приложения (см. `app/Services/TelegramInitData.php`). Для локальной
+отладки без токена можно включить `TELEGRAM_ALLOW_INSECURE=true` — тогда данные
+Telegram принимаются без проверки подписи (только для разработки).
 
 ### Фронтенд (Vue)
 

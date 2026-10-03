@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { isAuthenticated } from '@/api/client'
 
 import LoginView from '@/views/LoginView.vue'
 import HomeView from '@/views/HomeView.vue'
@@ -141,6 +142,16 @@ const routes = [
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes,
+})
+
+// Экраны входа и восстановления пароля доступны без авторизации (hideNav).
+// Остальные требуют токен — иначе уводим на вход.
+const PUBLIC_ROUTES = ['login', 'password-recovery']
+
+router.beforeEach((to) => {
+  if (PUBLIC_ROUTES.includes(to.name)) return true
+  if (isAuthenticated()) return true
+  return { name: 'login' }
 })
 
 export default router

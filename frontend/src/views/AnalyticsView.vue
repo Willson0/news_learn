@@ -3,10 +3,8 @@ import AppInput from '@/components/ui/AppInput.vue'
 import ReportCard from '@/components/home/ReportCard.vue'
 import IconFilter from '@/components/icons/IconFilter.vue'
 import FiltersSheet from '@/components/analytics/FiltersSheet.vue'
-import { markRaw } from 'vue'
-import IconOil from '@/components/icons/materials/IconOil.vue'
-import IconGold from '@/components/icons/materials/IconGold.vue'
-import IconGas from '@/components/icons/materials/IconGas.vue'
+import { fetchReports } from '@/api/resources'
+import { decorateReport } from '@/api/materialIcon'
 
 export default {
   name: 'AnalyticsView',
@@ -15,34 +13,12 @@ export default {
     return {
       query: '',
       filtersOpen: false,
-      // Демо-данные. Реальные отчёты придут с бэкенда.
-      reports: [
-        {
-          id: 1,
-          title: 'Нефть в 2026 году, как она?',
-          date: '12.02.2026',
-          description:
-            'Здесь мы расскажем о состоянии нефти на момент 2026 года и возможное ее будущее',
-          badge: 'Актуальный',
-          icon: markRaw(IconOil),
-        },
-        {
-          id: 2,
-          title: 'Золото: отчёт за февраль',
-          date: '11.02.2026',
-          description: 'Полный разбор динамики драгоценных металлов за прошедший месяц',
-          badge: 'Актуальный',
-          icon: markRaw(IconGold),
-        },
-        {
-          id: 3,
-          title: 'Природный газ: прогноз',
-          date: '08.02.2026',
-          description: 'Что ждёт рынок природного газа в начале года',
-          icon: markRaw(IconGas),
-        },
-      ],
+      statusFilter: null,
+      reports: [],
     }
+  },
+  mounted() {
+    this.load()
   },
   computed: {
     visibleReports() {
@@ -55,11 +31,25 @@ export default {
     },
   },
   methods: {
+    async load() {
+      try {
+        const data = await fetchReports({ status: this.statusFilter })
+        this.reports = data.map(decorateReport)
+      } catch {
+        this.reports = []
+      }
+    },
     openReport(report) {
       this.$router.push({ name: 'report-detail', params: { id: report.id } })
     },
     openFilters() {
       this.filtersOpen = true
+    },
+    applyFilters(filters) {
+      this.statusFilter = filters && filters.statuses && filters.statuses.length
+        ? filters.statuses
+        : null
+      this.load()
     },
   },
 }
@@ -91,7 +81,7 @@ export default {
       <p v-if="!visibleReports.length" class="analytics__empty">Ничего не найдено</p>
     </div>
 
-    <FiltersSheet :open="filtersOpen" @close="filtersOpen = false" />
+    <FiltersSheet :open="filtersOpen" @close="filtersOpen = false" @apply="applyFilters" />
   </section>
 </template>
 

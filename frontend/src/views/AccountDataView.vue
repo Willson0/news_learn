@@ -4,17 +4,28 @@ import AppButton from '@/components/ui/AppButton.vue'
 import IconPencil from '@/components/icons/IconPencil.vue'
 import IconEye from '@/components/icons/IconEye.vue'
 import IconEyeClosed from '@/components/icons/IconEyeClosed.vue'
+import { fetchProfile } from '@/api/resources'
+import { logout } from '@/api/auth'
 
 export default {
   name: 'AccountDataView',
   components: { BackButton, AppButton, IconPencil, IconEye, IconEyeClosed },
   data() {
     return {
-      email: 'Profic234@mail.ru',
-      phone: '+7 999 999 99 99',
+      email: '',
+      phone: '',
       passwordRevealed: false,
       passwordMask: '●●●●●●●',
       password: 'password',
+    }
+  },
+  async mounted() {
+    try {
+      const profile = await fetchProfile()
+      this.email = profile.user?.email || ''
+      this.phone = profile.user?.phone || ''
+    } catch {
+      /* оставляем пустые значения */
     }
   },
   methods: {
@@ -27,8 +38,8 @@ export default {
     changePassword() {
       this.$router.push({ name: 'account-change', params: { field: 'password' } })
     },
-    logout() {
-      // TODO: разлогин через бэкенд
+    async logout() {
+      await logout()
       this.$router.push({ name: 'login' })
     },
   },

@@ -1,6 +1,7 @@
 <script>
 import AppInput from '@/components/ui/AppInput.vue'
 import IconPin from '@/components/icons/IconPin.vue'
+import { fetchChats } from '@/api/resources'
 
 export default {
   name: 'CommunityView',
@@ -8,7 +9,6 @@ export default {
   data() {
     return {
       query: '',
-      // Демо-данные. Реальные чаты придут с бэкенда.
       sections: [
         {
           key: 'admin',
@@ -52,7 +52,18 @@ export default {
       ],
     }
   },
+  mounted() {
+    this.load()
+  },
   methods: {
+    async load() {
+      try {
+        const sections = await fetchChats()
+        if (Array.isArray(sections) && sections.length) this.sections = sections
+      } catch {
+        /* оставляем демо-данные, если список не загрузился */
+      }
+    },
     openChat(item) {
       this.$router.push({ name: 'chat', params: { id: item.id } })
     },

@@ -2,6 +2,8 @@
 import BackButton from '@/components/ui/BackButton.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppInput from '@/components/ui/AppInput.vue'
+import { changeEmail, changePhone, changePassword } from '@/api/resources'
+import { ApiError } from '@/api/client'
 
 const CONFIG = {
   email: {
@@ -36,6 +38,7 @@ export default {
   data() {
     return {
       values: { old: '', new: '', confirm: '' },
+      error: '',
     }
   },
   computed: {
@@ -47,9 +50,20 @@ export default {
     },
   },
   methods: {
-    submit() {
-      // TODO: отправить изменение на бэкенд
-      this.$router.push({ name: 'account-success', params: { field: this.field } })
+    async submit() {
+      this.error = ''
+      try {
+        if (this.field === 'email') {
+          await changeEmail(this.values.new.trim())
+        } else if (this.field === 'phone') {
+          await changePhone(this.values.new.trim())
+        } else {
+          await changePassword(this.values.new, this.values.confirm, this.values.old)
+        }
+        this.$router.push({ name: 'account-success', params: { field: this.field } })
+      } catch (e) {
+        this.error = e instanceof ApiError ? e.message : 'Не удалось сохранить изменения'
+      }
     },
   },
 }
@@ -72,6 +86,7 @@ export default {
           :placeholder="f.placeholder"
         />
       </div>
+      <p v-if="error" class="change__error">{{ error }}</p>
     </div>
 
     <AppButton class="change__submit" variant="accent" @click="submit">
@@ -117,5 +132,10 @@ export default {
 
 .change__submit {
   margin-top: auto;
+}
+.change__error {
+  margin-top: 12px;
+  font-size: var(--font-size-sm);
+  color: #ff4d4d;
 }
 </style>

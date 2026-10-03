@@ -6,6 +6,7 @@ import IconDoc from '@/components/icons/IconDoc.vue'
 import IconChat from '@/components/icons/IconChat.vue'
 import IconChartBadge from '@/components/icons/IconChartBadge.vue'
 import IconOil from '@/components/icons/materials/IconOil.vue'
+import { fetchReport } from '@/api/resources'
 
 export default {
   name: 'ReportDetailView',
@@ -31,7 +32,26 @@ export default {
       },
     }
   },
+  mounted() {
+    this.load()
+  },
   methods: {
+    async load() {
+      const id = this.$route.params.id
+      if (!id) return
+      try {
+        const data = await fetchReport(id)
+        this.report = {
+          title: data.title,
+          date: data.date,
+          badge: data.badge,
+          description: data.description,
+          body: data.body,
+        }
+      } catch {
+        // оставляем заглушку, если отчёт не загрузился
+      }
+    },
     toggleReport() {
       this.reportOpen = !this.reportOpen
     },

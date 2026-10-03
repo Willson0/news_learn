@@ -1,12 +1,12 @@
 <script>
-import { markRaw } from 'vue'
 import InstrumentChip from '@/components/ui/InstrumentChip.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import ReportCard from '@/components/home/ReportCard.vue'
 import IconSettings from '@/components/icons/IconSettings.vue'
 import IconSort from '@/components/icons/IconSort.vue'
 import IconChevronRight from '@/components/icons/IconChevronRight.vue'
-import IconOil from '@/components/icons/materials/IconOil.vue'
+import { fetchProfile, syncInstruments, fetchReports } from '@/api/resources'
+import { decorateReport } from '@/api/materialIcon'
 
 export default {
   name: 'ProfileView',
@@ -24,21 +24,12 @@ export default {
         tag: '@AlexeyRub',
       },
       subscription: {
-        active: true,
-        until: '14.09.2026',
-        plan: '1300 руб. месяц',
+        active: false,
+        until: '',
+        plan: '',
       },
-      // Отслеживаемые инструменты (демо-состояние; реальные придут с бэкенда)
-      instruments: [
-        { key: 'gold', label: 'Золото', on: true },
-        { key: 'silver', label: 'Серебро', on: false },
-        { key: 'platinum', label: 'Платина', on: true },
-        { key: 'wti', label: 'Нефть WTI', on: false },
-        { key: 'brent', label: 'Нефть Brent', on: true },
-        { key: 'eurusd', label: 'EUR/USD', on: false },
-        { key: 'gas', label: 'Нат. газ', on: false },
-        { key: 'btc', label: 'Биткоин', on: false },
-      ],
+      // Отслеживаемые инструменты (загружаются с бэкенда).
+      instruments: [],
       settings: [
         { key: 'notifications', label: 'Push-уведомления', route: { name: 'notifications' } },
         { key: 'account', label: 'Данные аккаунта', route: { name: 'account-data' } },
@@ -51,48 +42,50 @@ export default {
         { value: 'old', label: 'Сначала Старые' },
         { value: 'name', label: 'По названию' },
       ],
-      // История материалов, сгруппированная по дням
-      history: [
-        {
-          day: 'Сегодня',
-          items: [
-            {
-              id: 11,
-              title: 'Нефть в 2026 году, как она?',
-              date: '12.02.2026',
-              description:
-                'Здесь мы расскажем о состоянии нефти на момент 2026 года и возможное ее будущее',
-              icon: markRaw(IconOil),
-            },
-            {
-              id: 12,
-              title: 'Нефть в 2026 году, как она?',
-              date: '12.02.2026',
-              description:
-                'Здесь мы расскажем о состоянии нефти на момент 2026 года и возможное ее будущее',
-              badge: 'Актуальный',
-              icon: markRaw(IconOil),
-            },
-          ],
-        },
-        {
-          day: 'Вчера',
-          items: [
-            {
-              id: 13,
-              title: 'Нефть в 2026 году, как она?',
-              date: '12.02.2026',
-              description:
-                'Здесь мы расскажем о состоянии нефти на момент 2026 года и возможное ее будущее',
-              badge: 'Актуальный',
-              icon: markRaw(IconOil),
-            },
-          ],
-        },
-      ],
+      // История материалов (загружается с бэкенда).
+      history: [],
     }
   },
+  mounted() {
+    this.load()
+  },
   methods: {
+    async load() {
+      try {
+        const profile = await fetchProfile()
+        if (profile.user) {
+          this.user = { ...this.user, tag: profile.user.username || this.user.tag }
+        }
+        if (profile.subscription) {
+          this.subscription = {
+            active: profile.subscription.active,
+            until: profile.subscription.until,
+            plan: profile.subscription.plan,
+          }
+        }
+        if (Array.isArray(profile.instruments)) {
+          this.instruments = profile.instruments
+        }
+      } catch {
+        /* оставляем значения по умолчанию */
+      }
+      try {
+        const reports = await fetchReports()
+        this.history = reports.length
+          ? [{ day: 'Недавние', items: reports.map(decorateReport) }]
+          : []
+      } catch {
+        this.history = []
+      }
+    },
+    async saveInstruments() {
+      const keys = this.instruments.filter((i) => i.on).map((i) => i.key)
+      try {
+        await syncInstruments(keys)
+      } catch {
+        /* игнорируем — состояние переключателя уже обновлено локально */
+      }
+    },
     openSettings() {
       this.$router.push({ name: 'profile-edit' })
     },
@@ -151,6 +144,7 @@ export default {
           :key="item.key"
           v-model="item.on"
           :label="item.label"
+          @update:model-value="saveInstruments"
         />
       </div>
     </div>

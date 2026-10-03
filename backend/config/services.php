@@ -35,4 +35,9 @@ return [
         ],
     ],
 
+    'telegram' => [
+        'bot_token' => env('TELEGRAM_BOT_TOKEN'),
+        'allow_insecure' => (bool) env('TELEGRAM_ALLOW_INSECURE', false),
+    ],
+
 ];

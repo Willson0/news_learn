@@ -3,6 +3,8 @@ import AppInput from '@/components/ui/AppInput.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import BackButton from '@/components/ui/BackButton.vue'
 import { haptic } from '@/telegram/webapp'
+import { requestRecovery, resetPassword } from '@/api/auth'
+import { ApiError } from '@/api/client'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const RESEND_SECONDS = 5 * 60
@@ -50,14 +52,23 @@ export default {
         this.timer = null
       }
     },
-    resend() {
-      if (!this.canResend) return
-      // TODO: повторный запрос временного пароля на почту
+    async resend() {
+      if (!this.canResend && this.secondsLeft < RESEND_SECONDS) return
+      if (!EMAIL_RE.test(this.email.trim())) {
+        this.errors = { email: 'Введите email, чтобы отправить код' }
+        haptic('rigid')
+        return
+      }
       haptic('light')
+      try {
+        await requestRecovery(this.email.trim())
+      } catch {
+        /* показываем таймер в любом случае */
+      }
       this.secondsLeft = RESEND_SECONDS
       this.startTimer()
     },
-    submit() {
+    async submit() {
       const errors = {}
       if (!EMAIL_RE.test(this.email.trim())) {
         errors.email = 'Неверный формат email'
@@ -71,8 +82,16 @@ export default {
         return
       }
       haptic('medium')
-      // TODO: отправить новый пароль на бэкенд
-      this.$router.push({ name: 'login' })
+      try {
+        // Если код ещё не запрашивали — делаем это перед сбросом.
+        await requestRecovery(this.email.trim())
+        await resetPassword(this.email.trim(), this.newPassword)
+        this.$router.push({ name: 'home' })
+      } catch (e) {
+        haptic('rigid')
+        const msg = e instanceof ApiError ? e.message : 'Не удалось сменить пароль'
+        this.errors = { email: msg }
+      }
     },
   },
 }

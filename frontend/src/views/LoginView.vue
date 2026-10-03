@@ -2,6 +2,8 @@
 import AppInput from '@/components/ui/AppInput.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import { haptic } from '@/telegram/webapp'
+import { loginWithPassword, register, loginWithTelegram } from '@/api/auth'
+import { ApiError } from '@/api/client'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PHONE_RE = /^\+?[0-9\s\-()]{7,}$/
@@ -21,6 +23,15 @@ export default {
       },
       errors: {},
       submitting: false,
+    }
+  },
+  async mounted() {
+    // Если приложение открыто внутри Telegram — входим автоматически по initData.
+    try {
+      const user = await loginWithTelegram()
+      if (user) this.$router.replace({ name: 'home' })
+    } catch {
+      // Проверка не прошла — оставляем форму входа.
     }
   },
   methods: {
@@ -73,9 +84,30 @@ export default {
       haptic('medium')
       this.submitting = true
       try {
-        // TODO: вызвать API бэкенда (Laravel) для входа/регистрации.
-        // Пока авторизации нет — при валидной форме уходим на главную.
+        if (this.mode === 'login') {
+          await loginWithPassword(this.form.identifier.trim(), this.form.password)
+        } else {
+          await register({
+            email: this.form.email.trim(),
+            phone: this.form.phone.trim(),
+            password: this.form.password,
+          })
+        }
         this.$router.push({ name: 'home' })
+      } catch (e) {
+        haptic('rigid')
+        if (e instanceof ApiError) {
+          // Поля ошибок от Laravel ({ identifier: [..], email: [..] }).
+          const mapped = {}
+          for (const [key, msgs] of Object.entries(e.errors || {})) {
+            mapped[key] = Array.isArray(msgs) ? msgs[0] : String(msgs)
+          }
+          this.errors = Object.keys(mapped).length
+            ? mapped
+            : { identifier: e.message, email: e.message }
+        } else {
+          this.errors = { identifier: 'Не удалось выполнить запрос' }
+        }
       } finally {
         this.submitting = false
       }
@@ -83,7 +115,7 @@ export default {
 
     loginWithYandex() {
       haptic('light')
-      // TODO: OAuth через Yandex.
+      // TODO: OAuth через Yandex (на бэкенде пока не реализован).
     },
 
     goToRecovery() {
