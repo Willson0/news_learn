@@ -38,8 +38,7 @@ export default {
         { name: 'Артем', handle: '@Submetalllliiist' },
         { name: 'Влад', handle: '@Submetaliiist' },
       ],
-      chat: { title: 'Нефть 12.12.27', subtitle: '15 участников' },
-      messages: [
+      groupMessages: [
         { id: 1, mine: false, author: 'Артем', role: 'Участник', text: 'Здравствуте! Помогите разобраться с графиком', time: '20:41' },
         { id: 2, mine: true, text: 'А то никак понять не могу', time: '20:42', read: true },
         {
@@ -60,9 +59,28 @@ export default {
         { id: 7, mine: true, image: true, time: '20:42', read: true },
         { id: 8, mine: true, toAuthor: true, text: '«Как долго вы делали этот отчет?»', time: '20:42', read: true },
       ],
+      // Личный чат с админом (1:1) — без подписей автора и ролей.
+      directMessages: [
+        { id: 1, mine: false, text: 'Здравствуйте! Чем могу помочь?', time: '16:30' },
+        { id: 2, mine: true, text: 'Здравствуйте! Не получается оплатить подписку', time: '16:31', read: true },
+        { id: 3, mine: false, text: 'Подскажите, пожалуйста, какой способ оплаты выбираете?', time: '16:31' },
+        { id: 4, mine: true, text: 'СБП', time: '16:32', read: true },
+        { id: 5, mine: false, text: 'Что интересует?', time: '16:32' },
+      ],
     }
   },
   computed: {
+    isDirect() {
+      return this.$route.params.id === 'admin'
+    },
+    chat() {
+      return this.isDirect
+        ? { title: 'Игорь Гломозда', subtitle: 'Был в сети 1 час назад' }
+        : { title: 'Нефть 12.12.27', subtitle: '15 участников' }
+    },
+    messages() {
+      return this.isDirect ? this.directMessages : this.groupMessages
+    },
     menuMessage() {
       return this.messages.find((m) => m.id === this.menuFor) || null
     },
@@ -160,7 +178,7 @@ export default {
     </header>
 
     <!-- Закреплённое сообщение -->
-    <div v-if="pinned && !selectMode" class="chat__pinned">
+    <div v-if="pinned && !selectMode && !isDirect" class="chat__pinned">
       <div class="chat__pinned-body">
         <span class="chat__pinned-title">{{ pinned.title }}</span>
         <span class="chat__pinned-text">{{ pinned.text }}</span>
@@ -184,7 +202,7 @@ export default {
           :class="{ 'chat__check--on': isSelected(m.id) }"
           @click="toggleSelect(m.id)"
         ></span>
-        <span v-if="!m.mine && !selectMode" class="chat__msg-avatar" @click="goUser"></span>
+        <span v-if="!m.mine && !selectMode && !isDirect" class="chat__msg-avatar" @click="goUser"></span>
         <MessageBubble :message="m" @click="onBubble(m)" />
       </div>
     </div>

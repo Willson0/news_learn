@@ -11,6 +11,20 @@ export default {
       // Демо-данные. Реальные чаты придут с бэкенда.
       sections: [
         {
+          key: 'admin',
+          title: 'Чат с админом',
+          items: [
+            {
+              id: 'admin',
+              title: 'Игорь Гломозда',
+              sender: 'Игор',
+              preview: 'Что интересует?',
+              time: '16:32',
+              unread: 1,
+            },
+          ],
+        },
+        {
           key: 'main',
           title: 'Чаты',
           items: [
@@ -28,7 +42,7 @@ export default {
           key: 'reports',
           title: 'Чаты по отчетам',
           items: [
-            { id: 'gold', title: 'Отчет по золоту 26.02.26', sender: 'Артем', preview: 'Кто читал новый отчет по золоту?', time: '16:32', unread: 234 },
+            { id: 'gold', title: 'Отчет по золоту 26.02.26', sender: 'Вы', preview: 'Я вот что не понял это хедж и к...', time: '16:32', unread: 12, pinned: true },
             { id: 'oil', title: 'Нефть 12.12.27', sender: 'Артем', preview: 'Кто читал новый отчет по золоту?', time: '16:32', unread: 234 },
             { id: 'plat1', title: 'Отчет по платине 26.02.26', sender: 'Артем', preview: 'Кто читал новый отчет по золоту?', time: '16:32', unread: 234 },
             { id: 'plat2', title: 'Отчет по платине 26.02.26', sender: 'Артем', preview: 'Кто читал новый отчет по золоту?', time: '16:32', unread: 234 },
