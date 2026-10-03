@@ -2,8 +2,9 @@
 export default {
   name: 'AppButton',
   props: {
-    // accent — жёлто-зелёный градиент (основное действие)
-    // secondary — приглушённая плашка (напр. «Войти с Yandex»)
+    // accent — насыщенный оливково-зелёный градиент (основное действие)
+    // soft   — приглушённый акцент (кнопка внутри карточки)
+    // secondary — нейтральная плашка (напр. «Войти с Yandex»)
     variant: { type: String, default: 'accent' },
     type: { type: String, default: 'button' },
     disabled: { type: Boolean, default: false },
@@ -40,6 +41,10 @@ export default {
 
 .app-button--accent {
   background: var(--gradient-accent);
+}
+
+.app-button--soft {
+  background: var(--gradient-accent-soft);
 }
 
 .app-button--secondary {
