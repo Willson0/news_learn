@@ -7,6 +7,8 @@ import AnalyticsView from '@/views/AnalyticsView.vue'
 import ReportDetailView from '@/views/ReportDetailView.vue'
 import CommunityView from '@/views/CommunityView.vue'
 import ProfileView from '@/views/ProfileView.vue'
+import ProfileEditView from '@/views/ProfileEditView.vue'
+import NotificationsView from '@/views/NotificationsView.vue'
 
 const routes = [
   { path: '/', redirect: '/login' },
@@ -55,6 +57,20 @@ const routes = [
     path: '/profile',
     name: 'profile',
     component: ProfileView,
+  },
+  // Редактирование профиля
+  {
+    path: '/profile/edit',
+    name: 'profile-edit',
+    component: ProfileEditView,
+    meta: { hideNav: true },
+  },
+  // Push-уведомления
+  {
+    path: '/profile/notifications',
+    name: 'notifications',
+    component: NotificationsView,
+    meta: { hideNav: true },
   },
 ]
 
