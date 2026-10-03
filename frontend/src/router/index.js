@@ -9,6 +9,10 @@ import CommunityView from '@/views/CommunityView.vue'
 import ProfileView from '@/views/ProfileView.vue'
 import ProfileEditView from '@/views/ProfileEditView.vue'
 import NotificationsView from '@/views/NotificationsView.vue'
+import AccountDataView from '@/views/AccountDataView.vue'
+import AccountChangeView from '@/views/AccountChangeView.vue'
+import AccountSuccessView from '@/views/AccountSuccessView.vue'
+import SubscriptionView from '@/views/SubscriptionView.vue'
 
 const routes = [
   { path: '/', redirect: '/login' },
@@ -70,6 +74,34 @@ const routes = [
     path: '/profile/notifications',
     name: 'notifications',
     component: NotificationsView,
+    meta: { hideNav: true },
+  },
+  // Данные аккаунта
+  {
+    path: '/profile/account',
+    name: 'account-data',
+    component: AccountDataView,
+    meta: { hideNav: true },
+  },
+  // Смена почты / номера / пароля
+  {
+    path: '/profile/account/change/:field',
+    name: 'account-change',
+    component: AccountChangeView,
+    meta: { hideNav: true },
+  },
+  // Экран успешной смены
+  {
+    path: '/profile/account/success/:field',
+    name: 'account-success',
+    component: AccountSuccessView,
+    meta: { hideNav: true },
+  },
+  // Управление подпиской
+  {
+    path: '/profile/subscription',
+    name: 'subscription',
+    component: SubscriptionView,
     meta: { hideNav: true },
   },
 ]

@@ -51,6 +51,10 @@ export default {
   background: var(--color-surface-muted);
 }
 
+.app-button--danger {
+  background: var(--color-danger);
+}
+
 .app-button--disabled {
   opacity: 0.5;
   pointer-events: none;

@@ -41,7 +41,7 @@ export default {
       ],
       settings: [
         { key: 'notifications', label: 'Push-уведомления', route: { name: 'notifications' } },
-        { key: 'account', label: 'Данные аккаунта', route: null },
+        { key: 'account', label: 'Данные аккаунта', route: { name: 'account-data' } },
         { key: 'agreement', label: 'Пользовательское соглашение', route: null },
       ],
       sortOpen: false,
@@ -137,7 +137,9 @@ export default {
         <span class="profile__row-label">Тарифный план</span>
         <span class="profile__row-value">{{ subscription.plan }}</span>
       </div>
-      <AppButton variant="accent">Управление подпиской</AppButton>
+      <AppButton variant="accent" @click="$router.push({ name: 'subscription' })">
+        Управление подпиской
+      </AppButton>
     </div>
 
     <!-- Отслеживаемые инструменты -->
