@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\Report;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class ReportController extends Controller
 {
@@ -32,23 +34,53 @@ class ReportController extends Controller
             });
         }
 
-        $reports = $query->get()->map(fn (Report $r) => $this->toArray($r));
+        $reports = $query->with('chat')->get()->map(fn (Report $r) => self::present($r));
 
         return response()->json(['data' => $reports]);
     }
 
     public function show(Report $report): JsonResponse
     {
-        $report->load('instrument');
+        $report->load('instrument', 'chat');
 
-        return response()->json(['data' => $this->toArray($report, true)]);
+        return response()->json(['data' => self::present($report, true)]);
     }
 
     /**
+     * Обложка отчёта. Открыта без токена, чтобы её можно было показать в <img>.
+     */
+    public function cover(Report $report): BinaryFileResponse
+    {
+        abort_unless($report->cover_path && Storage::disk('local')->exists($report->cover_path), 404);
+
+        return response()->file(Storage::disk('local')->path($report->cover_path), [
+            'Cache-Control' => 'public, max-age=86400',
+        ]);
+    }
+
+    /**
+     * HTML-файл отчёта. Отдаём с CSP sandbox, чтобы загруженный html не мог
+     * читать данные домена API (скрипты работают в изолированном origin).
+     */
+    public function html(Report $report): BinaryFileResponse
+    {
+        abort_unless($report->html_path && Storage::disk('local')->exists($report->html_path), 404);
+
+        return response()->file(Storage::disk('local')->path($report->html_path), [
+            'Content-Type' => 'text/html; charset=utf-8',
+            'Content-Security-Policy' => 'sandbox allow-scripts',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
+    }
+
+    /**
+     * Ссылки на файлы — пути относительно базы API (/api), фронт добавляет префикс сам.
+     *
      * @return array<string, mixed>
      */
-    private function toArray(Report $report, bool $withBody = false): array
+    public static function present(Report $report, bool $withBody = false): array
     {
+        $version = $report->updated_at?->timestamp;
         $data = [
             'id' => $report->id,
             'title' => $report->title,
@@ -58,6 +90,12 @@ class ReportController extends Controller
             'date' => $report->published_at?->format('d.m.Y'),
             'material' => $report->instrument?->key,
             'instrument' => $report->instrument?->label,
+            'chart_url' => $report->chart_url,
+            'cover_url' => $report->cover_path ? "/reports/{$report->id}/cover?v={$version}" : null,
+            'cover_name' => $report->cover_name,
+            'html_url' => $report->html_path ? "/reports/{$report->id}/html?v={$version}" : null,
+            'html_name' => $report->html_name,
+            'chat' => $report->relationLoaded('chat') ? $report->chat?->slug : null,
         ];
 
         if ($withBody) {

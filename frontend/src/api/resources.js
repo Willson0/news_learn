@@ -76,3 +76,48 @@ export function fetchMessages(slug) {
 export function sendMessage(slug, body) {
   return api.post(`/chats/${slug}/messages`, { body }).then((r) => r.data)
 }
+
+// --- Админка (только для админов) ---
+function reportForm(payload) {
+  const form = new FormData()
+  form.append('title', payload.title || '')
+  form.append('description', payload.description || '')
+  form.append('chart_url', payload.chartUrl || '')
+  form.append('instrument', payload.instrument || '')
+  if (payload.cover) form.append('cover', payload.cover)
+  if (payload.html) form.append('html', payload.html)
+  if (payload.removeCover) form.append('remove_cover', '1')
+  if (payload.removeHtml) form.append('remove_html', '1')
+  return form
+}
+
+export function createReport(payload) {
+  return api.post('/admin/reports', reportForm(payload)).then((r) => r.data)
+}
+
+export function updateReport(id, payload) {
+  return api.post(`/admin/reports/${id}`, reportForm(payload)).then((r) => r.data)
+}
+
+export function deleteReport(id) {
+  return api.del(`/admin/reports/${id}`)
+}
+
+export function updateChat(slug, { title, avatar }) {
+  const form = new FormData()
+  form.append('title', title || '')
+  if (avatar) form.append('avatar', avatar)
+  return api.post(`/admin/chats/${slug}`, form).then((r) => r.data)
+}
+
+export function fetchAdmins() {
+  return api.get('/admin/admins').then((r) => r.data)
+}
+
+export function addAdmin(telegramId, name) {
+  return api.post('/admin/admins', { telegram_id: telegramId, name }).then((r) => r.data)
+}
+
+export function removeAdmin(telegramId) {
+  return api.del(`/admin/admins/${telegramId}`)
+}

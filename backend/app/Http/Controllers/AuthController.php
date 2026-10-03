@@ -212,6 +212,9 @@ class AuthController extends Controller
             'phone' => $user->phone,
             'username' => $user->username,
             'avatar_url' => $user->avatar_url,
+            'telegram_id' => $user->telegram_id ? (string) $user->telegram_id : null,
+            'is_admin' => $user->isAdmin(),
+            'is_root_admin' => $user->isRootAdmin(),
         ];
     }
 }

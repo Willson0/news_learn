@@ -41,13 +41,25 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Полный URL файла, который бэкенд отдаёт относительной ссылкой (обложка, html-отчёт, фото чата).
+ */
+export function fileUrl(path) {
+  if (!path) return null
+  if (/^https?:\/\//.test(path)) return path
+  return `${BASE}${path}`
+}
+
 async function request(method, path, body) {
   const headers = { Accept: 'application/json' }
   const token = getToken()
   if (token) headers.Authorization = `Bearer ${token}`
 
   const options = { method, headers }
-  if (body !== undefined) {
+  if (body instanceof FormData) {
+    // multipart: Content-Type с boundary браузер выставит сам
+    options.body = body
+  } else if (body !== undefined) {
     headers['Content-Type'] = 'application/json'
     options.body = JSON.stringify(body)
   }

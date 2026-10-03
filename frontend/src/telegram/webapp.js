@@ -48,3 +48,13 @@ export function haptic(type = 'light') {
     }
   }
 }
+
+/** Открыть внешнюю ссылку: в Telegram — через openLink, в браузере — в новой вкладке. */
+export function openLink(url) {
+  const wa = getWebApp()
+  if (wa && typeof wa.openLink === 'function' && wa.initData) {
+    wa.openLink(url)
+  } else {
+    window.open(url, '_blank', 'noopener')
+  }
+}

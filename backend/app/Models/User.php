@@ -46,6 +46,19 @@ class User extends Authenticatable
         ];
     }
 
+    /**
+     * Админ определяется по Telegram ID: главный (из config/admin.php) или из таблицы admins.
+     */
+    public function isAdmin(): bool
+    {
+        return Admin::hasTelegramId($this->telegram_id);
+    }
+
+    public function isRootAdmin(): bool
+    {
+        return Admin::isRoot($this->telegram_id);
+    }
+
     public function instruments(): BelongsToMany
     {
         return $this->belongsToMany(Instrument::class)->withTimestamps();

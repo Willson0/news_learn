@@ -6,7 +6,12 @@ import IconDoc from '@/components/icons/IconDoc.vue'
 import IconChat from '@/components/icons/IconChat.vue'
 import IconChartBadge from '@/components/icons/IconChartBadge.vue'
 import IconOil from '@/components/icons/materials/IconOil.vue'
+import IconGear from '@/components/icons/IconGear.vue'
 import { fetchReport } from '@/api/resources'
+import { fileUrl } from '@/api/client'
+import { session } from '@/api/session'
+import { materialIcon } from '@/api/materialIcon'
+import { openLink } from '@/telegram/webapp'
 
 export default {
   name: 'ReportDetailView',
@@ -18,6 +23,7 @@ export default {
     IconChat,
     IconChartBadge,
     IconOil,
+    IconGear,
   },
   data() {
     return {
@@ -31,6 +37,17 @@ export default {
           'Здесь мы расскажем о состоянии нефти на момент 2026 года и возможное ее будущее',
       },
     }
+  },
+  computed: {
+    isAdmin() {
+      return Boolean(session.user && session.user.is_admin)
+    },
+    heroStyle() {
+      return this.report.coverUrl ? { backgroundImage: `url("${this.report.coverUrl}")` } : null
+    },
+    materialIcon() {
+      return materialIcon(this.report.material || 'wti')
+    },
   },
   mounted() {
     this.load()
@@ -47,6 +64,11 @@ export default {
           badge: data.badge,
           description: data.description,
           body: data.body,
+          material: data.material,
+          chat: data.chat,
+          chartUrl: data.chart_url,
+          coverUrl: fileUrl(data.cover_url),
+          htmlUrl: fileUrl(data.html_url),
         }
       } catch {
         // оставляем заглушку, если отчёт не загрузился
@@ -56,10 +78,22 @@ export default {
       this.reportOpen = !this.reportOpen
     },
     toggleGraph() {
+      // Если админ указал ссылку на график — открываем её, иначе показываем встроенный.
+      if (this.report.chartUrl) {
+        openLink(this.report.chartUrl)
+        return
+      }
       this.graphOpen = !this.graphOpen
     },
     discuss() {
-      this.$router.push({ name: 'community' })
+      if (this.report.chat) {
+        this.$router.push({ name: 'chat', params: { id: this.report.chat } })
+      } else {
+        this.$router.push({ name: 'community' })
+      }
+    },
+    edit() {
+      this.$router.push({ name: 'report-edit', params: { id: this.$route.params.id } })
     },
   },
 }
@@ -68,9 +102,20 @@ export default {
 <template>
   <section class="report">
     <div class="report__hero">
+      <!-- Обложка отчёта размыта под шапкой, как в макете -->
+      <div v-if="heroStyle" class="report__hero-cover" :style="heroStyle"></div>
       <div class="report__hero-overlay"></div>
-      <BackButton class="report__back" />
-      <span class="report__badge">{{ report.badge }}</span>
+      <BackButton class="report__back" :to="{ name: 'analytics' }" />
+      <span v-if="report.badge" class="report__badge">{{ report.badge }}</span>
+      <button
+        v-if="isAdmin && $route.params.id"
+        type="button"
+        class="report__gear"
+        aria-label="Редактировать отчёт"
+        @click="edit"
+      >
+        <IconGear />
+      </button>
 
       <div class="report__hero-body">
         <div class="report__hero-head">
@@ -78,7 +123,7 @@ export default {
             <h1 class="report__title">{{ report.title }}</h1>
             <p class="report__date">{{ report.date }}</p>
           </div>
-          <span class="report__icon"><IconOil /></span>
+          <span class="report__icon"><component :is="materialIcon" /></span>
         </div>
         <p class="report__desc">{{ report.description }}</p>
       </div>
@@ -103,7 +148,17 @@ export default {
       </ReportActionButton>
     </div>
 
-    <article v-if="reportOpen" class="report__article">
+    <iframe
+      v-if="reportOpen && report.htmlUrl"
+      class="report__html"
+      :src="report.htmlUrl"
+      sandbox="allow-scripts"
+      title="Отчёт"
+    ></iframe>
+    <article v-else-if="reportOpen && report.body" class="report__article">
+      <p>{{ report.body }}</p>
+    </article>
+    <article v-else-if="reportOpen" class="report__article">
       <p>
         Нефть остаётся одним из ключевых индикаторов мировой экономики. В 2026 году
         на цену влияют баланс спроса и предложения, политика ОПЕК+ и курс доллара.
@@ -139,6 +194,42 @@ export default {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+.report__hero-cover {
+  position: absolute;
+  inset: -40px;
+  background-size: cover;
+  background-position: center;
+  filter: blur(24px);
+}
+
+.report__gear {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 24px);
+  right: var(--space-screen-x);
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: rgba(40, 40, 44, 0.7);
+  backdrop-filter: blur(6px);
+  color: #fff;
+}
+.report__gear svg {
+  width: 24px;
+  height: 24px;
+}
+
+.report__html {
+  width: 100%;
+  min-height: 70vh;
+  border: none;
+  border-radius: var(--radius-card);
+  background: #fff;
 }
 
 .report__hero-overlay {

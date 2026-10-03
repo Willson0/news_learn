@@ -1,14 +1,23 @@
 <script>
 import AppInput from '@/components/ui/AppInput.vue'
 import IconPin from '@/components/icons/IconPin.vue'
+import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import { fetchChats } from '@/api/resources'
+import { fileUrl } from '@/api/client'
+import { session } from '@/api/session'
 
 export default {
   name: 'CommunityView',
-  components: { AppInput, IconPin },
+  components: { AppInput, IconPin, SegmentedControl },
   data() {
     return {
       query: '',
+      // Вкладки админа: все чаты / личные чаты пользователей с админом.
+      tab: 'all',
+      tabs: [
+        { value: 'all', label: 'Все чаты' },
+        { value: 'direct', label: 'Личные чаты' },
+      ],
       sections: [
         {
           key: 'admin',
@@ -52,6 +61,28 @@ export default {
       ],
     }
   },
+  computed: {
+    isAdmin() {
+      return Boolean(session.user && session.user.is_admin)
+    },
+    visibleSections() {
+      let sections = this.sections
+      if (this.isAdmin) {
+        sections = sections.filter((s) => (this.tab === 'direct' ? s.key === 'direct' : s.key !== 'direct'))
+      }
+      const q = this.query.trim().toLowerCase()
+      if (!q) return sections
+      return sections
+        .map((s) => ({
+          ...s,
+          items: s.items.filter((i) => `${i.title} ${i.preview || ''}`.toLowerCase().includes(q)),
+        }))
+        .filter((s) => s.items.length)
+    },
+    searchPlaceholder() {
+      return this.isAdmin && this.tab === 'direct' ? 'Нужный чат' : 'Нужный отчет или материал'
+    },
+  },
   mounted() {
     this.load()
   },
@@ -64,6 +95,9 @@ export default {
         /* оставляем демо-данные, если список не загрузился */
       }
     },
+    avatar(item) {
+      return fileUrl(item.avatar_url)
+    },
     openChat(item) {
       this.$router.push({ name: 'chat', params: { id: item.id } })
     },
@@ -73,9 +107,11 @@ export default {
 
 <template>
   <section class="community">
-    <AppInput v-model="query" placeholder="Нужный отчет или материал" class="community__search" />
+    <AppInput v-model="query" :placeholder="searchPlaceholder" class="community__search" />
 
-    <div v-for="section in sections" :key="section.key" class="community__section">
+    <SegmentedControl v-if="isAdmin" v-model="tab" :options="tabs" class="community__tabs" />
+
+    <div v-for="section in visibleSections" :key="section.key" class="community__section">
       <h2 class="community__title screen-title">{{ section.title }}</h2>
       <ul class="community__list">
         <li
@@ -84,7 +120,8 @@ export default {
           class="chat-row"
           @click="openChat(item)"
         >
-          <span class="chat-row__avatar"></span>
+          <img v-if="avatar(item)" class="chat-row__avatar" :src="avatar(item)" alt="" />
+          <span v-else class="chat-row__avatar"></span>
           <div class="chat-row__body">
             <div class="chat-row__top">
               <span class="chat-row__name">{{ item.title }}</span>
@@ -93,7 +130,7 @@ export default {
                 {{ item.time }}
               </span>
             </div>
-            <p class="chat-row__sender">{{ item.sender }}</p>
+            <p v-if="item.sender" class="chat-row__sender">{{ item.sender }}</p>
             <div class="chat-row__bottom">
               <p class="chat-row__preview">{{ item.preview }}</p>
               <span v-if="item.unread" class="chat-row__badge">{{ item.unread }}</span>
@@ -102,6 +139,10 @@ export default {
         </li>
       </ul>
     </div>
+
+    <p v-if="!visibleSections.length" class="community__empty">
+      {{ isAdmin && tab === 'direct' ? 'Личных сообщений пока нет' : 'Ничего не найдено' }}
+    </p>
   </section>
 </template>
 
@@ -114,6 +155,22 @@ export default {
   padding: calc(env(safe-area-inset-top, 0px) + 56px) var(--space-screen-x)
     calc(env(safe-area-inset-bottom, 0px) + 120px);
   background: var(--color-bg);
+}
+
+.community__tabs {
+  padding: 4px;
+  border-radius: var(--radius-pill);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+.community__tabs :deep(.segmented__item) {
+  height: 48px;
+  border-radius: var(--radius-pill);
+}
+
+.community__empty {
+  padding: 40px 0;
+  text-align: center;
+  color: var(--color-text-secondary);
 }
 
 .community__section {
@@ -148,6 +205,7 @@ export default {
   height: 56px;
   border-radius: 50%;
   background: #8a8a8a;
+  object-fit: cover;
   flex-shrink: 0;
 }
 

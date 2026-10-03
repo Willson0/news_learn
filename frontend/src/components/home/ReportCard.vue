@@ -4,6 +4,7 @@ import IconOil from '@/components/icons/materials/IconOil.vue'
 import IconGold from '@/components/icons/materials/IconGold.vue'
 import IconGas from '@/components/icons/materials/IconGas.vue'
 import IconBtc from '@/components/icons/materials/IconBtc.vue'
+import { fileUrl } from '@/api/client'
 
 export default {
   name: 'ReportCard',
@@ -13,12 +14,18 @@ export default {
     // report: { title, date, description, badge, icon, actionLabel }
   },
   emits: ['open'],
+  computed: {
+    coverStyle() {
+      const url = fileUrl(this.report.cover_url)
+      return url ? { backgroundImage: `url("${url}")` } : null
+    },
+  },
 }
 </script>
 
 <template>
   <article class="report-card">
-    <div class="report-card__media">
+    <div class="report-card__media" :class="{ 'report-card__media--cover': coverStyle }" :style="coverStyle">
       <span v-if="report.badge" class="report-card__badge">{{ report.badge }}</span>
     </div>
 
@@ -60,6 +67,11 @@ export default {
     linear-gradient(115deg, #c9c6d6 0%, #a9adbd 18%, #cfc3cf 34%, #b7c2bf 52%, #c7bcc9 70%, #a7adba 86%, #c4c7d2 100%),
     radial-gradient(60% 80% at 25% 20%, rgba(190, 150, 170, 0.5), transparent 60%),
     radial-gradient(50% 70% at 80% 70%, rgba(150, 170, 150, 0.5), transparent 60%);
+}
+
+.report-card__media--cover {
+  background-size: cover;
+  background-position: center;
 }
 
 .report-card__badge {

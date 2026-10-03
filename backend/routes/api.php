@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AccountController;
+use App\Http\Controllers\Admin;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\InstrumentController;
@@ -30,6 +31,11 @@ Route::prefix('auth')->group(function () {
 // Публичные справочники (нужны и на экране входа).
 Route::get('/instruments', [InstrumentController::class, 'index']);
 
+// Файлы отчётов и фото чатов — без токена, чтобы открывать их в <img>/<iframe>.
+Route::get('/reports/{report}/cover', [ReportController::class, 'cover']);
+Route::get('/reports/{report}/html', [ReportController::class, 'html']);
+Route::get('/chats/{slug}/avatar', [ChatController::class, 'avatar']);
+
 // --- Требуют токен Sanctum ---
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/user', [AuthController::class, 'me']);
@@ -58,4 +64,20 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/chats', [ChatController::class, 'index']);
     Route::get('/chats/{slug}/messages', [ChatController::class, 'messages']);
     Route::post('/chats/{slug}/messages', [ChatController::class, 'send']);
+
+    // --- Админка: только для админов (по Telegram ID) ---
+    Route::middleware('admin')->prefix('admin')->group(function () {
+        // Список админов: добавлять/удалять могут только админы, главного удалить нельзя.
+        Route::get('/admins', [Admin\AdminController::class, 'index']);
+        Route::post('/admins', [Admin\AdminController::class, 'store']);
+        Route::delete('/admins/{telegramId}', [Admin\AdminController::class, 'destroy']);
+
+        // Отчёты (multipart: обложка и html-файл, поэтому обновление — POST).
+        Route::post('/reports', [Admin\ReportController::class, 'store']);
+        Route::post('/reports/{report}', [Admin\ReportController::class, 'update']);
+        Route::delete('/reports/{report}', [Admin\ReportController::class, 'destroy']);
+
+        // Настройки чата: название и фото.
+        Route::post('/chats/{slug}', [Admin\ChatController::class, 'update']);
+    });
 });

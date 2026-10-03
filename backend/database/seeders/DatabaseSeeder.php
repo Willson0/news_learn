@@ -25,6 +25,7 @@ class DatabaseSeeder extends Seeder
             ['key' => 'eurusd', 'label' => 'EUR/USD', 'category' => 'currency'],
             ['key' => 'gas', 'label' => 'Натуральный газ', 'category' => 'gas'],
             ['key' => 'btc', 'label' => 'Биткоин', 'category' => 'crypto'],
+            ['key' => 'helium', 'label' => 'Гелий', 'category' => 'gas'],
         ];
         foreach ($instruments as $i => $data) {
             Instrument::updateOrCreate(['key' => $data['key']], $data + ['position' => $i]);
@@ -77,7 +78,6 @@ class DatabaseSeeder extends Seeder
         }
 
         $chats = [
-            ['slug' => 'admin', 'title' => 'Игорь Гломозда', 'type' => 'admin', 'section' => 'admin', 'subtitle' => 'Был в сети 1 час назад', 'position' => 0],
             ['slug' => 'general', 'title' => 'Общий чат', 'type' => 'group', 'section' => 'main', 'subtitle' => '234 участника', 'position' => 1],
             ['slug' => 'gold', 'title' => 'Отчет по золоту 26.02.26', 'type' => 'report', 'section' => 'reports', 'subtitle' => '12 участников', 'pinned' => true, 'position' => 2],
             ['slug' => 'oil', 'title' => 'Нефть 12.12.27', 'type' => 'report', 'section' => 'reports', 'subtitle' => '15 участников', 'position' => 3],
@@ -87,13 +87,8 @@ class DatabaseSeeder extends Seeder
             Chat::updateOrCreate(['slug' => $data['slug']], $data);
         }
 
-        $admin = Chat::where('slug', 'admin')->first();
-        if ($admin->messages()->count() === 0) {
-            $admin->messages()->createMany([
-                ['author_name' => 'Игорь Гломозда', 'author_role' => 'Автор', 'body' => 'Здравствуйте! Чем могу помочь?'],
-                ['author_name' => 'Игорь Гломозда', 'author_role' => 'Автор', 'body' => 'Что интересует?'],
-            ]);
-        }
+        // Раньше личный чат с админом был один на всех (slug «admin») — теперь он у каждого свой.
+        Chat::where('slug', 'admin')->delete();
 
         $oilChat = Chat::where('slug', 'oil')->first();
         if ($oilChat->messages()->count() === 0) {
@@ -113,6 +108,18 @@ class DatabaseSeeder extends Seeder
                 'password' => Hash::make('password'),
             ]
         );
+
+        // Личный чат демо-пользователя с админом.
+        $direct = Chat::firstOrCreate(
+            ['type' => 'direct', 'user_id' => $user->id],
+            ['slug' => 'dm-'.$user->id, 'title' => $user->name, 'section' => 'direct']
+        );
+        if ($direct->messages()->count() === 0) {
+            $direct->messages()->createMany([
+                ['author_name' => config('admin.display_name'), 'author_role' => 'Админ', 'body' => 'Здравствуйте! Чем могу помочь?'],
+                ['user_id' => $user->id, 'author_name' => $user->name, 'author_role' => 'Участник', 'body' => 'Кто читал новый отчет по золоту?'],
+            ]);
+        }
 
         $user->instruments()->sync(
             Instrument::whereIn('key', ['gold', 'platinum', 'brent'])->pluck('id')

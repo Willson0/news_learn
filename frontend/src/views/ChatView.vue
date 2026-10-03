@@ -74,7 +74,8 @@ export default {
   },
   computed: {
     isDirect() {
-      return this.$route.params.id === 'admin'
+      const id = String(this.$route.params.id)
+      return id === 'admin' || id.startsWith('dm-') || Boolean(this.serverChat && this.serverChat.type === 'direct')
     },
     chat() {
       if (this.serverChat) {

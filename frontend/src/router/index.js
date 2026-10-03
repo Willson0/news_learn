@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { isAuthenticated } from '@/api/client'
+import { loadSession, isAdmin } from '@/api/session'
 
 import LoginView from '@/views/LoginView.vue'
 import HomeView from '@/views/HomeView.vue'
@@ -18,6 +19,8 @@ import ChatView from '@/views/ChatView.vue'
 import ChatInfoView from '@/views/ChatInfoView.vue'
 import ChatEditView from '@/views/ChatEditView.vue'
 import UserProfileView from '@/views/UserProfileView.vue'
+import ReportFormView from '@/views/admin/ReportFormView.vue'
+import AdminsView from '@/views/admin/AdminsView.vue'
 
 const routes = [
   { path: '/', redirect: '/login' },
@@ -47,6 +50,20 @@ const routes = [
     path: '/analytics',
     name: 'analytics',
     component: AnalyticsView,
+  },
+  // Админка: создание отчёта
+  {
+    path: '/analytics/report/new',
+    name: 'report-create',
+    component: ReportFormView,
+    meta: { hideNav: true, admin: true },
+  },
+  // Админка: редактирование / удаление отчёта
+  {
+    path: '/analytics/report/:id/edit',
+    name: 'report-edit',
+    component: ReportFormView,
+    meta: { hideNav: true, admin: true },
   },
   // Детальный отчёт с графиком
   {
@@ -80,7 +97,7 @@ const routes = [
     path: '/community/chat/:id/edit',
     name: 'chat-edit',
     component: ChatEditView,
-    meta: { hideNav: true },
+    meta: { hideNav: true, admin: true },
   },
   // Профиль пользователя
   {
@@ -130,6 +147,13 @@ const routes = [
     component: AccountSuccessView,
     meta: { hideNav: true },
   },
+  // Админка: список администраторов
+  {
+    path: '/profile/admins',
+    name: 'admins',
+    component: AdminsView,
+    meta: { hideNav: true, admin: true },
+  },
   // Управление подпиской
   {
     path: '/profile/subscription',
@@ -148,10 +172,13 @@ const router = createRouter({
 // Остальные требуют токен — иначе уводим на вход.
 const PUBLIC_ROUTES = ['login', 'password-recovery']
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   if (PUBLIC_ROUTES.includes(to.name)) return true
-  if (isAuthenticated()) return true
-  return { name: 'login' }
+  if (!isAuthenticated()) return { name: 'login' }
+  // Права админа проверяет бэкенд; здесь только не пускаем на экраны админки остальных.
+  await loadSession()
+  if (to.meta.admin && !isAdmin()) return { name: 'home' }
+  return true
 })
 
 export default router

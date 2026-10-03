@@ -7,6 +7,7 @@ import IconSort from '@/components/icons/IconSort.vue'
 import IconChevronRight from '@/components/icons/IconChevronRight.vue'
 import { fetchProfile, syncInstruments, fetchReports } from '@/api/resources'
 import { decorateReport } from '@/api/materialIcon'
+import { session } from '@/api/session'
 
 export default {
   name: 'ProfileView',
@@ -45,6 +46,13 @@ export default {
       // История материалов (загружается с бэкенда).
       history: [],
     }
+  },
+  computed: {
+    // Пункт «Администраторы» виден только админам.
+    settingsItems() {
+      if (!(session.user && session.user.is_admin)) return this.settings
+      return [{ key: 'admins', label: 'Администраторы', route: { name: 'admins' } }, ...this.settings]
+    },
   },
   mounted() {
     this.load()
@@ -153,7 +161,7 @@ export default {
     <h2 class="profile__section screen-title">Настройки</h2>
     <ul class="profile__settings">
       <li
-        v-for="item in settings"
+        v-for="item in settingsItems"
         :key="item.key"
         class="profile__setting"
         @click="go(item)"

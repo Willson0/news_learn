@@ -6,13 +6,17 @@ import IconLeave from '@/components/icons/IconLeave.vue'
 import IconContact from '@/components/icons/IconContact.vue'
 import IconPlay from '@/components/icons/IconPlay.vue'
 import IconDownloadCloud from '@/components/icons/IconDownloadCloud.vue'
+import IconGear from '@/components/icons/IconGear.vue'
+import { fetchMessages } from '@/api/resources'
+import { fileUrl } from '@/api/client'
+import { session } from '@/api/session'
 
 export default {
   name: 'ChatInfoView',
-  components: { BackButton, IconBell, IconSearch, IconLeave, IconContact, IconPlay, IconDownloadCloud },
+  components: { BackButton, IconBell, IconSearch, IconLeave, IconContact, IconPlay, IconDownloadCloud, IconGear },
   data() {
     return {
-      chat: { title: 'Нефть 12.12.27', members: '15 участников' },
+      chat: { title: 'Нефть 12.12.27', members: '15 участников', avatar: null },
       tab: 'media',
       tabs: [
         { value: 'members', label: 'Участники' },
@@ -54,11 +58,30 @@ export default {
     }
   },
   computed: {
+    isAdmin() {
+      return Boolean(session.user && session.user.is_admin)
+    },
     backTo() {
       return { name: 'chat', params: { id: this.$route.params.id } }
     },
   },
+  mounted() {
+    this.load()
+  },
   methods: {
+    async load() {
+      try {
+        const resp = await fetchMessages(this.$route.params.id)
+        const c = resp.chat || {}
+        this.chat = {
+          title: c.title || this.chat.title,
+          members: c.subtitle || '',
+          avatar: fileUrl(c.avatar_url),
+        }
+      } catch {
+        /* оставляем демо-данные */
+      }
+    },
     openEdit() {
       this.$router.push({ name: 'chat-edit', params: { id: this.$route.params.id } })
     },
@@ -71,10 +94,26 @@ export default {
     <!-- Шапка с аватаром -->
     <header class="info__hero">
       <BackButton :to="backTo" class="info__back" />
-      <button type="button" class="info__contact" aria-label="Настройки чата" @click="openEdit">
+      <!-- Админ: шестерёнка ведёт в настройки чата, «контакт» уходит к названию -->
+      <button
+        v-if="isAdmin"
+        type="button"
+        class="info__contact"
+        aria-label="Настройки чата"
+        @click="openEdit"
+      >
+        <IconGear />
+      </button>
+      <button
+        type="button"
+        class="info__contact"
+        :class="{ 'info__contact--title': isAdmin }"
+        aria-label="Отчёт чата"
+      >
         <IconContact />
       </button>
-      <div class="info__avatar"></div>
+      <img v-if="chat.avatar" class="info__avatar" :src="chat.avatar" alt="" />
+      <div v-else class="info__avatar"></div>
       <h1 class="info__title">{{ chat.title }}</h1>
       <p class="info__members">{{ chat.members }}</p>
     </header>
@@ -195,12 +234,17 @@ export default {
   color: var(--color-text);
 }
 .info__contact svg { width: 22px; height: 22px; }
+.info__contact--title {
+  top: auto;
+  bottom: 24px;
+}
 .info__avatar {
   align-self: center;
   width: 150px;
   height: 150px;
   margin-top: -36px;
   border-radius: 50%;
+  object-fit: cover;
   background: linear-gradient(135deg, #d7cfe0 0%, #a9adbd 35%, #cdbfc9 60%, #b7c2bf 80%, #c4c7d2 100%);
 }
 .info__title { margin: 10px 0 0; font-size: var(--font-size-title); font-weight: 700; }
