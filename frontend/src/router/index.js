@@ -4,6 +4,7 @@ import LoginView from '@/views/LoginView.vue'
 import HomeView from '@/views/HomeView.vue'
 import PasswordRecoveryView from '@/views/PasswordRecoveryView.vue'
 import AnalyticsView from '@/views/AnalyticsView.vue'
+import ReportDetailView from '@/views/ReportDetailView.vue'
 import CommunityView from '@/views/CommunityView.vue'
 import ProfileView from '@/views/ProfileView.vue'
 
@@ -35,6 +36,13 @@ const routes = [
     path: '/analytics',
     name: 'analytics',
     component: AnalyticsView,
+  },
+  // Детальный отчёт с графиком
+  {
+    path: '/analytics/report/:id?',
+    name: 'report-detail',
+    component: ReportDetailView,
+    meta: { hideNav: true },
   },
   // Экран «Сообщество»
   {

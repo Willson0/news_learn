@@ -52,9 +52,8 @@ export default {
     },
   },
   methods: {
-    openReport() {
-      // TODO: переход на детальную страницу отчёта
-      this.$router.push({ name: 'analytics' })
+    openReport(report) {
+      this.$router.push({ name: 'report-detail', params: { id: report.id } })
     },
   },
 }

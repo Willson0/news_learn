@@ -2,6 +2,7 @@
 import AppInput from '@/components/ui/AppInput.vue'
 import ReportCard from '@/components/home/ReportCard.vue'
 import IconFilter from '@/components/icons/IconFilter.vue'
+import FiltersSheet from '@/components/analytics/FiltersSheet.vue'
 import { markRaw } from 'vue'
 import IconOil from '@/components/icons/materials/IconOil.vue'
 import IconGold from '@/components/icons/materials/IconGold.vue'
@@ -9,10 +10,11 @@ import IconGas from '@/components/icons/materials/IconGas.vue'
 
 export default {
   name: 'AnalyticsView',
-  components: { AppInput, ReportCard, IconFilter },
+  components: { AppInput, ReportCard, IconFilter, FiltersSheet },
   data() {
     return {
       query: '',
+      filtersOpen: false,
       // Демо-данные. Реальные отчёты придут с бэкенда.
       reports: [
         {
@@ -53,11 +55,11 @@ export default {
     },
   },
   methods: {
-    openReport() {
-      // TODO: переход на детальную страницу отчёта с графиком
+    openReport(report) {
+      this.$router.push({ name: 'report-detail', params: { id: report.id } })
     },
     openFilters() {
-      // TODO: панель фильтров (по инструменту и по дате)
+      this.filtersOpen = true
     },
   },
 }
@@ -88,6 +90,8 @@ export default {
       />
       <p v-if="!visibleReports.length" class="analytics__empty">Ничего не найдено</p>
     </div>
+
+    <FiltersSheet :open="filtersOpen" @close="filtersOpen = false" />
   </section>
 </template>
 
