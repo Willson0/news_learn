@@ -58,6 +58,7 @@ export default {
           time: '20:42',
         },
         { id: 7, mine: true, image: true, time: '20:42', read: true },
+        { id: 8, mine: true, toAuthor: true, text: '«Как долго вы делали этот отчет?»', time: '20:42', read: true },
       ],
     }
   },
@@ -75,6 +76,9 @@ export default {
   methods: {
     openInfo() {
       this.$router.push({ name: 'chat-info', params: { id: this.$route.params.id } })
+    },
+    goUser() {
+      this.$router.push({ name: 'chat-user', params: { id: this.$route.params.id, uid: 'artem' } })
     },
     onBubble(m) {
       if (this.selectMode) {
@@ -180,7 +184,7 @@ export default {
           :class="{ 'chat__check--on': isSelected(m.id) }"
           @click="toggleSelect(m.id)"
         ></span>
-        <span v-if="!m.mine && !selectMode" class="chat__msg-avatar"></span>
+        <span v-if="!m.mine && !selectMode" class="chat__msg-avatar" @click="goUser"></span>
         <MessageBubble :message="m" @click="onBubble(m)" />
       </div>
     </div>

@@ -15,6 +15,8 @@ import AccountSuccessView from '@/views/AccountSuccessView.vue'
 import SubscriptionView from '@/views/SubscriptionView.vue'
 import ChatView from '@/views/ChatView.vue'
 import ChatInfoView from '@/views/ChatInfoView.vue'
+import ChatEditView from '@/views/ChatEditView.vue'
+import UserProfileView from '@/views/UserProfileView.vue'
 
 const routes = [
   { path: '/', redirect: '/login' },
@@ -70,6 +72,20 @@ const routes = [
     path: '/community/chat/:id/info',
     name: 'chat-info',
     component: ChatInfoView,
+    meta: { hideNav: true },
+  },
+  // Настройки чата (админ)
+  {
+    path: '/community/chat/:id/edit',
+    name: 'chat-edit',
+    component: ChatEditView,
+    meta: { hideNav: true },
+  },
+  // Профиль пользователя
+  {
+    path: '/community/chat/:id/user/:uid',
+    name: 'chat-user',
+    component: UserProfileView,
     meta: { hideNav: true },
   },
   // Экран «Профиль»

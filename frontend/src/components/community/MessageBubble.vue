@@ -29,6 +29,9 @@ export default {
       <span v-if="message.role" class="bubble__role">{{ message.role }}</span>
     </div>
 
+    <!-- Сообщение автору -->
+    <div v-if="message.toAuthor" class="bubble__to-author">Автору</div>
+
     <!-- Цитата (ответ) -->
     <div v-if="message.reply" class="bubble__quote">
       <span class="bubble__quote-author">{{ message.reply.author }}</span>
@@ -217,6 +220,12 @@ export default {
 .bubble__voice-dur {
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
+}
+
+.bubble__to-author {
+  font-size: var(--font-size-base);
+  font-weight: 700;
+  margin-bottom: 4px;
 }
 
 .bubble__text {
