@@ -96,7 +96,6 @@ fun PasswordRecoveryScreen(
         modifier = Modifier
             .fillMaxSize()
             .authBackground()
-            .verticalScroll(rememberScrollState())
             .imePadding()
             .padding(start = T.ScreenX, end = T.ScreenX, top = insetTop() + 24.dp, bottom = insetBottom() + 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
