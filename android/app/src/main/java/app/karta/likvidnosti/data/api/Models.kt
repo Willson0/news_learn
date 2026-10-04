@@ -100,6 +100,7 @@ class ChatItemDto(
     val sender: String? = null,
     val preview: String? = null,
     val time: String? = null,
+    val unread: Int = 0,
 )
 
 @Serializable
