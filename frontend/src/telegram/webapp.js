@@ -4,9 +4,6 @@
  * браузере при разработке) объекта нет — тогда методы безопасно ничего не делают.
  */
 
-import { setBackState } from '@/native/backState'
-import { nativeHaptic, nativeOpenLink } from '@/native/capacitor'
-
 const BG_COLOR = '#1a1b1d'
 
 /** Возвращает объект Telegram.WebApp или null, если приложение открыто не в Telegram. */
@@ -58,9 +55,6 @@ let backHandler = null
  * и Telegram сам показывает кнопку закрытия мини-приложения.
  */
 export function setBackButton(canGoBack, onBack) {
-  // Сохраняем состояние для аппаратной кнопки «Назад» в нативном приложении.
-  setBackState(canGoBack, onBack)
-
   const wa = getWebApp()
   if (!wa || !wa.BackButton) return
 
@@ -92,13 +86,10 @@ export function haptic(type = 'light') {
   if (wa && wa.HapticFeedback) {
     try {
       wa.HapticFeedback.impactOccurred(type)
-      return
     } catch {
       /* ignore */
     }
   }
-  // Вне Telegram — нативная отдача Android (в браузере безопасно бездействует).
-  nativeHaptic(type)
 }
 
 /** Открыть внешнюю ссылку: в Telegram — через openLink, в браузере — в новой вкладке. */
@@ -106,9 +97,7 @@ export function openLink(url) {
   const wa = getWebApp()
   if (wa && typeof wa.openLink === 'function' && wa.initData) {
     wa.openLink(url)
-    return
+  } else {
+    window.open(url, '_blank', 'noopener')
   }
-  // В нативном приложении — системный браузер; иначе — новая вкладка.
-  if (nativeOpenLink(url)) return
-  window.open(url, '_blank', 'noopener')
 }

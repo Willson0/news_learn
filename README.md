@@ -65,21 +65,6 @@ npm run dev              # http://localhost:5173
 В dev-режиме запросы к `/api` проксируются на бэкенд (`vite.config.js`). Разрешённый
 источник для CORS задаётся переменной `FRONTEND_URL` в `backend/.env`.
 
-### Android-приложение
-
-Нативное Android-приложение собирается из того же Vue-фронта через
-[Capacitor](https://capacitorjs.com/): веб-ассеты вшиваются внутрь APK, а
-приложение получает нативную оболочку (статус-бар, splash, аппаратную кнопку
-«Назад», тактильную отдачу). Бэкенд не меняется — приложение ходит в тот же REST
-API. Подробная инструкция по сборке и запуску — [frontend/ANDROID.md](frontend/ANDROID.md).
-
-```bash
-cd frontend
-# один раз укажите адрес бэкенда в .env.capacitor (VITE_API_BASE)
-npm run sync:android     # собрать веб-ассеты и скопировать в android/
-npm run open:android     # открыть в Android Studio и собрать APK/AAB
-```
-
 ## Деплой
 
 Продакшн-запуск одним Docker-контейнером с автоматическим HTTPS — см.
