@@ -23,6 +23,8 @@ Route::get('/ping', function () {
 Route::prefix('auth')->group(function () {
     Route::post('/telegram', [AuthController::class, 'telegram']);
     Route::post('/register', [AuthController::class, 'register']);
+    Route::post('/register/confirm', [AuthController::class, 'confirmRegistration']);
+    Route::post('/register/resend', [AuthController::class, 'resendRegistrationCode']);
     Route::post('/login', [AuthController::class, 'login']);
     Route::post('/recovery', [AuthController::class, 'requestRecovery']);
     Route::post('/recovery/reset', [AuthController::class, 'resetPassword']);

@@ -1,5 +1,4 @@
 <script>
-import BackButton from '@/components/ui/BackButton.vue'
 import MessageBubble from '@/components/community/MessageBubble.vue'
 import { fetchMessages, sendMessage } from '@/api/resources'
 import IconPlus from '@/components/icons/IconPlus.vue'
@@ -18,7 +17,7 @@ import IconBack from '@/components/icons/IconBack.vue'
 export default {
   name: 'ChatView',
   components: {
-    BackButton, MessageBubble, IconPlus, IconMic, IconReply, IconCopy,
+    MessageBubble, IconPlus, IconMic, IconReply, IconCopy,
     IconPin, IconLink, IconReport, IconTrash, IconForward, IconCheckSquare, IconClose, IconBack,
   },
   data() {
@@ -198,7 +197,6 @@ export default {
   <section class="chat">
     <!-- Шапка: обычная или режим выбора -->
     <header v-if="!selectMode" class="chat__header">
-      <BackButton :to="{ name: 'community' }" />
       <button type="button" class="chat__title-pill" @click="openInfo">
         <span class="chat__title">{{ chat.title }}</span>
         <span class="chat__subtitle">{{ chat.subtitle }}</span>

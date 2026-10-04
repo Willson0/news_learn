@@ -1,5 +1,4 @@
 <script>
-import BackButton from '@/components/ui/BackButton.vue'
 
 const MESSAGES = {
   email: 'Вы успешно сменили почту',
@@ -9,7 +8,7 @@ const MESSAGES = {
 
 export default {
   name: 'AccountSuccessView',
-  components: { BackButton },
+  components: {},
   computed: {
     message() {
       return MESSAGES[this.$route.params.field] || 'Готово'
@@ -20,9 +19,6 @@ export default {
 
 <template>
   <section class="success">
-    <div class="success__top">
-      <BackButton :to="{ name: 'account-data' }" />
-    </div>
     <p class="success__text">{{ message }}</p>
   </section>
 </template>

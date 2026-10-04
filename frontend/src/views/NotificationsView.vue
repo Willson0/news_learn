@@ -1,12 +1,11 @@
 <script>
-import BackButton from '@/components/ui/BackButton.vue'
 import AppToggle from '@/components/ui/AppToggle.vue'
 import InstrumentChip from '@/components/ui/InstrumentChip.vue'
 import { fetchProfile, updateNotifications, syncInstruments } from '@/api/resources'
 
 export default {
   name: 'NotificationsView',
-  components: { BackButton, AppToggle, InstrumentChip },
+  components: { AppToggle, InstrumentChip },
   data() {
     return {
       allNotifications: true,
@@ -53,9 +52,6 @@ export default {
 
 <template>
   <section class="notif">
-    <div class="notif__top">
-      <BackButton :to="{ name: 'profile' }" />
-    </div>
 
     <h1 class="notif__title screen-title">Уведомления</h1>
 

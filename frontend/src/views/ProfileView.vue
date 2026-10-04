@@ -8,6 +8,7 @@ import IconChevronRight from '@/components/icons/IconChevronRight.vue'
 import { fetchProfile, syncInstruments, fetchReports } from '@/api/resources'
 import { decorateReport } from '@/api/materialIcon'
 import { session } from '@/api/session'
+import { getTelegramUser } from '@/telegram/webapp'
 
 export default {
   name: 'ProfileView',
@@ -22,8 +23,10 @@ export default {
   data() {
     return {
       user: {
-        tag: '@AlexeyRub',
+        tag: '',
+        avatar: null,
       },
+      avatarError: false,
       subscription: {
         active: false,
         until: '',
@@ -53,16 +56,35 @@ export default {
       if (!(session.user && session.user.is_admin)) return this.settings
       return [{ key: 'admins', label: 'Администраторы', route: { name: 'admins' } }, ...this.settings]
     },
+    // Буква-заглушка для аватара, если фото нет или не загрузилось.
+    avatarInitial() {
+      const t = (this.user.tag || '').replace(/^@/, '')
+      return t ? t.charAt(0).toUpperCase() : ''
+    },
   },
   mounted() {
+    this.prefillUser()
     this.load()
   },
   methods: {
+    // Сразу показываем ник и аватар из сессии или из Telegram, не дожидаясь API.
+    prefillUser() {
+      const s = session.user
+      const tg = getTelegramUser()
+      const tag = (s && s.username) || (tg && tg.username ? '@' + tg.username : '')
+      const avatar = (s && s.avatar_url) || (tg && tg.photo_url) || null
+      if (tag) this.user.tag = tag
+      if (avatar) this.user.avatar = avatar
+    },
     async load() {
       try {
         const profile = await fetchProfile()
         if (profile.user) {
-          this.user = { ...this.user, tag: profile.user.username || this.user.tag }
+          this.user = {
+            ...this.user,
+            tag: profile.user.username || this.user.tag,
+            avatar: profile.user.avatar_url || this.user.avatar,
+          }
         }
         if (profile.subscription) {
           this.subscription = {
@@ -121,7 +143,17 @@ export default {
       <button type="button" class="profile__gear" aria-label="Настройки" @click="openSettings">
         <IconSettings />
       </button>
-      <div class="profile__avatar"></div>
+      <div class="profile__avatar">
+        <img
+          v-if="user.avatar && !avatarError"
+          class="profile__avatar-img"
+          :src="user.avatar"
+          alt=""
+          referrerpolicy="no-referrer"
+          @error="avatarError = true"
+        />
+        <span v-else-if="avatarInitial" class="profile__avatar-initial">{{ avatarInitial }}</span>
+      </div>
       <p class="profile__tag">{{ user.tag }}</p>
     </header>
 
@@ -260,13 +292,29 @@ export default {
 }
 
 .profile__avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 104px;
   height: 104px;
   border-radius: 50%;
+  overflow: hidden;
   background:
     radial-gradient(60% 60% at 35% 30%, #8a9a6a, transparent 70%),
     linear-gradient(135deg, #6b7350 0%, #3f4a2c 100%);
   border: 3px solid rgba(255, 255, 255, 0.12);
+}
+
+.profile__avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.profile__avatar-initial {
+  font-family: var(--font-heading);
+  font-size: 42px;
+  color: var(--color-text);
 }
 
 .profile__tag {

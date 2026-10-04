@@ -1,5 +1,4 @@
 <script>
-import BackButton from '@/components/ui/BackButton.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import ConfirmDialog from '@/components/admin/ConfirmDialog.vue'
@@ -14,7 +13,7 @@ import { haptic } from '@/telegram/webapp'
  */
 export default {
   name: 'AdminsView',
-  components: { BackButton, AppInput, AppButton, ConfirmDialog },
+  components: { AppInput, AppButton, ConfirmDialog },
   data() {
     return {
       admins: [],
@@ -89,9 +88,6 @@ export default {
 
 <template>
   <section class="admins">
-    <div class="admins__top">
-      <BackButton :to="{ name: 'profile' }" />
-    </div>
 
     <h1 class="admins__title screen-title">Администраторы</h1>
     <p class="admins__hint">

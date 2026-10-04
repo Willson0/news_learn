@@ -2,13 +2,16 @@
 
 namespace App\Http\Controllers;
 
+use App\Mail\CodeMail;
 use App\Models\PasswordResetCode;
+use App\Models\PendingRegistration;
 use App\Models\User;
 use App\Services\TelegramInitData;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -56,7 +59,9 @@ class AuthController extends Controller
     }
 
     /**
-     * Регистрация по email, телефону и паролю (форма из макета).
+     * Шаг 1 регистрации: проверяем данные, сохраняем заявку и шлём код на почту.
+     * Пользователь ещё не создаётся — его создаёт confirmRegistration после
+     * ввода верного кода.
      */
     public function register(Request $request): JsonResponse
     {
@@ -67,14 +72,110 @@ class AuthController extends Controller
             'name' => ['nullable', 'string', 'max:255'],
         ]);
 
-        $user = User::create([
-            'name' => $data['name'] ?? Str::before($data['email'], '@'),
+        $code = $this->makeCode();
+
+        // Одна активная заявка на email: перезаписываем прежнюю.
+        PendingRegistration::where('email', $data['email'])->delete();
+        PendingRegistration::create([
             'email' => $data['email'],
             'phone' => $data['phone'],
-            'password' => $data['password'],
+            'name' => $data['name'] ?? null,
+            'password' => Hash::make($data['password']),
+            'code' => Hash::make($code),
+            'expires_at' => now()->addMinutes(15),
         ]);
 
-        return $this->tokenResponse($user, 201);
+        $this->sendCode($data['email'], $code, 'register');
+
+        return response()->json([
+            'status' => 'code_sent',
+            'email' => $data['email'],
+        ], 202);
+    }
+
+    /**
+     * Шаг 2 регистрации: сверяем код из письма, создаём пользователя и выдаём токен.
+     */
+    public function confirmRegistration(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'email' => ['required', 'email'],
+            'code' => ['required', 'string'],
+        ]);
+
+        $pending = PendingRegistration::where('email', $data['email'])->first();
+
+        if (! $pending || $pending->isExpired()) {
+            $pending?->delete();
+            throw ValidationException::withMessages([
+                'code' => 'Код устарел. Запросите новый.',
+            ]);
+        }
+
+        // Защита от перебора: не больше 5 неверных попыток.
+        if ($pending->attempts >= 5) {
+            $pending->delete();
+            throw ValidationException::withMessages([
+                'code' => 'Слишком много попыток. Запросите новый код.',
+            ]);
+        }
+
+        if (! Hash::check($data['code'], $pending->code)) {
+            $pending->increment('attempts');
+            throw ValidationException::withMessages([
+                'code' => 'Неверный код.',
+            ]);
+        }
+
+        // На случай, если email заняли, пока ждали подтверждения.
+        if (User::where('email', $pending->email)->exists()) {
+            $pending->delete();
+            throw ValidationException::withMessages([
+                'email' => 'Пользователь с такой почтой уже существует.',
+            ]);
+        }
+
+        $user = User::create([
+            'name' => $pending->name ?: Str::before($pending->email, '@'),
+            'email' => $pending->email,
+            'phone' => $pending->phone,
+            'password' => Str::random(40), // временный, перезапишем готовым хэшем ниже
+        ]);
+
+        // Пароль уже захэширован в заявке — пишем его напрямую, минуя cast 'hashed'.
+        User::where('id', $user->id)->update(['password' => $pending->password]);
+
+        $pending->delete();
+
+        return $this->tokenResponse($user->fresh(), 201);
+    }
+
+    /**
+     * Повторная отправка кода подтверждения регистрации.
+     */
+    public function resendRegistrationCode(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'email' => ['required', 'email'],
+        ]);
+
+        $pending = PendingRegistration::where('email', $data['email'])->first();
+        if (! $pending) {
+            throw ValidationException::withMessages([
+                'email' => 'Заявка не найдена. Начните регистрацию заново.',
+            ]);
+        }
+
+        $code = $this->makeCode();
+        $pending->update([
+            'code' => Hash::make($code),
+            'attempts' => 0,
+            'expires_at' => now()->addMinutes(15),
+        ]);
+
+        $this->sendCode($data['email'], $code, 'register');
+
+        return response()->json(['status' => 'code_sent']);
     }
 
     /**
@@ -117,8 +218,7 @@ class AuthController extends Controller
             'expires_at' => now()->addMinutes(15),
         ]);
 
-        // TODO: подключить реальную отправку письма. Пока пишем в лог.
-        Log::info('Временный код восстановления', ['email' => $data['email'], 'code' => $code]);
+        $this->sendCode($data['email'], $code, 'recovery');
 
         return response()->json(['status' => 'sent']);
     }
@@ -188,6 +288,33 @@ class AuthController extends Controller
         }
 
         return response()->json(['status' => 'ok']);
+    }
+
+    /**
+     * Шестизначный код подтверждения.
+     */
+    private function makeCode(): string
+    {
+        return (string) random_int(100000, 999999);
+    }
+
+    /**
+     * Отправка кода на почту. Если почтовый драйвер недоступен — не роняем
+     * запрос (код всегда можно запросить повторно). В лог код пишем тоже,
+     * чтобы можно было проверить флоу, пока не настроен реальный SMTP.
+     */
+    private function sendCode(string $email, string $code, string $purpose): void
+    {
+        try {
+            Mail::to($email)->send(new CodeMail($code, $purpose));
+        } catch (\Throwable $e) {
+            Log::error('Не удалось отправить код на почту', [
+                'email' => $email,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        Log::info('Код подтверждения', ['email' => $email, 'purpose' => $purpose, 'code' => $code]);
     }
 
     private function tokenResponse(User $user, int $status = 200): JsonResponse

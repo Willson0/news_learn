@@ -1,10 +1,9 @@
 <script>
-import BackButton from '@/components/ui/BackButton.vue'
 import { haptic } from '@/telegram/webapp'
 
 export default {
   name: 'ProfileEditView',
-  components: { BackButton },
+  components: {},
   data() {
     return {
       name: 'Артем',
@@ -27,7 +26,6 @@ export default {
 <template>
   <section class="edit">
     <div class="edit__top">
-      <BackButton :to="{ name: 'profile' }" />
       <button type="button" class="edit__done" @click="save">Готово</button>
     </div>
 
@@ -65,7 +63,7 @@ export default {
 .edit__top {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
 }
 
 .edit__done {

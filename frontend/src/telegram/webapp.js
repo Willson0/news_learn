@@ -37,6 +37,49 @@ export function initTelegram() {
   }
 }
 
+/**
+ * Данные Telegram-пользователя из initDataUnsafe (id, first_name, last_name,
+ * username, photo_url). Возвращает null, если открыто не в Telegram.
+ */
+export function getTelegramUser() {
+  const wa = getWebApp()
+  const user = wa && wa.initDataUnsafe && wa.initDataUnsafe.user
+  return user && user.id ? user : null
+}
+
+let backHandler = null
+
+/**
+ * Управление системной кнопкой «Назад» в шапке Telegram.
+ * Если canGoBack=true — показываем кнопку и вешаем обработчик; иначе прячем,
+ * и Telegram сам показывает кнопку закрытия мини-приложения.
+ */
+export function setBackButton(canGoBack, onBack) {
+  const wa = getWebApp()
+  if (!wa || !wa.BackButton) return
+
+  try {
+    // Снимаем предыдущий обработчик, чтобы не копились подписки.
+    if (backHandler && typeof wa.BackButton.offClick === 'function') {
+      wa.BackButton.offClick(backHandler)
+    }
+    backHandler = null
+
+    if (canGoBack) {
+      backHandler = () => {
+        haptic('light')
+        if (typeof onBack === 'function') onBack()
+      }
+      if (typeof wa.BackButton.onClick === 'function') wa.BackButton.onClick(backHandler)
+      if (typeof wa.BackButton.show === 'function') wa.BackButton.show()
+    } else if (typeof wa.BackButton.hide === 'function') {
+      wa.BackButton.hide()
+    }
+  } catch (e) {
+    console.warn('[telegram] back button failed', e)
+  }
+}
+
 /** Лёгкая тактильная отдача (если клиент поддерживает). */
 export function haptic(type = 'light') {
   const wa = getWebApp()

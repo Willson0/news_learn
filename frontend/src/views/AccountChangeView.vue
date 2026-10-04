@@ -1,5 +1,4 @@
 <script>
-import BackButton from '@/components/ui/BackButton.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import { changeEmail, changePhone, changePassword } from '@/api/resources'
@@ -34,7 +33,7 @@ const CONFIG = {
 
 export default {
   name: 'AccountChangeView',
-  components: { BackButton, AppButton, AppInput },
+  components: { AppButton, AppInput },
   data() {
     return {
       values: { old: '', new: '', confirm: '' },
@@ -71,9 +70,6 @@ export default {
 
 <template>
   <section class="change">
-    <div class="change__top">
-      <BackButton :to="{ name: 'account-data' }" />
-    </div>
 
     <div class="change__content">
       <h1 class="change__title">{{ config.title }}</h1>

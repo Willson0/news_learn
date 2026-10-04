@@ -1,5 +1,4 @@
 <script>
-import BackButton from '@/components/ui/BackButton.vue'
 import ReportActionButton from '@/components/ui/ReportActionButton.vue'
 import CandlestickChart from '@/components/analytics/CandlestickChart.vue'
 import IconDoc from '@/components/icons/IconDoc.vue'
@@ -16,7 +15,6 @@ import { openLink } from '@/telegram/webapp'
 export default {
   name: 'ReportDetailView',
   components: {
-    BackButton,
     ReportActionButton,
     CandlestickChart,
     IconDoc,
@@ -105,7 +103,6 @@ export default {
       <!-- Обложка отчёта размыта под шапкой, как в макете -->
       <div v-if="heroStyle" class="report__hero-cover" :style="heroStyle"></div>
       <div class="report__hero-overlay"></div>
-      <BackButton class="report__back" :to="{ name: 'analytics' }" />
       <span v-if="report.badge" class="report__badge">{{ report.badge }}</span>
       <button
         v-if="isAdmin && $route.params.id"

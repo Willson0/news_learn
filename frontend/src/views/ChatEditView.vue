@@ -1,12 +1,11 @@
 <script>
-import BackButton from '@/components/ui/BackButton.vue'
 import { fetchMessages, updateChat } from '@/api/resources'
 import { fileUrl } from '@/api/client'
 import { haptic } from '@/telegram/webapp'
 
 export default {
   name: 'ChatEditView',
-  components: { BackButton },
+  components: {},
   data() {
     return {
       name: '',
@@ -79,7 +78,6 @@ export default {
 <template>
   <section class="cedit">
     <div class="cedit__top">
-      <BackButton :to="backTo" />
       <button type="button" class="cedit__done" :disabled="saving" @click="save">Готово</button>
     </div>
 
@@ -107,7 +105,7 @@ export default {
   padding: calc(env(safe-area-inset-top, 0px) + 16px) var(--space-screen-x) 40px;
   background: var(--color-bg);
 }
-.cedit__top { display: flex; align-items: center; justify-content: space-between; }
+.cedit__top { display: flex; align-items: center; justify-content: flex-end; }
 .cedit__done {
   padding: 11px 14px;
   border-radius: var(--radius-pill);

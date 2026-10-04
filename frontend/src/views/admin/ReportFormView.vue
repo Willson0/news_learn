@@ -1,5 +1,4 @@
 <script>
-import BackButton from '@/components/ui/BackButton.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import ConfirmDialog from '@/components/admin/ConfirmDialog.vue'
 import IconTrashX from '@/components/icons/IconTrashX.vue'
@@ -22,7 +21,7 @@ const SHORT_LABELS = { gas: 'Нат. газ' }
 
 export default {
   name: 'ReportFormView',
-  components: { BackButton, AppButton, ConfirmDialog, IconTrashX, IconPlus, IconFileHtml },
+  components: { AppButton, ConfirmDialog, IconTrashX, IconPlus, IconFileHtml },
   data() {
     return {
       title: '',
@@ -202,7 +201,6 @@ export default {
 <template>
   <section class="rform">
     <div class="rform__top">
-      <BackButton :to="backTo" />
       <button
         v-if="isEdit"
         type="button"
@@ -340,7 +338,7 @@ export default {
 .rform__top {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   min-height: 42px;
 }
 
@@ -382,7 +380,7 @@ export default {
 
 .rfield__label {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
 }

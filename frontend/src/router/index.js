@@ -1,8 +1,10 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { isAuthenticated } from '@/api/client'
 import { loadSession, isAdmin } from '@/api/session'
+import { setBackButton } from '@/telegram/webapp'
 
 import LoginView from '@/views/LoginView.vue'
+import RegisterConfirmView from '@/views/RegisterConfirmView.vue'
 import HomeView from '@/views/HomeView.vue'
 import PasswordRecoveryView from '@/views/PasswordRecoveryView.vue'
 import AnalyticsView from '@/views/AnalyticsView.vue'
@@ -30,6 +32,13 @@ const routes = [
     path: '/login',
     name: 'login',
     component: LoginView,
+    meta: { hideNav: true },
+  },
+  // Экран подтверждения почты кодом (после регистрации)
+  {
+    path: '/register/confirm',
+    name: 'register-confirm',
+    component: RegisterConfirmView,
     meta: { hideNav: true },
   },
   // Экран «Вход восстановления пароля»
@@ -170,7 +179,7 @@ const router = createRouter({
 
 // Экраны входа и восстановления пароля доступны без авторизации (hideNav).
 // Остальные требуют токен — иначе уводим на вход.
-const PUBLIC_ROUTES = ['login', 'password-recovery']
+const PUBLIC_ROUTES = ['login', 'register-confirm', 'password-recovery']
 
 router.beforeEach(async (to) => {
   if (PUBLIC_ROUTES.includes(to.name)) return true
@@ -179,6 +188,20 @@ router.beforeEach(async (to) => {
   await loadSession()
   if (to.meta.admin && !isAdmin()) return { name: 'home' }
   return true
+})
+
+// Корневые экраны (нижние вкладки + вход): системная кнопка «Назад» скрыта,
+// Telegram показывает кнопку закрытия мини-приложения. На остальных экранах
+// показываем системную «Назад», которая возвращает на шаг истории назад.
+const ROOT_ROUTES = ['login', 'home', 'analytics', 'community', 'profile']
+
+router.afterEach((to) => {
+  const canGoBack = !ROOT_ROUTES.includes(to.name)
+  setBackButton(canGoBack, () => {
+    // Если идти некуда (прямой вход) — уводим на главную.
+    if (window.history.state && window.history.state.back) router.back()
+    else router.replace({ name: 'home' })
+  })
 })
 
 export default router

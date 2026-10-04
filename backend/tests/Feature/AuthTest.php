@@ -2,26 +2,81 @@
 
 namespace Tests\Feature;
 
+use App\Mail\CodeMail;
 use App\Models\User;
 use App\Services\TelegramInitData;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
 class AuthTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_register_returns_token(): void
+    public function test_register_sends_code_and_defers_user(): void
     {
-        $response = $this->postJson('/api/auth/register', [
+        Mail::fake();
+
+        $this->postJson('/api/auth/register', [
             'email' => 'new@example.com',
             'phone' => '+70000000000',
             'password' => 'secret123',
-        ]);
+        ])->assertStatus(202)->assertJson(['status' => 'code_sent']);
 
-        $response->assertCreated()
-            ->assertJsonStructure(['token', 'user' => ['id', 'email']]);
+        // Пользователь ещё не создан — только заявка.
+        $this->assertDatabaseMissing('users', ['email' => 'new@example.com']);
+        $this->assertDatabaseHas('pending_registrations', ['email' => 'new@example.com']);
+        Mail::assertSent(CodeMail::class);
+    }
+
+    public function test_register_confirm_creates_user_and_returns_token(): void
+    {
+        Mail::fake();
+
+        $this->postJson('/api/auth/register', [
+            'email' => 'new@example.com',
+            'phone' => '+70000000000',
+            'password' => 'secret123',
+        ])->assertStatus(202);
+
+        $code = null;
+        Mail::assertSent(CodeMail::class, function (CodeMail $mail) use (&$code) {
+            $code = $mail->code;
+
+            return $mail->purpose === 'register';
+        });
+
+        $this->postJson('/api/auth/register/confirm', [
+            'email' => 'new@example.com',
+            'code' => $code,
+        ])->assertCreated()->assertJsonStructure(['token', 'user' => ['id', 'email']]);
+
         $this->assertDatabaseHas('users', ['email' => 'new@example.com']);
+        $this->assertDatabaseMissing('pending_registrations', ['email' => 'new@example.com']);
+
+        // Пароль из заявки должен позволять вход.
+        $this->postJson('/api/auth/login', [
+            'identifier' => 'new@example.com',
+            'password' => 'secret123',
+        ])->assertOk();
+    }
+
+    public function test_register_confirm_rejects_wrong_code(): void
+    {
+        Mail::fake();
+
+        $this->postJson('/api/auth/register', [
+            'email' => 'new@example.com',
+            'phone' => '+70000000000',
+            'password' => 'secret123',
+        ])->assertStatus(202);
+
+        $this->postJson('/api/auth/register/confirm', [
+            'email' => 'new@example.com',
+            'code' => '000000',
+        ])->assertStatus(422);
+
+        $this->assertDatabaseMissing('users', ['email' => 'new@example.com']);
     }
 
     public function test_login_with_email(): void

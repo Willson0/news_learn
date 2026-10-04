@@ -1,9 +1,6 @@
 <script>
-import IconBack from '@/components/icons/IconBack.vue'
-
 export default {
   name: 'UserProfileView',
-  components: { IconBack },
   data() {
     return {
       user: { name: 'Артем', tag: '@AlexeyRub', registered: '14.09.2026 (7 дней)' },
@@ -15,10 +12,6 @@ export default {
 <template>
   <section class="uprofile">
     <div class="uprofile__bg"></div>
-
-    <button type="button" class="uprofile__back" aria-label="Назад" @click="$router.back()">
-      <IconBack />
-    </button>
 
     <div class="uprofile__center">
       <p class="uprofile__status">Зарегистрирован</p>

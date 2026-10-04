@@ -12,11 +12,27 @@ export async function loginWithPassword(identifier, password) {
   return data.user
 }
 
+/**
+ * Шаг 1 регистрации: отправляет данные, бэкенд шлёт код подтверждения на почту.
+ * Токен ещё не выдаётся — аккаунт создаётся после подтверждения кода.
+ */
 export async function register({ email, phone, password, name }) {
-  const data = await api.post('/auth/register', { email, phone, password, name })
+  return api.post('/auth/register', { email, phone, password, name })
+}
+
+/**
+ * Шаг 2 регистрации: подтверждает код из письма, создаёт аккаунт и логинит.
+ */
+export async function confirmRegistration({ email, code }) {
+  const data = await api.post('/auth/register/confirm', { email, code })
   setToken(data.token)
   setSessionUser(data.user)
   return data.user
+}
+
+/** Повторная отправка кода подтверждения регистрации. */
+export async function resendRegistrationCode(email) {
+  return api.post('/auth/register/resend', { email })
 }
 
 export async function requestRecovery(email) {

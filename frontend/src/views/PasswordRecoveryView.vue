@@ -1,7 +1,6 @@
 <script>
 import AppInput from '@/components/ui/AppInput.vue'
 import AppButton from '@/components/ui/AppButton.vue'
-import BackButton from '@/components/ui/BackButton.vue'
 import { haptic } from '@/telegram/webapp'
 import { requestRecovery, resetPassword } from '@/api/auth'
 import { ApiError } from '@/api/client'
@@ -11,7 +10,7 @@ const RESEND_SECONDS = 5 * 60
 
 export default {
   name: 'PasswordRecoveryView',
-  components: { AppInput, AppButton, BackButton },
+  components: { AppInput, AppButton },
   data() {
     return {
       email: '',
@@ -100,7 +99,6 @@ export default {
 <template>
   <section class="recovery">
     <header class="recovery__top">
-      <BackButton :to="{ name: 'login' }" />
     </header>
 
     <h1 class="recovery__title screen-title">Восстановление пароля</h1>

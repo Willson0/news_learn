@@ -1,12 +1,11 @@
 <script>
-import BackButton from '@/components/ui/BackButton.vue'
 import AppToggle from '@/components/ui/AppToggle.vue'
 import IconPlus from '@/components/icons/IconPlus.vue'
 import { fetchSubscription, updateSubscription } from '@/api/resources'
 
 export default {
   name: 'SubscriptionView',
-  components: { BackButton, AppToggle, IconPlus },
+  components: { AppToggle, IconPlus },
   data() {
     return {
       active: false,
@@ -54,9 +53,6 @@ export default {
 
 <template>
   <section class="sub">
-    <div class="sub__top">
-      <BackButton :to="{ name: 'profile' }" />
-    </div>
 
     <h1 class="sub__title screen-title">Управление подпиской</h1>
 

@@ -1,5 +1,4 @@
 <script>
-import BackButton from '@/components/ui/BackButton.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import IconPencil from '@/components/icons/IconPencil.vue'
 import IconEye from '@/components/icons/IconEye.vue'
@@ -9,7 +8,7 @@ import { logout } from '@/api/auth'
 
 export default {
   name: 'AccountDataView',
-  components: { BackButton, AppButton, IconPencil, IconEye, IconEyeClosed },
+  components: { AppButton, IconPencil, IconEye, IconEyeClosed },
   data() {
     return {
       email: '',
@@ -48,9 +47,6 @@ export default {
 
 <template>
   <section class="account">
-    <div class="account__top">
-      <BackButton :to="{ name: 'profile' }" />
-    </div>
 
     <h1 class="account__title screen-title">Данные пользователя</h1>
 

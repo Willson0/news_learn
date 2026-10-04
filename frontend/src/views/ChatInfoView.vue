@@ -1,5 +1,4 @@
 <script>
-import BackButton from '@/components/ui/BackButton.vue'
 import IconBell from '@/components/icons/IconBell.vue'
 import IconSearch from '@/components/icons/IconSearch.vue'
 import IconLeave from '@/components/icons/IconLeave.vue'
@@ -13,7 +12,7 @@ import { session } from '@/api/session'
 
 export default {
   name: 'ChatInfoView',
-  components: { BackButton, IconBell, IconSearch, IconLeave, IconContact, IconPlay, IconDownloadCloud, IconGear },
+  components: { IconBell, IconSearch, IconLeave, IconContact, IconPlay, IconDownloadCloud, IconGear },
   data() {
     return {
       chat: { title: 'Нефть 12.12.27', members: '15 участников', avatar: null },
@@ -93,7 +92,6 @@ export default {
   <section class="info">
     <!-- Шапка с аватаром -->
     <header class="info__hero">
-      <BackButton :to="backTo" class="info__back" />
       <!-- Админ: шестерёнка ведёт в настройки чата, «контакт» уходит к названию -->
       <button
         v-if="isAdmin"
