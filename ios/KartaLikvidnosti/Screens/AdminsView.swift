@@ -79,18 +79,18 @@ struct AdminsView: View {
 
     private func load() async {
         do { admins = try await Api.fetchAdmins() }
-        catch let e as ApiError { error = e.message }
-        catch { error = "Не удалось загрузить список" }
+        catch let e as ApiError { self.error = e.message }
+        catch { self.error = "Не удалось загрузить список" }
     }
 
     private func add() {
         let id = telegramId.trimmed
-        guard id.range(of: #"^\d+$"#, options: .regularExpression) != nil else { error = "Telegram ID состоит только из цифр"; return }
+        guard id.range(of: #"^\d+$"#, options: .regularExpression) != nil else { self.error = "Telegram ID состоит только из цифр"; return }
         adding = true; error = ""
         Task {
             do { try await Api.addAdmin(telegramId: id); telegramId = ""; Haptics.medium(); await load() }
-            catch let e as ApiError { error = e.fieldError("telegram_id") ?? e.message }
-            catch { error = "Не удалось добавить" }
+            catch let e as ApiError { self.error = e.fieldError("telegram_id") ?? e.message }
+            catch { self.error = "Не удалось добавить" }
             adding = false
         }
     }
@@ -106,8 +106,8 @@ struct AdminsView: View {
                     router.popToRoot()
                     router.switchTab(.profile)
                 } else { await load() }
-            } catch let e as ApiError { error = e.message; confirmFor = nil }
-            catch { error = "Не удалось удалить"; confirmFor = nil }
+            } catch let e as ApiError { self.error = e.message; confirmFor = nil }
+            catch { self.error = "Не удалось удалить"; confirmFor = nil }
             removing = nil
         }
     }

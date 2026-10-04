@@ -74,7 +74,7 @@ struct RegisterConfirmView: View {
     }
 
     private func confirm() {
-        if code.count < 6 { error = "Введите код из 6 цифр"; Haptics.rigid(); return }
+        if code.count < 6 { self.error = "Введите код из 6 цифр"; Haptics.rigid(); return }
         Haptics.medium()
         submitting = true
         Task {
@@ -84,7 +84,7 @@ struct RegisterConfirmView: View {
                 router.enterApp()
             } catch let e as ApiError {
                 Haptics.rigid(); error = e.firstError
-            } catch { error = "Не удалось подтвердить код" }
+            } catch { self.error = "Не удалось подтвердить код" }
             submitting = false
         }
     }
@@ -94,8 +94,8 @@ struct RegisterConfirmView: View {
         Haptics.light()
         Task {
             do { try await Api.resendRegistrationCode(email: email); code = ""; error = ""; startCooldown() }
-            catch let e as ApiError { error = e.firstError }
-            catch { error = "Не удалось отправить код" }
+            catch let e as ApiError { self.error = e.firstError }
+            catch { self.error = "Не удалось отправить код" }
         }
     }
 }

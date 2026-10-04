@@ -72,7 +72,7 @@ struct ChatEditView: View {
     }
 
     private func save() {
-        guard !name.trimmed.isEmpty else { error = "Напишите название"; return }
+        guard !name.trimmed.isEmpty else { self.error = "Напишите название"; return }
         saving = true; error = ""
         Task {
             do {
@@ -82,7 +82,7 @@ struct ChatEditView: View {
                 router.pop()
             } catch let e as ApiError {
                 error = e.fieldError("title", "avatar") ?? e.message
-            } catch { error = "Не удалось сохранить" }
+            } catch { self.error = "Не удалось сохранить" }
             saving = false
         }
     }

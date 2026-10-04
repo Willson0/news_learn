@@ -86,7 +86,7 @@ enum Theme {
 extension View {
     func screenBackground(_ background: some ShapeStyle = Theme.bg) -> some View {
         self.frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(background.ignoresSafeArea())
+            .background(background, ignoresSafeAreaEdges: .all)
     }
 
     func screenBackground<B: View>(@ViewBuilder _ background: () -> B) -> some View {

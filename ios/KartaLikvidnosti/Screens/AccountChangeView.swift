@@ -63,8 +63,8 @@ struct AccountChangeView: View {
                 default: try await Api.changePassword(values["new"] ?? "", values["confirm"] ?? "", values["old"])
                 }
                 router.push(.accountSuccess(field: field))
-            } catch let e as ApiError { error = e.message }
-            catch { error = "Не удалось сохранить изменения" }
+            } catch let e as ApiError { self.error = e.message }
+            catch { self.error = "Не удалось сохранить изменения" }
         }
     }
 }
