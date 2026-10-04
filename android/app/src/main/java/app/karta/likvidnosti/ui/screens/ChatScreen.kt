@@ -388,7 +388,7 @@ private fun Composer(
                 )
             }
             Box(
-                modifier = Modifier.size(44.dp).clip(CircleShape).background(if (showSend) T.GradientAccent else T.SurfaceMuted).clickable { if (showSend) onSend() },
+                modifier = Modifier.size(44.dp).clip(CircleShape).then(if (showSend) Modifier.background(T.GradientAccent) else Modifier.background(T.SurfaceMuted)).clickable { if (showSend) onSend() },
                 contentAlignment = Alignment.Center,
             ) {
                 AppIcon(if (showSend) AppIcons.Forward else AppIcons.Mic, size = 22.dp, tint = Color.White)

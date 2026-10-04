@@ -34,7 +34,14 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build debug APK
-        run: ./gradlew :app:assembleDebug --stacktrace
+        run: |
+          set -o pipefail
+          ./gradlew :app:assembleDebug --console=plain 2>&1 | tee build.log || {
+            echo "::group::Kotlin compile errors"
+            grep -E "^e: |^w: |error:" build.log || true
+            echo "::endgroup::"
+            exit 1
+          }
 
       - name: Upload APK
         if: success()
