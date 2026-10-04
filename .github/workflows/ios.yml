@@ -14,15 +14,17 @@ on:
 
 jobs:
   build:
-    runs-on: macos-14
+    # macos-15 поставляется с Xcode 16 — он читает формат проекта,
+    # который генерирует актуальный XcodeGen (objectVersion 77).
+    runs-on: macos-15
     defaults:
       run:
         working-directory: ios
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select Xcode
-        run: sudo xcode-select -switch /Applications/Xcode.app
+      - name: Show Xcode version
+        run: xcodebuild -version
 
       - name: Install XcodeGen
         run: brew install xcodegen
