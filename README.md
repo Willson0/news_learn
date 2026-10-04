@@ -65,6 +65,11 @@ npm run dev              # http://localhost:5173
 В dev-режиме запросы к `/api` проксируются на бэкенд (`vite.config.js`). Разрешённый
 источник для CORS задаётся переменной `FRONTEND_URL` в `backend/.env`.
 
+## Деплой
+
+Продакшн-запуск одним Docker-контейнером с автоматическим HTTPS — см.
+[deploy/README.md](deploy/README.md).
+
 ## Экраны
 
 Вёрстка идёт по странице «Дизайн» в Figma, по одному экрану на PR:
@@ -84,5 +89,6 @@ npm run dev              # http://localhost:5173
 .
 ├── backend/    # Laravel API
 ├── frontend/   # Vue 3 + Vite
+├── deploy/     # Docker + Caddy для продакшна
 └── README.md
 ```
