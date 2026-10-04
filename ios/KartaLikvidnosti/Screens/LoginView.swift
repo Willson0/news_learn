@@ -53,7 +53,7 @@ struct LoginView: View {
             .padding(.top, 16)
             .padding(.bottom, 16)
         }
-        .screenBackground(authGradient)
+        .screenBackground { authGradient }
     }
 
     private func toggle(_ title: String, _ m: Mode) -> some View {

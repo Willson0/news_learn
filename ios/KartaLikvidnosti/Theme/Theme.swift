@@ -89,6 +89,11 @@ extension View {
             .background(background.ignoresSafeArea())
     }
 
+    func screenBackground<B: View>(@ViewBuilder _ background: () -> B) -> some View {
+        self.frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(background().ignoresSafeArea())
+    }
+
     func cardSurface(radius: CGFloat = Theme.radiusCard) -> some View {
         self.background(Theme.surface, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
     }

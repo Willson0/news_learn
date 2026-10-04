@@ -76,7 +76,7 @@ struct ChatEditView: View {
         saving = true; error = ""
         Task {
             do {
-                let avatar: (Data, String, String)? = previewData.map { ($0, "avatar.jpg", "image/jpeg") }
+                let avatar: (data: Data, filename: String, mime: String)? = previewData.map { (data: $0, filename: "avatar.jpg", mime: "image/jpeg") }
                 try await Api.updateChat(slug: chatId, title: name.trimmed, avatar: avatar)
                 Haptics.medium()
                 router.pop()

@@ -56,10 +56,10 @@ struct ChatView: View {
 
             composer
         }
-        .screenBackground(
+        .screenBackground {
             ZStack { Color(hex: "#1a1b1d")
                 RadialGradient(colors: [Color(hex: "#463746").opacity(0.4), .clear], center: .top, startRadius: 0, endRadius: 300) }
-        )
+        }
         .overlay { if photoViewer { photoViewerOverlay } }
         .overlay { if menuFor != nil { contextMenuOverlay } }
         .task { await load() }

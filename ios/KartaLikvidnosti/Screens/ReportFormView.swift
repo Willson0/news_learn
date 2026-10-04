@@ -222,8 +222,8 @@ struct ReportFormView: View {
 
         var payload = ReportFormPayload(title: title.trimmed, description: descriptionText.trimmed,
                                         chartUrl: chartUrl.trimmed, instrument: instrument ?? "")
-        payload.cover = coverData.map { ($0, coverName.isEmpty ? "cover.jpg" : coverName, "image/jpeg") }
-        payload.html = htmlData.map { ($0, htmlName.isEmpty ? "report.html" : htmlName, "text/html") }
+        payload.cover = coverData.map { (data: $0, filename: coverName.isEmpty ? "cover.jpg" : coverName, mime: "image/jpeg") }
+        payload.html = htmlData.map { (data: $0, filename: htmlName.isEmpty ? "report.html" : htmlName, mime: "text/html") }
         payload.removeCover = removeCover
         payload.removeHtml = removeHtml
 
