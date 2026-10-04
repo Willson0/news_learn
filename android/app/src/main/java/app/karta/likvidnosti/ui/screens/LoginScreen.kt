@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
@@ -120,11 +121,11 @@ fun LoginScreen(
                 Brush.verticalGradient(listOf(Color(0xFF1A1B1D), Color(0xFF1E1F21), Color(0xFF161719))),
             ),
     ) {
-        // Декоративное свечение сверху
+        // Декоративное свечение сверху (розовое пятно справа + тёплое слева)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .size(width = 1.dp, height = 220.dp)
+                .height(240.dp)
                 .background(
                     Brush.radialGradient(
                         0f to Color(0x59782850),

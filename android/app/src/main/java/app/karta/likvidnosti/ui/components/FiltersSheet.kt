@@ -135,18 +135,18 @@ fun FiltersSheet(
             ) {
                 FilterCard {
                     instruments.forEachIndexed { i, item ->
-                        InstrumentChip(item.label, item.on) {
+                        InstrumentChip(label = item.label, checked = item.on, onToggle = {
                             instruments[i] = item.copy(on = !item.on)
-                        }
+                        })
                     }
                 }
 
                 ScreenTitle("По статусу")
                 FilterCard {
                     statuses.forEachIndexed { i, item ->
-                        InstrumentChip(item.label, item.on) {
+                        InstrumentChip(label = item.label, checked = item.on, onToggle = {
                             statuses[i] = item.copy(on = !item.on)
-                        }
+                        })
                     }
                 }
 

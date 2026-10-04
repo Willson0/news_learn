@@ -38,7 +38,7 @@ fun fileUrl(path: String?): String? {
 }
 
 /**
- * Единый доступ к API (аналог frontend/src/api/*). Все методы suspend,
+ * Единый доступ к API (аналог frontend/src/api). Все методы suspend,
  * ошибки приходят как ApiException.
  */
 object Repository {
