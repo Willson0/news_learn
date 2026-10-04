@@ -46,7 +46,7 @@ object Repository {
 
     private fun applyToken(resp: TokenResponse): UserDto? {
         TokenStore.token = resp.token
-        Session.setUser(resp.user)
+        Session.setCurrent(resp.user)
         return resp.user
     }
 

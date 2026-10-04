@@ -18,7 +18,7 @@ object Session {
 
     val isAdmin: Boolean get() = user?.isAdmin == true
 
-    fun setUser(u: UserDto?) {
+    fun setCurrent(u: UserDto?) {
         user = u
         loaded = true
     }
