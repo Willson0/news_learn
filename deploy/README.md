@@ -82,6 +82,27 @@ docker compose -f deploy/docker-compose.yml up -d --build
 Открывайте приложение из Telegram: вход через Telegram работает только внутри
 него (подпись `initData` проверяется по `TELEGRAM_BOT_TOKEN`).
 
+## Если на сервере уже есть nginx
+
+Когда порты 80/443 уже заняты nginx с другими сайтами, контейнер запускается
+только на локальном порту `127.0.0.1:8095`, а HTTPS остаётся за nginx:
+
+```bash
+# в deploy/.env поле DOMAIN можно не трогать, APP_URL/FRONTEND_URL = https://ваш-домен
+ss -ltnp | grep 8095          # порт должен быть свободен (иначе APP_PORT=... в deploy/.env)
+docker compose -f deploy/docker-compose.nginx.yml up -d --build
+curl http://127.0.0.1:8095/api/ping
+```
+
+В nginx меняется только блок `server` нужного домена: `location /` проксирует на
+`http://127.0.0.1:8095` (пример в [nginx-site.conf](nginx-site.conf)). Перед правкой
+сделайте копию конфига, после правки — `nginx -t` и только потом
+`systemctl reload nginx`. При ошибке в конфиге `nginx -t` это покажет, и
+работающие сайты не пострадают.
+
+Для обновления и команд ниже используйте `deploy/docker-compose.nginx.yml`
+вместо `deploy/docker-compose.yml`.
+
 ## Админ-панель
 
 Главный администратор задан в `backend/config/admin.php` (`root_telegram_id`).
