@@ -44,8 +44,13 @@ struct MultipartPart {
 enum ApiClient {
     private static let decoder = JSONDecoder()
 
-    private static func makeRequest(_ method: String, _ path: String) -> URLRequest {
-        let url = URL(string: AppConfig.apiBaseURL + path.trimmingPrefixSlash())!
+    private static func makeRequest(_ method: String, _ path: String) throws -> URLRequest {
+        // API_BASE_URL задаётся при сборке и может быть введён с ошибкой
+        // (пробел, кириллица, пустая строка) — не роняем приложение, а отдаём
+        // понятную ошибку, как при отсутствии связи.
+        guard let url = URL(string: AppConfig.apiBaseURL + path.trimmingPrefixSlash()) else {
+            throw ApiError("Неверный адрес сервера", status: 0)
+        }
         var req = URLRequest(url: url)
         req.httpMethod = method
         req.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -119,8 +124,8 @@ enum ApiClient {
         try await send(makeRequest("DELETE", path), as: type)
     }
 
-    private static func jsonRequest(_ method: String, _ path: String, body: [String: Any?]?) -> URLRequest {
-        var req = makeRequest(method, path)
+    private static func jsonRequest(_ method: String, _ path: String, body: [String: Any?]?) throws -> URLRequest {
+        var req = try makeRequest(method, path)
         if let body = body {
             // Убираем nil-значения (как JSON.stringify опускает undefined).
             var clean: [String: Any] = [:]
@@ -134,7 +139,7 @@ enum ApiClient {
     // MARK: - Multipart (загрузка файлов)
 
     static func multipart<T: Decodable>(_ path: String, parts: [MultipartPart], as type: T.Type) async throws -> T {
-        var req = makeRequest("POST", path)
+        var req = try makeRequest("POST", path)
         let boundary = "Boundary-\(UUID().uuidString)"
         req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         var body = Data()
