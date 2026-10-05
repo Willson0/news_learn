@@ -1,0 +1,11 @@
+# XcodeGen генерирует проект из project.yml — не коммитим.
+*.xcodeproj
+*.xcworkspace
+
+# Xcode / сборка
+build/
+DerivedData/
+*.log
+.DS_Store
+xcuserdata/
+*.xcuserstate

@@ -1,0 +1,34 @@
+name: KartaLikvidnosti
+options:
+  bundleIdPrefix: app.karta
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    # Адрес бэкенда (Laravel). Должен оканчиваться на /api/.
+    # Переопределяется при сборке:  xcodebuild ... API_BASE_URL=https://host/api/
+    # В симуляторе хост ПК виден как обычный localhost/127.0.0.1.
+    API_BASE_URL: http://localhost:8000/api/
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    # Приложение собирается на CI без подписи.
+    CODE_SIGNING_REQUIRED: "NO"
+    CODE_SIGNING_ALLOWED: "NO"
+    CODE_SIGN_IDENTITY: ""
+
+targets:
+  KartaLikvidnosti:
+    type: application
+    platform: iOS
+    sources:
+      - path: KartaLikvidnosti
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.karta.likvidnosti
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        INFOPLIST_FILE: KartaLikvidnosti/Info.plist
+        ENABLE_USER_SCRIPT_SANDBOXING: "YES"
+        GENERATE_INFOPLIST_FILE: "NO"
