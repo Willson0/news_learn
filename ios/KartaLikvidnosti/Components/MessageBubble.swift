@@ -1,44 +1,55 @@
 import SwiftUI
 
-/// Модель сообщения в чате (объединяет серверные и демо-сообщения).
+/// Модель сообщения в чате (из MessageDto бэкенда, 1:1 с вебом и Android).
 struct ChatMessage: Identifiable {
     let id: Int
+    var userId: Int? = nil
     var mine: Bool = false
     var author: String? = nil
     var role: String? = nil
+    var avatarUrl: String? = nil
     var text: String? = nil
     var time: String? = nil
     var read: Bool = false
-    var toAuthor: Bool = false
+    var pinned: Bool = false
     var reply: Reply? = nil
-    var file: FileAttachment? = nil
-    var voice: Voice? = nil
-    var image: Bool = false
+    var image: ImageAtt? = nil
+    var file: FileAtt? = nil
+    var voice: VoiceAtt? = nil
     var reactions: [Reaction] = []
 
     struct Reply { let author: String; let text: String }
-    struct FileAttachment { let ext: String; let name: String; let size: String }
-    struct Voice { let duration: String }
-    struct Reaction: Identifiable { let id = UUID(); let emoji: String; let count: Int }
-
-    init(id: Int, mine: Bool = false, author: String? = nil, role: String? = nil,
-         text: String? = nil, time: String? = nil, read: Bool = false, toAuthor: Bool = false,
-         reply: Reply? = nil, file: FileAttachment? = nil, voice: Voice? = nil,
-         image: Bool = false, reactions: [Reaction] = []) {
-        self.id = id; self.mine = mine; self.author = author; self.role = role
-        self.text = text; self.time = time; self.read = read; self.toAuthor = toAuthor
-        self.reply = reply; self.file = file; self.voice = voice; self.image = image
-        self.reactions = reactions
-    }
+    struct ImageAtt { let url: URL?; let width: Int?; let height: Int? }
+    struct FileAtt { let url: URL?; let name: String; let ext: String; let size: String }
+    struct VoiceAtt { let url: URL?; let duration: String }
+    struct Reaction: Identifiable { var id: String { emoji }; let emoji: String; let count: Int; let mine: Bool }
 
     init(_ dto: MessageDto) {
-        self.init(id: dto.id, mine: dto.mine, author: dto.author, role: dto.role,
-                  text: dto.text, time: dto.time, read: true)
+        id = dto.id
+        userId = dto.userId
+        mine = dto.mine
+        author = dto.author
+        role = dto.role
+        avatarUrl = dto.avatarUrl
+        text = dto.text
+        time = dto.time
+        read = dto.read
+        pinned = dto.pinned
+        if let r = dto.reply { reply = Reply(author: r.author ?? "", text: r.text ?? "") }
+        if let i = dto.image { image = ImageAtt(url: fileURL(i.url), width: i.width, height: i.height) }
+        if let f = dto.file {
+            file = FileAtt(url: fileURL(f.url), name: f.name ?? "Файл", ext: f.ext ?? "", size: f.size ?? "")
+        }
+        if let v = dto.voice { voice = VoiceAtt(url: fileURL(v.url), duration: v.duration ?? "0:00") }
+        reactions = dto.reactions.map { Reaction(emoji: $0.emoji, count: $0.count, mine: $0.mine) }
     }
 }
 
 struct MessageBubble: View {
     let message: ChatMessage
+    var isPlaying: Bool = false
+    var onPlayVoice: (() -> Void)? = nil
+    var onOpenFile: (() -> Void)? = nil
 
     private var bars: [CGFloat] {
         let seed = Double(message.id == 0 ? 1 : message.id)
@@ -46,6 +57,15 @@ struct MessageBubble: View {
             let v = abs(sin(seed * 7.3 + Double(i) * 1.7))
             return CGFloat(4 + Int((v * 14).rounded()))
         }
+    }
+
+    private var imageSize: CGSize {
+        let maxW: CGFloat = 240
+        if let w = message.image?.width, let h = message.image?.height, w > 0, h > 0 {
+            let ratio = CGFloat(h) / CGFloat(w)
+            return CGSize(width: maxW, height: min(320, maxW * ratio))
+        }
+        return CGSize(width: maxW, height: 160)
     }
 
     var body: some View {
@@ -57,9 +77,6 @@ struct MessageBubble: View {
                         Text(role).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
                     }
                 }
-            }
-            if message.toAuthor {
-                Text("Автору").font(.system(size: Theme.fontBase, weight: .bold))
             }
             if let reply = message.reply {
                 VStack(alignment: .leading, spacing: 2) {
@@ -73,35 +90,47 @@ struct MessageBubble: View {
                 .overlay(Rectangle().fill(Color.white.opacity(0.5)).frame(width: 3), alignment: .leading)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
             }
-            if message.image {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(LinearGradient(colors: [Color(hex: "#cfc6d6"), Color(hex: "#a9adbd"), Color(hex: "#b7c2bf")],
-                                         startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .frame(width: 240, height: 150)
+            if let image = message.image {
+                AsyncImage(url: image.url) { phase in
+                    switch phase {
+                    case .success(let img): img.resizable().aspectRatio(contentMode: .fill)
+                    case .failure: placeholderImage
+                    default: ZStack { placeholderImage; ProgressView().tint(.white) }
+                    }
+                }
+                .frame(width: imageSize.width, height: imageSize.height)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
             }
             if let file = message.file {
-                HStack(spacing: 10) {
-                    Text(file.ext)
-                        .font(.system(size: Theme.fontSm, weight: .bold)).foregroundStyle(Color(hex: "#1a1b1d"))
-                        .frame(width: 38, height: 44).background(Color.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                    VStack(alignment: .leading) {
-                        Text(file.name).font(.system(size: Theme.fontBase))
-                        Text(file.size).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
+                Button { onOpenFile?() } label: {
+                    HStack(spacing: 10) {
+                        Text(file.ext.isEmpty ? "file" : file.ext)
+                            .font(.system(size: Theme.fontSm, weight: .bold)).foregroundStyle(Color(hex: "#1a1b1d"))
+                            .frame(width: 38, height: 44).background(Color.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        VStack(alignment: .leading) {
+                            Text(file.name).font(.system(size: Theme.fontBase)).lineLimit(1)
+                            Text(file.size).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
+                        }
+                        Icon(AppIcons.downloadCloud, size: 22, color: Theme.text)
                     }
-                    Icon(AppIcons.downloadCloud, size: 22, color: Theme.text)
+                    .foregroundStyle(Theme.text)
+                    .padding(.vertical, 6)
                 }
-                .padding(.vertical, 6)
+                .buttonStyle(.plain)
             }
             if let voice = message.voice {
                 HStack(spacing: 10) {
-                    ZStack {
-                        Circle().fill(Color(hex: "#4e8f10")).frame(width: 40, height: 40)
-                        Icon(AppIcons.play, size: 18, color: .white)
-                    }
+                    Button { onPlayVoice?() } label: {
+                        ZStack {
+                            Circle().fill(Color(hex: "#4e8f10")).frame(width: 40, height: 40)
+                            Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                                .font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
+                        }
+                    }.buttonStyle(.plain)
                     HStack(alignment: .center, spacing: 2) {
                         ForEach(Array(bars.enumerated()), id: \.offset) { _, h in
-                            Capsule().fill(Color.white.opacity(0.55)).frame(width: 2, height: h)
+                            Capsule().fill(Color.white.opacity(isPlaying ? 0.85 : 0.55)).frame(width: 2, height: h)
                         }
                     }
                     .frame(height: 24)
@@ -109,7 +138,7 @@ struct MessageBubble: View {
                 }
                 .padding(.vertical, 2)
             }
-            if let text = message.text {
+            if let text = message.text, !text.isEmpty {
                 Text(text).font(.system(size: Theme.fontBase)).foregroundStyle(Theme.text)
             }
             if !message.reactions.isEmpty {
@@ -120,7 +149,8 @@ struct MessageBubble: View {
                             Text("\(r.count)").font(.system(size: Theme.fontSm))
                         }
                         .padding(.vertical, 2).padding(.horizontal, 8)
-                        .background(Color.black.opacity(0.25))
+                        .background(r.mine ? AnyShapeStyle(Theme.green.opacity(0.35)) : AnyShapeStyle(Color.black.opacity(0.25)))
+                        .overlay(Capsule().stroke(r.mine ? Theme.green.opacity(0.8) : Color.clear, lineWidth: 1))
                         .clipShape(Capsule())
                     }
                 }
@@ -129,13 +159,11 @@ struct MessageBubble: View {
             if let time = message.time {
                 HStack(spacing: 6) {
                     Spacer(minLength: 0)
-                    Text(time).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
-                    if message.mine {
-                        ZStack(alignment: .trailing) {
-                            Capsule().fill(Color.white.opacity(0.25)).frame(width: 18, height: 10)
-                            Circle().fill(Color.white).frame(width: 8, height: 8)
-                        }
+                    if message.pinned {
+                        Icon(AppIcons.pin, size: 12, color: Theme.textSecondary)
                     }
+                    Text(time).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
+                    if message.mine { readMark }
                 }
             }
         }
@@ -146,9 +174,21 @@ struct MessageBubble: View {
         .clipShape(bubbleShape)
     }
 
+    private var placeholderImage: some View {
+        LinearGradient(colors: [Color(hex: "#cfc6d6"), Color(hex: "#a9adbd"), Color(hex: "#b7c2bf")],
+                       startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+
+    /// Отметка о прочтении: две галочки (прочитано) / одна (доставлено).
+    private var readMark: some View {
+        Image(systemName: message.read ? "checkmark.circle.fill" : "checkmark.circle")
+            .font(.system(size: 12, weight: .bold))
+            .foregroundStyle(message.read ? Color.white : Color.white.opacity(0.5))
+    }
+
     @ViewBuilder private var bubbleBackground: some View {
         if message.mine { Theme.gradientAccent }
-        else { Theme.surface.overlay(Color.white.opacity(0.0)) }
+        else { Theme.surface }
     }
 
     private var bubbleShape: UnevenRoundedRectangle {

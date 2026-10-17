@@ -32,9 +32,9 @@ enum Api {
         _ = try await ApiClient.post("auth/recovery", body: ["email": email], as: StatusResponse.self)
     }
 
-    static func resetPassword(email: String, password: String) async throws -> UserDto? {
+    static func resetPassword(email: String, password: String, code: String) async throws -> UserDto? {
         let r = try await ApiClient.post("auth/recovery/reset",
-            body: ["email": email, "password": password], as: TokenResponse.self)
+            body: ["email": email, "password": password, "code": code], as: TokenResponse.self)
         TokenStore.token = r.token
         return r.user
     }
@@ -126,8 +126,52 @@ enum Api {
         try await ApiClient.get("chats/\(slug)/messages", as: MessagesResponse.self)
     }
 
-    static func sendMessage(_ slug: String, body: String) async throws -> MessageDto? {
-        try await ApiClient.post("chats/\(slug)/messages", body: ["body": body], as: DataWrapper<MessageDto>.self).data
+    /// Отправка сообщения: текст и/или вложение (image|file|voice), опционально ответ.
+    static func sendMessage(_ slug: String, body: String? = nil, replyTo: Int? = nil,
+                            attachment: (data: Data, filename: String, mime: String)? = nil,
+                            kind: String? = nil, duration: Int? = nil) async throws -> MessageDto? {
+        if let a = attachment, let kind = kind {
+            var parts: [MultipartPart] = []
+            if let body = body, !body.isEmpty { parts.append(.text("body", body)) }
+            if let replyTo = replyTo { parts.append(.text("reply_to", String(replyTo))) }
+            parts.append(.text("kind", kind))
+            if let duration = duration { parts.append(.text("duration", String(duration))) }
+            parts.append(.file("attachment", filename: a.filename, mime: a.mime, data: a.data))
+            return try await ApiClient.multipart("chats/\(slug)/messages", parts: parts, as: DataWrapper<MessageDto>.self).data
+        }
+        var payload: [String: Any?] = ["body": body]
+        if let replyTo = replyTo { payload["reply_to"] = replyTo }
+        return try await ApiClient.post("chats/\(slug)/messages", body: payload, as: DataWrapper<MessageDto>.self).data
+    }
+
+    /// Поставить/снять реакцию — возвращает обновлённое сообщение.
+    static func reactMessage(_ slug: String, _ id: Int, emoji: String) async throws -> MessageDto? {
+        try await ApiClient.post("chats/\(slug)/messages/\(id)/react", body: ["emoji": emoji], as: DataWrapper<MessageDto>.self).data
+    }
+
+    /// Закрепить/открепить сообщение — возвращает текущую закреплённую цитату (или nil).
+    static func pinMessage(_ slug: String, _ id: Int) async throws -> MessageQuoteDto? {
+        try await ApiClient.post("chats/\(slug)/messages/\(id)/pin", as: PinResponse.self).pinned
+    }
+
+    static func deleteMessage(_ slug: String, _ id: Int) async throws {
+        _ = try await ApiClient.delete("chats/\(slug)/messages/\(id)", as: StatusResponse.self)
+    }
+
+    static func chatParticipants(_ slug: String) async throws -> [ParticipantDto] {
+        try await ApiClient.get("chats/\(slug)/participants", as: DataWrapper<[ParticipantDto]>.self).data ?? []
+    }
+
+    static func chatAttachments(_ slug: String, kind: String) async throws -> [ChatAttachmentDto] {
+        try await ApiClient.get("chats/\(slug)/attachments/\(kind)", as: DataWrapper<[ChatAttachmentDto]>.self).data ?? []
+    }
+
+    static func chatLinks(_ slug: String) async throws -> [ChatLinkDto] {
+        try await ApiClient.get("chats/\(slug)/attachments/link", as: DataWrapper<[ChatLinkDto]>.self).data ?? []
+    }
+
+    static func userProfile(_ id: String) async throws -> UserProfileDto? {
+        try await ApiClient.get("users/\(id)", as: DataWrapper<UserProfileDto>.self).data
     }
 
     // MARK: - Админка

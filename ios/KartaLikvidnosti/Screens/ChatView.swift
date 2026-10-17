@@ -1,23 +1,29 @@
 import SwiftUI
+import PhotosUI
+import UniformTypeIdentifiers
 
 struct ChatView: View {
     @EnvironmentObject var router: Router
+    @EnvironmentObject var session: Session
     let chatId: String
 
+    @StateObject private var audio = ChatAudio()
+
     @State private var draft = ""
-    @State private var serverMessages: [ChatMessage]? = nil
+    @State private var messages: [ChatMessage] = []
     @State private var serverChat: ChatItemDto? = nil
+    @State private var participants: [ParticipantDto] = []
+    @State private var pinned: MessageQuoteDto? = nil
     @State private var replyTo: ChatMessage? = nil
     @State private var menuFor: Int? = nil
     @State private var selectMode = false
     @State private var selected: Set<Int> = []
     @State private var attachOpen = false
-    @State private var recording = false
-    @State private var pinned: (title: String, text: String)? = ("Закрепленное сообщение", "Здравствуте! Помогите разобраться...")
-    @State private var photoViewer = false
+    @State private var photoItem: PhotosPickerItem? = nil
+    @State private var fileImporterOpen = false
+    @State private var photoViewerURL: URL? = nil
 
     private let reactions = ["👍", "❤️", "🔥", "😂", "😮", "😢", "🙏", "👏"]
-    private let mentionList = [("Владислав", "@Submetal"), ("Артем", "@Submetalllliiist"), ("Влад", "@Submetaliiist")]
 
     private var isDirect: Bool {
         chatId == "admin" || chatId.hasPrefix("dm-") || serverChat?.type == "direct"
@@ -25,28 +31,36 @@ struct ChatView: View {
 
     private var chatTitle: (title: String, subtitle: String) {
         if let c = serverChat { return (c.title, c.subtitle ?? "") }
-        return isDirect ? ("Игорь Гломозда", "Был в сети 1 час назад") : ("Нефть 12.12.27", "15 участников")
+        return ("Чат", "")
     }
 
-    private var messages: [ChatMessage] {
-        if let s = serverMessages { return s }
-        return isDirect ? Self.directMessages : Self.groupMessages
+    private var mentionQuery: String? {
+        guard let r = draft.range(of: #"@\S*$"#, options: .regularExpression) else { return nil }
+        return String(draft[r]).dropFirst().lowercased()
     }
 
-    private var showMentions: Bool { draft.contains("@") }
-    private var showSend: Bool { !draft.trimmed.isEmpty || replyTo != nil }
+    private var mentionMatches: [ParticipantDto] {
+        guard let q = mentionQuery else { return [] }
+        return participants.filter { p in
+            q.isEmpty
+                || (p.username?.lowercased().contains(q) ?? false)
+                || (p.name?.lowercased().contains(q) ?? false)
+        }
+    }
+
+    private var showSend: Bool { !draft.trimmed.isEmpty }
 
     var body: some View {
         VStack(spacing: 0) {
             header
-            if let pinned = pinned, !selectMode, !isDirect { pinnedBar(pinned) }
+            if let pinned = pinned, !selectMode { pinnedBar(pinned) }
 
             ScrollView(showsIndicators: false) {
                 LazyVStack(spacing: 10) {
                     HStack { Spacer()
                         Text("Сегодня").font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
                             .padding(.horizontal, 14).padding(.vertical, 4)
-                            .background(Theme.surfaceMuted).clipShape(Capsule())
+                            .liquidGlass()
                         Spacer() }
                         .padding(.vertical, 8)
                     ForEach(messages) { m in messageRow(m) }
@@ -60,8 +74,12 @@ struct ChatView: View {
             ZStack { Color(hex: "#1a1b1d")
                 RadialGradient(colors: [Color(hex: "#463746").opacity(0.4), .clear], center: .top, startRadius: 0, endRadius: 300) }
         }
-        .overlay { if photoViewer { photoViewerOverlay } }
+        .overlay { if photoViewerURL != nil { photoViewerOverlay } }
         .overlay { if menuFor != nil { contextMenuOverlay } }
+        .fileImporter(isPresented: $fileImporterOpen, allowedContentTypes: [.item], allowsMultipleSelection: false) { result in
+            handleFileImport(result)
+        }
+        .onChange(of: photoItem) { _ in loadPickedPhoto() }
         .task { await load() }
     }
 
@@ -80,19 +98,17 @@ struct ChatView: View {
                     Button { router.push(.chatInfo(id: chatId)) } label: {
                         VStack(spacing: 2) {
                             Text(chatTitle.title).font(.system(size: Theme.fontMd, weight: .bold))
-                            Text(chatTitle.subtitle).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
+                            if !chatTitle.subtitle.isEmpty {
+                                Text(chatTitle.subtitle).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
+                            }
                         }
                         .foregroundStyle(Theme.text)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8).padding(.horizontal, 16)
-                        .background(Theme.surfaceMuted)
-                        .overlay(Capsule().stroke(Color.white.opacity(0.08), lineWidth: 1))
-                        .clipShape(Capsule())
+                        .liquidGlass()
                     }.buttonStyle(.plain)
                     Button { router.push(.chatInfo(id: chatId)) } label: {
-                        Circle().fill(LinearGradient(colors: [Color(hex: "#cfc6d6"), Color(hex: "#a9adbd"), Color(hex: "#b7c2bf")],
-                                                     startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .frame(width: 48, height: 48)
+                        AvatarCircle(url: fileURL(serverChat?.avatarUrl), size: 48)
                     }.buttonStyle(.plain)
                 }
             }
@@ -100,14 +116,14 @@ struct ChatView: View {
         .padding(.horizontal, Theme.screenX).padding(.top, 12).padding(.bottom, 12)
     }
 
-    private func pinnedBar(_ p: (title: String, text: String)) -> some View {
+    private func pinnedBar(_ p: MessageQuoteDto) -> some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 0) {
-                Text(p.title).font(.system(size: Theme.fontSm, weight: .bold)).foregroundStyle(Color(hex: "#9ed06b"))
-                Text(p.text).font(.system(size: Theme.fontBase)).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                Text(p.author ?? "Закреплённое сообщение").font(.system(size: Theme.fontSm, weight: .bold)).foregroundStyle(Color(hex: "#9ed06b"))
+                Text(p.text ?? "").font(.system(size: Theme.fontBase)).foregroundStyle(Theme.textSecondary).lineLimit(1)
             }
             Spacer()
-            Button { pinned = nil } label: { Icon(AppIcons.close, size: 20, color: Theme.textSecondary) }.buttonStyle(.plain)
+            Button { unpin(p.id) } label: { Icon(AppIcons.close, size: 20, color: Theme.textSecondary) }.buttonStyle(.plain)
         }
         .padding(.vertical, 10).padding(.horizontal, 14)
         .background(Theme.surface)
@@ -128,12 +144,15 @@ struct ChatView: View {
                     .overlay { if selected.contains(m.id) { Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)).foregroundStyle(.white) } }
             }
             if !m.mine && !selectMode && !isDirect {
-                Button { router.push(.chatUser(id: chatId, uid: "artem")) } label: {
-                    Circle().fill(Color(hex: "#8a8a8a")).frame(width: 32, height: 32)
+                Button { openUser(m) } label: {
+                    AvatarCircle(url: fileURL(m.avatarUrl), size: 32)
                 }.buttonStyle(.plain)
             }
             if m.mine { Spacer(minLength: 0) }
-            MessageBubble(message: m)
+            MessageBubble(message: m,
+                          isPlaying: audio.playingId == m.id,
+                          onPlayVoice: { audio.togglePlay(id: m.id, url: m.voice?.url) },
+                          onOpenFile: { openURL(m.file?.url) })
                 .onTapGesture { onBubble(m) }
             if !m.mine { Spacer(minLength: 0) }
         }
@@ -142,8 +161,13 @@ struct ChatView: View {
 
     private func onBubble(_ m: ChatMessage) {
         if selectMode { toggleSelect(m.id) }
-        else if m.image { photoViewer = true }
+        else if let url = m.image?.url { photoViewerURL = url }
         else { menuFor = m.id }
+    }
+
+    private func openUser(_ m: ChatMessage) {
+        guard let uid = m.userId else { return }
+        router.push(.chatUser(id: chatId, uid: String(uid)))
     }
 
     // MARK: - Composer
@@ -151,24 +175,24 @@ struct ChatView: View {
     @ViewBuilder private var composer: some View {
         if selectMode {
             HStack {
-                roundButton(AppIcons.trash, danger: true) {}
+                roundButton(AppIcons.trash, danger: true) { deleteSelected() }
                 Spacer()
-                roundButton(AppIcons.forward) {}
+                Text("\(selected.count)").foregroundStyle(Theme.textSecondary)
             }
             .padding(.horizontal, Theme.screenX).padding(.top, 10).padding(.bottom, 14)
-        } else if recording {
+        } else if audio.recording {
             HStack(spacing: 10) {
-                roundButton(AppIcons.trash, danger: true) { recording = false }
+                roundButton(AppIcons.trash, danger: true) { audio.cancelRecording() }
                 HStack {
                     Circle().fill(Color(hex: "#e23b3b")).frame(width: 9, height: 9)
-                    Text("00:03").font(.system(size: Theme.fontBase)).foregroundStyle(Theme.text)
+                    Text(recordClock).font(.system(size: Theme.fontBase)).foregroundStyle(Theme.text)
                     Spacer()
-                    Text("Отмена").font(.system(size: Theme.fontBase)).foregroundStyle(Theme.textSecondary)
+                    Text("Идёт запись…").font(.system(size: Theme.fontBase)).foregroundStyle(Theme.textSecondary)
                 }
                 .padding(.horizontal, 16).frame(height: 48)
-                .background(Theme.surfaceMuted).overlay(Capsule().stroke(Color.white.opacity(0.08), lineWidth: 1)).clipShape(Capsule())
-                Button { recording = false } label: {
-                    Icon(AppIcons.plus, size: 22, color: .white).rotationEffect(.degrees(45))
+                .liquidGlass()
+                Button { stopAndSendVoice() } label: {
+                    Image(systemName: "arrow.up").font(.system(size: 18, weight: .semibold)).foregroundStyle(.white)
                         .frame(width: 48, height: 48).background(Theme.greenSend).clipShape(Circle())
                 }.buttonStyle(.plain)
             }
@@ -176,13 +200,12 @@ struct ChatView: View {
         } else {
             VStack(spacing: 0) {
                 if attachOpen { attachMenu }
-                if showMentions { mentionsMenu }
+                if !mentionMatches.isEmpty { mentionsMenu }
                 if let reply = replyTo { replyStrip(reply) }
                 HStack(spacing: 10) {
-                    Button { attachOpen.toggle() } label: {
+                    Button { withAnimation { attachOpen.toggle() } } label: {
                         Icon(AppIcons.plus, size: 22, color: Theme.text).rotationEffect(.degrees(attachOpen ? 45 : 0))
-                            .frame(width: 48, height: 48).background(Theme.surfaceMuted)
-                            .overlay(Circle().stroke(Color.white.opacity(0.08), lineWidth: 1)).clipShape(Circle())
+                            .frame(width: 48, height: 48).liquidGlass()
                     }.buttonStyle(.plain)
                     HStack {
                         TextField("", text: $draft, prompt: Text("Напишите что-нибудь").foregroundColor(Theme.textMuted))
@@ -190,17 +213,16 @@ struct ChatView: View {
                             .onSubmit { send() }
                     }
                     .padding(.horizontal, 16).frame(height: 48)
-                    .background(Theme.surfaceMuted).overlay(Capsule().stroke(Color.white.opacity(0.08), lineWidth: 1)).clipShape(Capsule())
+                    .liquidGlass()
                     if showSend {
                         Button { send() } label: {
                             Image(systemName: "arrow.right").font(.system(size: 18, weight: .semibold)).foregroundStyle(.white)
                                 .frame(width: 48, height: 48).background(Theme.greenSend).clipShape(Circle())
                         }.buttonStyle(.plain)
                     } else {
-                        Button { recording = true } label: {
+                        Button { startVoice() } label: {
                             Icon(AppIcons.mic, size: 22, color: Theme.text)
-                                .frame(width: 48, height: 48).background(Theme.surfaceMuted)
-                                .overlay(Circle().stroke(Color.white.opacity(0.08), lineWidth: 1)).clipShape(Circle())
+                                .frame(width: 48, height: 48).liquidGlass()
                         }.buttonStyle(.plain)
                     }
                 }
@@ -211,30 +233,32 @@ struct ChatView: View {
 
     private var attachMenu: some View {
         VStack(alignment: .leading, spacing: 0) {
-            attachItem("Изображение", system: "photo") { attachOpen = false }
-            attachItem("Файл", system: "doc") { attachOpen = false }
+            PhotosPicker(selection: $photoItem, matching: .images) {
+                attachLabel("Изображение", system: "photo")
+            }
+            Button { attachOpen = false; fileImporterOpen = true } label: {
+                attachLabel("Файл", system: "doc")
+            }.buttonStyle(.plain)
         }
         .padding(6).background(Color(hex: "#2c2d30")).clipShape(RoundedRectangle(cornerRadius: 16))
         .frame(maxWidth: .infinity, alignment: .leading).padding(.bottom, 10)
     }
 
-    private func attachItem(_ title: String, system: String, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: system).frame(width: 22, height: 22)
-                Text(title).font(.system(size: Theme.fontMd))
-            }.foregroundStyle(Theme.text).padding(10)
-        }.buttonStyle(.plain)
+    private func attachLabel(_ title: String, system: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: system).frame(width: 22, height: 22)
+            Text(title).font(.system(size: Theme.fontMd))
+        }.foregroundStyle(Theme.text).padding(10)
     }
 
     private var mentionsMenu: some View {
         VStack(spacing: 0) {
-            ForEach(mentionList, id: \.1) { u in
-                Button { draft = draft.replacingOccurrences(of: #"@\S*$"#, with: u.1 + " ", options: .regularExpression) } label: {
+            ForEach(mentionMatches) { u in
+                Button { applyMention(u) } label: {
                     HStack(spacing: 10) {
-                        Circle().fill(Color(hex: "#8a8a8a")).frame(width: 28, height: 28)
-                        Text(u.0).font(.system(size: Theme.fontBase, weight: .bold))
-                        Text(u.1).font(.system(size: Theme.fontBase)).foregroundStyle(Theme.textSecondary)
+                        AvatarCircle(url: fileURL(u.avatarUrl), size: 28)
+                        Text(u.name ?? "").font(.system(size: Theme.fontBase, weight: .bold))
+                        if let un = u.username { Text(un).font(.system(size: Theme.fontBase)).foregroundStyle(Theme.textSecondary) }
                         Spacer()
                     }.foregroundStyle(Theme.text).padding(.horizontal, 14).padding(.vertical, 10)
                 }.buttonStyle(.plain)
@@ -248,7 +272,7 @@ struct ChatView: View {
             Icon(AppIcons.reply, size: 18, color: Theme.textSecondary)
             VStack(alignment: .leading) {
                 Text(reply.author ?? "Вы").font(.system(size: Theme.fontSm, weight: .bold))
-                Text(reply.text ?? "Сообщение").font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                Text(reply.text ?? replyPreview(reply)).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary).lineLimit(1)
             }
             Spacer()
             Button { replyTo = nil } label: { Icon(AppIcons.close, size: 18, color: Theme.textSecondary) }.buttonStyle(.plain)
@@ -260,8 +284,7 @@ struct ChatView: View {
     private func roundButton(_ icon: IconDef, danger: Bool = false, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Icon(icon, size: 22, color: danger ? Theme.error : Theme.text)
-                .frame(width: 52, height: 52).background(Theme.surfaceMuted)
-                .overlay(Circle().stroke(Color.white.opacity(0.08), lineWidth: 1)).clipShape(Circle())
+                .frame(width: 52, height: 52).liquidGlass()
         }.buttonStyle(.plain)
     }
 
@@ -270,17 +293,25 @@ struct ChatView: View {
     private var photoViewerOverlay: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Button { photoViewer = false } label: {
-                    Icon(AppIcons.back, size: 22, color: Theme.text).frame(width: 42, height: 42).background(Theme.surfaceMuted).clipShape(Circle())
+                Button { photoViewerURL = nil } label: {
+                    Icon(AppIcons.back, size: 22, color: Theme.text).frame(width: 42, height: 42).liquidGlass()
                 }.buttonStyle(.plain)
-                VStack { Text("Вы").font(.system(size: Theme.fontMd, weight: .bold)); Text("Сегодня в 1:42").font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary) }
-                    .frame(maxWidth: .infinity)
-                Image(systemName: "ellipsis").foregroundStyle(Theme.text).frame(width: 42, height: 42).background(Theme.surfaceMuted).clipShape(Circle())
+                Spacer()
+                Button { openURL(photoViewerURL) } label: {
+                    Icon(AppIcons.downloadCloud, size: 22, color: Theme.text).frame(width: 42, height: 42).liquidGlass()
+                }.buttonStyle(.plain)
             }
             .padding(.horizontal, Theme.screenX).padding(.top, 12).padding(.bottom, 12)
-            Color(hex: "#d4d4d4").frame(maxWidth: .infinity, maxHeight: .infinity)
-            HStack { roundButton(AppIcons.forward) {}; Spacer(); roundButton(AppIcons.trash, danger: true) {} }
-                .padding(.horizontal, Theme.screenX).padding(.vertical, 14)
+            Spacer()
+            AsyncImage(url: photoViewerURL) { phase in
+                switch phase {
+                case .success(let img): img.resizable().aspectRatio(contentMode: .fit)
+                case .failure: Image(systemName: "photo").font(.system(size: 60)).foregroundStyle(.white.opacity(0.3))
+                default: ProgressView().tint(.white)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            Spacer()
         }
         .background(Color.black.ignoresSafeArea())
     }
@@ -291,17 +322,20 @@ struct ChatView: View {
             Color.black.opacity(0.6).ignoresSafeArea().onTapGesture { menuFor = nil }
             VStack(spacing: 12) {
                 HStack {
-                    ForEach(reactions, id: \.self) { r in Text(r).font(.system(size: 22)); if r != reactions.last { Spacer() } }
+                    ForEach(reactions, id: \.self) { r in
+                        Button { react(menuFor, r) } label: { Text(r).font(.system(size: 22)) }.buttonStyle(.plain)
+                        if r != reactions.last { Spacer() }
+                    }
                 }
-                .padding(.horizontal, 14).padding(.vertical, 10).background(Color(hex: "#2c2d30")).clipShape(Capsule())
+                .padding(.horizontal, 14).padding(.vertical, 10).liquidGlass()
                 if let m = m { HStack { MessageBubble(message: m); Spacer() } }
                 VStack(spacing: 0) {
                     menuItem("Ответить", AppIcons.reply) { replyTo = m; menuFor = nil }
-                    menuItem("Скопировать", AppIcons.copy) { menuFor = nil }
-                    menuItem("Закрепить", AppIcons.pin) { menuFor = nil }
-                    menuItem("Копировать ссылку", AppIcons.link) { menuFor = nil }
-                    menuItem("Пожаловаться", AppIcons.report) { menuFor = nil }
-                    menuItem("Удалить", AppIcons.trash, danger: true) { menuFor = nil }
+                    menuItem("Скопировать", AppIcons.copy) { copyText(m); menuFor = nil }
+                    menuItem(m?.pinned == true ? "Открепить" : "Закрепить", AppIcons.pin) { if let id = menuFor { togglePin(id) } }
+                    if let m = m, canDelete(m) {
+                        menuItem("Удалить", AppIcons.trash, danger: true) { delete(m.id) }
+                    }
                     Rectangle().fill(Color.white.opacity(0.1)).frame(height: 1).padding(.horizontal, 8).padding(.vertical, 4)
                     menuItem("Выбрать", AppIcons.checkSquare) { enterSelect() }
                 }
@@ -321,68 +355,171 @@ struct ChatView: View {
         }.buttonStyle(.plain)
     }
 
-    // MARK: - Actions
+    // MARK: - Select mode
 
     private func enterSelect() { selectMode = true; if let id = menuFor { selected = [id] }; menuFor = nil }
     private func exitSelect() { selectMode = false; selected = [] }
     private func toggleSelect(_ id: Int) { if selected.contains(id) { selected.remove(id) } else { selected.insert(id) } }
 
-    private func send() {
-        guard showSend else { return }
-        let body = draft.trimmed
-        draft = ""; replyTo = nil
-        guard !body.isEmpty else { return }
-        if serverMessages != nil {
-            Task {
-                if let message = try? await Api.sendMessage(chatId, body: body) {
-                    serverMessages?.append(ChatMessage(message))
+    private func canDelete(_ m: ChatMessage) -> Bool { m.mine || session.isAdmin }
+
+    private func deleteSelected() {
+        let ids = selected
+        exitSelect()
+        Task { @MainActor in
+            for id in ids {
+                if let m = messages.first(where: { $0.id == id }), canDelete(m) {
+                    try? await Api.deleteMessage(chatId, id)
+                    messages.removeAll { $0.id == id }
+                    if pinned?.id == id { pinned = nil }
                 }
             }
         }
     }
 
-    private func load() async {
-        do {
-            let resp = try await Api.fetchMessages(chatId)
-            serverChat = resp.chat
-            serverMessages = resp.data.map(ChatMessage.init)
-        } catch {
-            serverMessages = nil; serverChat = nil
+    // MARK: - Actions
+
+    private var recordClock: String {
+        String(format: "%d:%02d", audio.elapsed / 60, audio.elapsed % 60)
+    }
+
+    private func send() {
+        let body = draft.trimmed
+        guard !body.isEmpty else { return }
+        draft = ""
+        let reply = replyTo?.id
+        replyTo = nil
+        Task { @MainActor in
+            if let dto = try? await Api.sendMessage(chatId, body: body, replyTo: reply) {
+                messages.append(ChatMessage(dto))
+            }
         }
     }
 
-    // MARK: - Demo data
+    private func sendAttachment(data: Data, filename: String, mime: String, kind: String, duration: Int? = nil) {
+        let reply = replyTo?.id
+        replyTo = nil
+        attachOpen = false
+        Task { @MainActor in
+            if let dto = try? await Api.sendMessage(chatId, replyTo: reply, attachment: (data, filename, mime), kind: kind, duration: duration) {
+                messages.append(ChatMessage(dto))
+            }
+        }
+    }
 
-    static let groupMessages: [ChatMessage] = [
-        ChatMessage(id: 1, author: "Артем", role: "Участник", text: "Здравствуте! Помогите разобраться с графиком", time: "20:41"),
-        ChatMessage(id: 2, mine: true, text: "А то никак понять не могу", time: "20:42", read: true),
-        ChatMessage(id: 3, author: "Владимир", role: "Участник",
-                    text: "Ага, сам не понял, но видно, что очень хорошо сделан отчет и много чего было все равно было объяснено русским языком",
-                    time: "20:42", reply: .init(author: "Алексей", text: "Я сам немного не оче..."),
-                    reactions: [.init(emoji: "👍", count: 2)]),
-        ChatMessage(id: 4, mine: true, time: "20:42", read: true, voice: .init(duration: "10:42")),
-        ChatMessage(id: 5, author: "Артем", role: "Участник", time: "20:42", voice: .init(duration: "00:42")),
-        ChatMessage(id: 6, author: "Артем", role: "Участник", text: "Здравствуте! Помогите разобраться с графиком",
-                    time: "20:42", file: .init(ext: "zip", name: "zip file for windows", size: "1.9 мб")),
-        ChatMessage(id: 7, mine: true, time: "20:42", read: true, image: true),
-        ChatMessage(id: 8, mine: true, text: "«Как долго вы делали этот отчет?»", time: "20:42", read: true, toAuthor: true),
-    ]
+    private func startVoice() {
+        audio.requestMicPermission { granted in
+            guard granted else { return }
+            Task { @MainActor in _ = audio.startRecording() }
+        }
+    }
 
-    static let directMessages: [ChatMessage] = [
-        ChatMessage(id: 1, text: "Здравствуйте! Чем могу помочь?", time: "16:30"),
-        ChatMessage(id: 2, mine: true, text: "Здравствуйте! Не получается оплатить подписку", time: "16:31", read: true),
-        ChatMessage(id: 3, text: "Подскажите, пожалуйста, какой способ оплаты выбираете?", time: "16:31"),
-        ChatMessage(id: 4, mine: true, text: "СБП", time: "16:32", read: true),
-        ChatMessage(id: 5, text: "Что интересует?", time: "16:32"),
-    ]
+    private func stopAndSendVoice() {
+        if let result = audio.stopRecording() {
+            sendAttachment(data: result.data, filename: "voice.m4a", mime: "audio/m4a", kind: "voice", duration: result.duration)
+        }
+    }
+
+    private func react(_ id: Int?, _ emoji: String) {
+        guard let id = id else { return }
+        menuFor = nil
+        Task { @MainActor in
+            if let dto = try? await Api.reactMessage(chatId, id, emoji: emoji) { replaceMessage(dto) }
+        }
+    }
+
+    private func togglePin(_ id: Int) {
+        menuFor = nil
+        Task { @MainActor in
+            pinned = try? await Api.pinMessage(chatId, id)
+            await reloadMessages()
+        }
+    }
+
+    private func unpin(_ id: Int) {
+        Task { @MainActor in
+            pinned = try? await Api.pinMessage(chatId, id)
+            await reloadMessages()
+        }
+    }
+
+    private func delete(_ id: Int) {
+        menuFor = nil
+        Task { @MainActor in
+            try? await Api.deleteMessage(chatId, id)
+            messages.removeAll { $0.id == id }
+            if pinned?.id == id { pinned = nil }
+        }
+    }
+
+    private func copyText(_ m: ChatMessage?) {
+        UIPasteboard.general.string = m?.text ?? ""
+    }
+
+    private func replaceMessage(_ dto: MessageDto) {
+        if let idx = messages.firstIndex(where: { $0.id == dto.id }) { messages[idx] = ChatMessage(dto) }
+    }
+
+    private func applyMention(_ u: ParticipantDto) {
+        let handle = u.username ?? ("@" + (u.name ?? ""))
+        draft = draft.replacingOccurrences(of: #"@\S*$"#, with: handle + " ", options: .regularExpression)
+    }
+
+    private func replyPreview(_ m: ChatMessage) -> String {
+        if m.image != nil { return "Фото" }
+        if m.voice != nil { return "Голосовое сообщение" }
+        if let f = m.file { return f.name }
+        return "Сообщение"
+    }
+
+    private func openURL(_ url: URL?) {
+        guard let url = url else { return }
+        UIApplication.shared.open(url)
+    }
+
+    // MARK: - Pickers
+
+    private func loadPickedPhoto() {
+        guard let item = photoItem else { return }
+        attachOpen = false
+        Task { @MainActor in
+            if let data = try? await item.loadTransferable(type: Data.self) {
+                sendAttachment(data: data, filename: "photo.jpg", mime: "image/jpeg", kind: "image")
+            }
+            photoItem = nil
+        }
+    }
+
+    private func handleFileImport(_ result: Result<[URL], Error>) {
+        guard case .success(let urls) = result, let url = urls.first else { return }
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+        guard let data = try? Data(contentsOf: url) else { return }
+        let mime = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+        sendAttachment(data: data, filename: url.lastPathComponent, mime: mime, kind: "file")
+    }
+
+    // MARK: - Loading
+
+    private func load() async {
+        await reloadMessages()
+        if let parts = try? await Api.chatParticipants(chatId) { participants = parts }
+    }
+
+    private func reloadMessages() async {
+        do {
+            let resp = try await Api.fetchMessages(chatId)
+            serverChat = resp.chat
+            pinned = resp.pinned
+            messages = resp.data.map(ChatMessage.init)
+        } catch {}
+    }
 }
 
 private extension View {
     func pill() -> some View {
         self.font(.system(size: Theme.fontBase)).foregroundStyle(Theme.text)
             .padding(.horizontal, 18).padding(.vertical, 10)
-            .background(Theme.surfaceMuted)
-            .overlay(Capsule().stroke(Color.white.opacity(0.08), lineWidth: 1))
-            .clipShape(Capsule())
+            .liquidGlass()
     }
 }

@@ -97,4 +97,44 @@ extension View {
     func cardSurface(radius: CGFloat = Theme.radiusCard) -> some View {
         self.background(Theme.surface, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
     }
+
+    /// Нативное «жидкое стекло» (iOS-навигация) в форме капсулы: размытый
+    /// системный материал, тонкая светлая кромка-блик сверху и мягкая тень.
+    /// На iOS 16 имитируется родными материалами SwiftUI — близко к Liquid Glass iOS 26.
+    func liquidGlass(strong: Bool = false) -> some View {
+        modifier(LiquidGlass(shape: Capsule(), strong: strong))
+    }
+
+    /// «Жидкое стекло» в произвольной форме (скруглённый прямоугольник и т.п.).
+    func liquidGlass<S: Shape>(_ shape: S, strong: Bool = false) -> some View {
+        modifier(LiquidGlass(shape: shape, strong: strong))
+    }
+}
+
+/// Модификатор «жидкого стекла» для навигационного chrome.
+struct LiquidGlass<S: Shape>: ViewModifier {
+    let shape: S
+    var strong: Bool = false
+
+    func body(content: Content) -> some View {
+        content
+            .background(strong ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(.ultraThinMaterial), in: shape)
+            .overlay(
+                shape.fill(
+                    LinearGradient(colors: [Color.white.opacity(0.12), Color.white.opacity(0.0)],
+                                   startPoint: .top, endPoint: .bottom)
+                )
+                .allowsHitTesting(false)
+            )
+            .overlay(
+                shape.stroke(
+                    LinearGradient(colors: [Color.white.opacity(0.35), Color.white.opacity(0.06)],
+                                   startPoint: .top, endPoint: .bottom),
+                    lineWidth: 1
+                )
+                .allowsHitTesting(false)
+            )
+            .environment(\.colorScheme, .dark)
+            .shadow(color: .black.opacity(0.28), radius: 14, y: 8)
+    }
 }

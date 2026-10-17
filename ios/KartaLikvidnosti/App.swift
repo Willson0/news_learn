@@ -17,11 +17,13 @@ struct KartaLikvidnostiApp: App {
         }
     }
 
-    /// Тёмная прозрачная навигационная панель (кастомный chrome макета).
+    /// Навигационная панель в стиле «жидкое стекло»: родной системный блюр
+    /// (как Liquid Glass в iOS 26), тёмная тема, без разделителя.
     private static func configureAppearance() {
         let appearance = UINavigationBarAppearance()
-        appearance.configureWithTransparentBackground()
-        appearance.backgroundColor = UIColor(Theme.bg)
+        appearance.configureWithDefaultBackground()
+        appearance.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterialDark)
+        appearance.backgroundColor = UIColor(Theme.bg).withAlphaComponent(0.3)
         appearance.shadowColor = .clear
         appearance.titleTextAttributes = [.foregroundColor: UIColor.white]
         let back = UIBarButtonItemAppearance()

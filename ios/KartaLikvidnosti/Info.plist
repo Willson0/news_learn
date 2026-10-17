@@ -25,6 +25,9 @@
 	<!-- Базовый адрес REST API (см. project.yml → API_BASE_URL). -->
 	<key>API_BASE_URL</key>
 	<string>$(API_BASE_URL)</string>
+	<!-- Запись голосовых сообщений в чате. -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Доступ к микрофону нужен для записи голосовых сообщений в чате.</string>
 	<!-- Тёмная тема макета — приложение всегда в dark. -->
 	<key>UIUserInterfaceStyle</key>
 	<string>Dark</string>

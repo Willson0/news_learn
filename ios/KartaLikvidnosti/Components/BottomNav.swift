@@ -33,8 +33,7 @@ struct BottomNav: View {
                 }
             }
             .padding(12)
-            .background(.ultraThinMaterial, in: Capsule())
-            .environment(\.colorScheme, .dark)
+            .liquidGlass()
 
             if showCreate {
                 Button {

@@ -244,37 +244,237 @@ struct ChatItemDto: Decodable, Identifiable {
 
 struct MessagesResponse: Decodable {
     let chat: ChatItemDto?
+    let pinned: MessageQuoteDto?
     let data: [MessageDto]
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         chat = try c.decodeIfPresent(ChatItemDto.self, forKey: .chat)
+        pinned = try c.decodeIfPresent(MessageQuoteDto.self, forKey: .pinned)
         data = (try c.decodeIfPresent([MessageDto].self, forKey: .data)) ?? []
     }
-    enum CodingKeys: String, CodingKey { case chat, data }
+    enum CodingKeys: String, CodingKey { case chat, pinned, data }
+}
+
+/// Ответ на закреп/открепление сообщения.
+struct PinResponse: Decodable {
+    let pinned: MessageQuoteDto?
+}
+
+/// Короткая цитата сообщения (ответ / закреп).
+struct MessageQuoteDto: Decodable {
+    let id: Int
+    let author: String?
+    let text: String?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = (try c.decodeIfPresent(Int.self, forKey: .id)) ?? 0
+        author = try c.decodeIfPresent(String.self, forKey: .author)
+        text = try c.decodeIfPresent(String.self, forKey: .text)
+    }
+    enum CodingKeys: String, CodingKey { case id, author, text }
+}
+
+struct MessageImageDto: Decodable {
+    let url: String?
+    let width: Int?
+    let height: Int?
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        url = try c.decodeIfPresent(String.self, forKey: .url)
+        width = try c.decodeIfPresent(Int.self, forKey: .width)
+        height = try c.decodeIfPresent(Int.self, forKey: .height)
+    }
+    enum CodingKeys: String, CodingKey { case url, width, height }
+}
+
+struct MessageFileDto: Decodable {
+    let url: String?
+    let name: String?
+    let ext: String?
+    let size: String?
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        url = try c.decodeIfPresent(String.self, forKey: .url)
+        name = try c.decodeIfPresent(String.self, forKey: .name)
+        ext = try c.decodeIfPresent(String.self, forKey: .ext)
+        size = try c.decodeIfPresent(String.self, forKey: .size)
+    }
+    enum CodingKeys: String, CodingKey { case url, name, ext, size }
+}
+
+struct MessageVoiceDto: Decodable {
+    let url: String?
+    let duration: String?
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        url = try c.decodeIfPresent(String.self, forKey: .url)
+        duration = try c.decodeIfPresent(String.self, forKey: .duration)
+    }
+    enum CodingKeys: String, CodingKey { case url, duration }
+}
+
+struct ReactionDto: Decodable {
+    let emoji: String
+    let count: Int
+    let mine: Bool
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        emoji = (try c.decodeIfPresent(String.self, forKey: .emoji)) ?? ""
+        count = (try c.decodeIfPresent(Int.self, forKey: .count)) ?? 0
+        mine = (try c.decodeIfPresent(Bool.self, forKey: .mine)) ?? false
+    }
+    enum CodingKeys: String, CodingKey { case emoji, count, mine }
 }
 
 struct MessageDto: Decodable, Identifiable {
     let id: Int
+    let userId: Int?
     let mine: Bool
     let author: String?
     let role: String?
+    let avatarUrl: String?
     let text: String?
     let time: String?
+    let createdAt: String?
+    let reply: MessageQuoteDto?
+    let image: MessageImageDto?
+    let file: MessageFileDto?
+    let voice: MessageVoiceDto?
+    let reactions: [ReactionDto]
+    let pinned: Bool
+    let read: Bool
 
-    init(id: Int, mine: Bool, author: String? = nil, role: String? = nil, text: String? = nil, time: String? = nil) {
-        self.id = id; self.mine = mine; self.author = author; self.role = role; self.text = text; self.time = time
-    }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = (try c.decodeIfPresent(Int.self, forKey: .id)) ?? 0
+        userId = try c.decodeIfPresent(Int.self, forKey: .userId)
         mine = (try c.decodeIfPresent(Bool.self, forKey: .mine)) ?? false
         author = try c.decodeIfPresent(String.self, forKey: .author)
         role = try c.decodeIfPresent(String.self, forKey: .role)
+        avatarUrl = try c.decodeIfPresent(String.self, forKey: .avatarUrl)
         text = try c.decodeIfPresent(String.self, forKey: .text)
         time = try c.decodeIfPresent(String.self, forKey: .time)
+        createdAt = try c.decodeIfPresent(String.self, forKey: .createdAt)
+        reply = try c.decodeIfPresent(MessageQuoteDto.self, forKey: .reply)
+        image = try c.decodeIfPresent(MessageImageDto.self, forKey: .image)
+        file = try c.decodeIfPresent(MessageFileDto.self, forKey: .file)
+        voice = try c.decodeIfPresent(MessageVoiceDto.self, forKey: .voice)
+        reactions = (try c.decodeIfPresent([ReactionDto].self, forKey: .reactions)) ?? []
+        pinned = (try c.decodeIfPresent(Bool.self, forKey: .pinned)) ?? false
+        read = (try c.decodeIfPresent(Bool.self, forKey: .read)) ?? false
     }
-    enum CodingKeys: String, CodingKey { case id, mine, author, role, text, time }
+    enum CodingKeys: String, CodingKey {
+        case id, mine, author, role, text, time, reply, image, file, voice, reactions, pinned, read
+        case userId = "user_id"
+        case avatarUrl = "avatar_url"
+        case createdAt = "created_at"
+    }
+}
+
+/// Участник чата (вкладка «Участники», упоминания).
+struct ParticipantDto: Decodable, Identifiable {
+    let id: Int
+    let name: String?
+    let username: String?
+    let avatarUrl: String?
+    let role: String?
+    let seen: String?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = (try c.decodeIfPresent(Int.self, forKey: .id)) ?? 0
+        name = try c.decodeIfPresent(String.self, forKey: .name)
+        username = try c.decodeIfPresent(String.self, forKey: .username)
+        avatarUrl = try c.decodeIfPresent(String.self, forKey: .avatarUrl)
+        role = try c.decodeIfPresent(String.self, forKey: .role)
+        seen = try c.decodeIfPresent(String.self, forKey: .seen)
+    }
+    enum CodingKeys: String, CodingKey {
+        case id, name, username, role, seen
+        case avatarUrl = "avatar_url"
+    }
+}
+
+/// Вложение чата (вкладки Медиа/Голосовые/Файлы инфо-экрана).
+struct ChatAttachmentDto: Decodable, Identifiable {
+    let id: Int
+    let url: String?
+    let name: String?
+    let ext: String?
+    let size: String?
+    let duration: Int?
+    let author: String?
+    let date: String?
+    let meta: String?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = (try c.decodeIfPresent(Int.self, forKey: .id)) ?? 0
+        url = try c.decodeIfPresent(String.self, forKey: .url)
+        name = try c.decodeIfPresent(String.self, forKey: .name)
+        ext = try c.decodeIfPresent(String.self, forKey: .ext)
+        size = try c.decodeIfPresent(String.self, forKey: .size)
+        duration = try c.decodeIfPresent(Int.self, forKey: .duration)
+        author = try c.decodeIfPresent(String.self, forKey: .author)
+        date = try c.decodeIfPresent(String.self, forKey: .date)
+        meta = try c.decodeIfPresent(String.self, forKey: .meta)
+    }
+    enum CodingKeys: String, CodingKey { case id, url, name, ext, size, duration, author, date, meta }
+}
+
+/// Ссылка, найденная в сообщениях чата (вкладка «Ссылки»).
+struct ChatLinkDto: Decodable, Identifiable {
+    var id: String { url + (date ?? "") }
+    let url: String
+    let title: String?
+    let text: String?
+    let author: String?
+    let date: String?
+    let month: String?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        url = (try c.decodeIfPresent(String.self, forKey: .url)) ?? ""
+        title = try c.decodeIfPresent(String.self, forKey: .title)
+        text = try c.decodeIfPresent(String.self, forKey: .text)
+        author = try c.decodeIfPresent(String.self, forKey: .author)
+        date = try c.decodeIfPresent(String.self, forKey: .date)
+        month = try c.decodeIfPresent(String.self, forKey: .month)
+    }
+    enum CodingKeys: String, CodingKey { case url, title, text, author, date, month }
+}
+
+/// Публичный профиль другого пользователя (/users/{id}).
+struct UserProfileDto: Decodable {
+    let id: Int
+    let name: String?
+    let username: String?
+    let avatarUrl: String?
+    let registeredAt: String?
+    let registeredDays: Int?
+    let seen: String?
+    let isAdmin: Bool
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = (try c.decodeIfPresent(Int.self, forKey: .id)) ?? 0
+        name = try c.decodeIfPresent(String.self, forKey: .name)
+        username = try c.decodeIfPresent(String.self, forKey: .username)
+        avatarUrl = try c.decodeIfPresent(String.self, forKey: .avatarUrl)
+        registeredAt = try c.decodeIfPresent(String.self, forKey: .registeredAt)
+        registeredDays = try c.decodeIfPresent(Int.self, forKey: .registeredDays)
+        seen = try c.decodeIfPresent(String.self, forKey: .seen)
+        isAdmin = (try c.decodeIfPresent(Bool.self, forKey: .isAdmin)) ?? false
+    }
+    enum CodingKeys: String, CodingKey {
+        case id, name, username, seen
+        case avatarUrl = "avatar_url"
+        case registeredAt = "registered_at"
+        case registeredDays = "registered_days"
+        case isAdmin = "is_admin"
+    }
 }
 
 struct AdminDto: Decodable, Identifiable {
