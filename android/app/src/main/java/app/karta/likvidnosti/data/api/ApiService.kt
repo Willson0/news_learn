@@ -89,6 +89,28 @@ interface ApiService {
     @POST("chats/{slug}/messages")
     suspend fun sendMessage(@Path("slug") slug: String, @Body body: MessageBody): DataWrapper<MessageDto>
 
+    @Multipart
+    @POST("chats/{slug}/messages")
+    suspend fun sendMessageMultipart(@Path("slug") slug: String, @Part parts: List<MultipartBody.Part>): DataWrapper<MessageDto>
+
+    @POST("chats/{slug}/messages/{id}/react")
+    suspend fun reactMessage(@Path("slug") slug: String, @Path("id") id: Long, @Body body: ReactBody): DataWrapper<MessageDto>
+
+    @POST("chats/{slug}/messages/{id}/pin")
+    suspend fun pinMessage(@Path("slug") slug: String, @Path("id") id: Long): PinResponse
+
+    @DELETE("chats/{slug}/messages/{id}")
+    suspend fun deleteMessage(@Path("slug") slug: String, @Path("id") id: Long): StatusResponse
+
+    @GET("chats/{slug}/participants")
+    suspend fun participants(@Path("slug") slug: String): DataWrapper<List<ParticipantDto>>
+
+    @GET("chats/{slug}/attachments/{kind}")
+    suspend fun chatAttachments(@Path("slug") slug: String, @Path("kind") kind: String): DataWrapper<List<ChatAttachmentDto>>
+
+    @GET("users/{id}")
+    suspend fun userProfile(@Path("id") id: Long): DataWrapper<UserProfileDto>
+
     // --- Админка ---
     @GET("admin/admins")
     suspend fun admins(): DataWrapper<List<AdminDto>>

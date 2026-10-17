@@ -46,9 +46,11 @@ fun PasswordRecoveryScreen(
     onDone: () -> Unit,
 ) {
     var email by remember { mutableStateOf("") }
+    var code by remember { mutableStateOf("") }
     var newPassword by remember { mutableStateOf("") }
     var errors by remember { mutableStateOf(mapOf<String, String>()) }
-    var secondsLeft by remember { mutableStateOf(RESEND_SECONDS) }
+    var codeSent by remember { mutableStateOf(false) }
+    var secondsLeft by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(secondsLeft) {
@@ -56,36 +58,50 @@ fun PasswordRecoveryScreen(
     }
 
     val canResend = secondsLeft <= 0
-    val resendLabel = if (canResend) "Отправить повторно" else {
+    val resendLabel = if (canResend) {
+        if (codeSent) "Отправить код повторно" else "Отправить код"
+    } else {
         val m = secondsLeft / 60
         val s = (secondsLeft % 60).toString().padStart(2, '0')
         "Повторное сообщение через $m:$s"
     }
 
     fun resend() {
+        if (!canResend) return
         if (!EMAIL_RE.matches(email.trim())) {
             errors = mapOf("email" to "Введите email, чтобы отправить код")
             return
         }
         scope.launch {
-            runCatching { Repository.requestRecovery(email.trim()) }
-            secondsLeft = RESEND_SECONDS
+            try {
+                Repository.requestRecovery(email.trim())
+                codeSent = true
+                secondsLeft = RESEND_SECONDS
+            } catch (ex: ApiException) {
+                errors = mapOf("email" to ex.message)
+            } catch (ex: Exception) {
+                errors = mapOf("email" to "Не удалось отправить код")
+            }
         }
     }
 
     fun submit() {
         val e = mutableMapOf<String, String>()
         if (!EMAIL_RE.matches(email.trim())) e["email"] = "Неверный формат email"
+        if (code.length < 6) e["code"] = "Введите код из 6 цифр из письма"
         if (newPassword.length < 8) e["newPassword"] = "Пароль должен содержать от 8 символов"
         errors = e
         if (e.isNotEmpty()) return
         scope.launch {
             try {
-                Repository.requestRecovery(email.trim())
-                Repository.resetPassword(email.trim(), newPassword)
+                Repository.resetPassword(email.trim(), newPassword, code)
                 onDone()
             } catch (ex: ApiException) {
-                errors = mapOf("email" to ex.message)
+                val mapped = ex.errors.entries.firstOrNull()?.let { (k, v) ->
+                    val key = if (k == "password") "newPassword" else k
+                    key to (v.firstOrNull() ?: ex.message)
+                }
+                errors = if (mapped != null) mapOf(mapped.first to mapped.second) else mapOf("email" to ex.message)
             } catch (ex: Exception) {
                 errors = mapOf("email" to "Не удалось сменить пароль")
             }
@@ -103,7 +119,7 @@ fun PasswordRecoveryScreen(
         Spacer(Modifier.size(76.dp))
         ScreenTitle("Восстановление пароля", modifier = Modifier.padding(bottom = 12.dp))
         Text(
-            "Временный пароль придёт на указанную почту, позднее пароль можно сменить в профиле",
+            "Отправим код на указанную почту. Введите его вместе с новым паролем — позднее пароль можно сменить в профиле.",
             color = T.TextSecondary, fontSize = T.FsSm, textAlign = TextAlign.Center, lineHeight = 17.sp,
             modifier = Modifier.padding(bottom = 28.dp),
         )
@@ -112,6 +128,16 @@ fun PasswordRecoveryScreen(
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 AppInput(email, { email = it }, placeholder = "Email", keyboardType = KeyboardType.Email, error = errors.containsKey("email"))
                 FieldError(errors["email"])
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                AppInput(
+                    code,
+                    { code = it.filter(Char::isDigit).take(6) },
+                    placeholder = "Код из письма",
+                    keyboardType = KeyboardType.Number,
+                    error = errors.containsKey("code"),
+                )
+                FieldError(errors["code"])
             }
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 AppInput(newPassword, { newPassword = it }, placeholder = "Новый пароль", isPassword = true, error = errors.containsKey("newPassword"))

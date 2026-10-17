@@ -13,15 +13,20 @@ import app.karta.likvidnosti.data.api.EmailBody
 import app.karta.likvidnosti.data.api.InstrumentDto
 import app.karta.likvidnosti.data.api.InstrumentsBody
 import app.karta.likvidnosti.data.api.LoginBody
+import app.karta.likvidnosti.data.api.ChatAttachmentDto
 import app.karta.likvidnosti.data.api.MessageBody
 import app.karta.likvidnosti.data.api.MessagesResponse
 import app.karta.likvidnosti.data.api.MessageDto
+import app.karta.likvidnosti.data.api.MessageQuoteDto
 import app.karta.likvidnosti.data.api.Network
 import app.karta.likvidnosti.data.api.NotificationsBody
+import app.karta.likvidnosti.data.api.ParticipantDto
 import app.karta.likvidnosti.data.api.ProfileResponse
+import app.karta.likvidnosti.data.api.ReactBody
 import app.karta.likvidnosti.data.api.RegisterBody
 import app.karta.likvidnosti.data.api.ReportDto
 import app.karta.likvidnosti.data.api.ResetBody
+import app.karta.likvidnosti.data.api.UserProfileDto
 import app.karta.likvidnosti.data.api.SubscriptionBody
 import app.karta.likvidnosti.data.api.SubscriptionDto
 import app.karta.likvidnosti.data.api.TokenResponse
@@ -66,8 +71,8 @@ object Repository {
     suspend fun requestRecovery(email: String) =
         apiCall { api.requestRecovery(EmailBody(email)) }
 
-    suspend fun resetPassword(email: String, password: String): UserDto? =
-        apiCall { applyToken(api.resetPassword(ResetBody(email, password))) }
+    suspend fun resetPassword(email: String, password: String, code: String): UserDto? =
+        apiCall { applyToken(api.resetPassword(ResetBody(email, password, code))) }
 
     suspend fun logout() {
         try {
@@ -113,8 +118,20 @@ object Repository {
     // --- Сообщество ---
     suspend fun chats(): List<ChatSectionDto> = apiCall { api.chats().data ?: emptyList() }
     suspend fun messages(slug: String): MessagesResponse = apiCall { api.messages(slug) }
-    suspend fun sendMessage(slug: String, body: String): MessageDto? =
-        apiCall { api.sendMessage(slug, MessageBody(body)).data }
+    suspend fun sendMessage(slug: String, body: String, replyTo: Long? = null): MessageDto? =
+        apiCall { api.sendMessage(slug, MessageBody(body, replyTo)).data }
+    suspend fun sendMessageAttachment(slug: String, parts: List<MultipartBody.Part>): MessageDto? =
+        apiCall { api.sendMessageMultipart(slug, parts).data }
+    suspend fun reactMessage(slug: String, id: Long, emoji: String): MessageDto? =
+        apiCall { api.reactMessage(slug, id, ReactBody(emoji)).data }
+    suspend fun pinMessage(slug: String, id: Long): MessageQuoteDto? =
+        apiCall { api.pinMessage(slug, id).pinned }
+    suspend fun deleteMessage(slug: String, id: Long) = apiCall { api.deleteMessage(slug, id) }
+    suspend fun participants(slug: String): List<ParticipantDto> =
+        apiCall { api.participants(slug).data ?: emptyList() }
+    suspend fun chatAttachments(slug: String, kind: String): List<ChatAttachmentDto> =
+        apiCall { api.chatAttachments(slug, kind).data ?: emptyList() }
+    suspend fun userProfile(id: Long): UserProfileDto? = apiCall { api.userProfile(id).data }
 
     // --- Админка ---
     suspend fun admins(): List<AdminDto> = apiCall { api.admins().data ?: emptyList() }

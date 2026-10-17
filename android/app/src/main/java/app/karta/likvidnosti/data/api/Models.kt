@@ -106,17 +106,95 @@ class ChatItemDto(
 @Serializable
 class MessagesResponse(
     val chat: ChatItemDto? = null,
+    val pinned: MessageQuoteDto? = null,
     val data: List<MessageDto> = emptyList(),
 )
 
 @Serializable
 class MessageDto(
     val id: Long = 0,
+    @SerialName("user_id") val userId: Long? = null,
     val mine: Boolean = false,
     val author: String? = null,
     val role: String? = null,
+    @SerialName("avatar_url") val avatarUrl: String? = null,
     val text: String? = null,
     val time: String? = null,
+    @SerialName("created_at") val createdAt: String? = null,
+    val reply: MessageQuoteDto? = null,
+    val image: MsgImageDto? = null,
+    val file: MsgFileDto? = null,
+    val voice: MsgVoiceDto? = null,
+    val reactions: List<ReactionDto> = emptyList(),
+    val pinned: Boolean = false,
+    val read: Boolean = false,
+)
+
+@Serializable
+class MessageQuoteDto(
+    val id: Long = 0,
+    val author: String? = null,
+    val text: String? = null,
+)
+
+@Serializable
+class MsgImageDto(val url: String = "", val width: Int? = null, val height: Int? = null)
+
+@Serializable
+class MsgFileDto(
+    val url: String = "",
+    val name: String? = null,
+    val ext: String? = null,
+    val size: String? = null,
+)
+
+@Serializable
+class MsgVoiceDto(val url: String = "", val duration: String? = null)
+
+@Serializable
+class ReactionDto(val emoji: String = "", val count: Int = 0, val mine: Boolean = false)
+
+@Serializable
+class PinResponse(val pinned: MessageQuoteDto? = null)
+
+@Serializable
+class ParticipantDto(
+    val id: Long = 0,
+    val name: String = "",
+    val username: String? = null,
+    @SerialName("avatar_url") val avatarUrl: String? = null,
+    val role: String? = null,
+    val seen: String? = null,
+)
+
+/** Универсальный элемент вкладок инфо-экрана (медиа/голос/файлы/ссылки). */
+@Serializable
+class ChatAttachmentDto(
+    val id: Long = 0,
+    val url: String = "",
+    val name: String? = null,
+    val ext: String? = null,
+    val size: String? = null,
+    val duration: Int? = null,
+    val author: String? = null,
+    val date: String? = null,
+    val meta: String? = null,
+    // только для ссылок
+    val title: String? = null,
+    val text: String? = null,
+    val month: String? = null,
+)
+
+@Serializable
+class UserProfileDto(
+    val id: Long = 0,
+    val name: String? = null,
+    val username: String? = null,
+    @SerialName("avatar_url") val avatarUrl: String? = null,
+    @SerialName("registered_at") val registeredAt: String? = null,
+    @SerialName("registered_days") val registeredDays: Int? = null,
+    val seen: String? = null,
+    @SerialName("is_admin") val isAdmin: Boolean = false,
 )
 
 @Serializable
@@ -141,10 +219,13 @@ class ConfirmBody(val email: String, val code: String)
 class EmailBody(val email: String)
 
 @Serializable
-class ResetBody(val email: String, val password: String)
+class ResetBody(val email: String, val password: String, val code: String)
 
 @Serializable
-class MessageBody(val body: String)
+class MessageBody(val body: String, @SerialName("reply_to") val replyTo: Long? = null)
+
+@Serializable
+class ReactBody(val emoji: String)
 
 @Serializable
 class InstrumentsBody(val instruments: List<String>)

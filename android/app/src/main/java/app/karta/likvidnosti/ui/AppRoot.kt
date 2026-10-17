@@ -200,8 +200,9 @@ fun AppRoot() {
             composable(
                 Routes.CHAT_USER,
                 arguments = listOf(navArgument("userId") { type = NavType.LongType }),
-            ) {
-                UserProfileScreen(onBack = { actions.back() })
+            ) { entry ->
+                val userId = entry.arguments?.getLong("userId") ?: 0L
+                UserProfileScreen(userId = userId, onBack = { actions.back() })
             }
 
             // --- Profile section ---
