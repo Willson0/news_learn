@@ -1,15 +1,15 @@
 <script>
 import MessageBubble from '@/components/community/MessageBubble.vue'
-import { fetchMessages, sendMessage } from '@/api/resources'
+import {
+  fetchMessages, sendMessage, reactToMessage, pinMessage, deleteMessage, fetchParticipants,
+} from '@/api/resources'
+import { haptic } from '@/telegram/webapp'
 import IconPlus from '@/components/icons/IconPlus.vue'
 import IconMic from '@/components/icons/IconMic.vue'
 import IconReply from '@/components/icons/IconReply.vue'
 import IconCopy from '@/components/icons/IconCopy.vue'
 import IconPin from '@/components/icons/IconPin.vue'
-import IconLink from '@/components/icons/IconLink.vue'
-import IconReport from '@/components/icons/IconReport.vue'
 import IconTrash from '@/components/icons/IconTrash.vue'
-import IconForward from '@/components/icons/IconForward.vue'
 import IconCheckSquare from '@/components/icons/IconCheckSquare.vue'
 import IconClose from '@/components/icons/IconClose.vue'
 import IconBack from '@/components/icons/IconBack.vue'
@@ -18,75 +18,45 @@ export default {
   name: 'ChatView',
   components: {
     MessageBubble, IconPlus, IconMic, IconReply, IconCopy,
-    IconPin, IconLink, IconReport, IconTrash, IconForward, IconCheckSquare, IconClose, IconBack,
+    IconPin, IconTrash, IconCheckSquare, IconClose, IconBack,
   },
   data() {
     return {
       draft: '',
-      serverMessages: null,
+      messages: [],
       serverChat: null,
+      pinned: null,
+      participants: [],
       replyTo: null,
       menuFor: null,
       selectMode: false,
       selected: [],
       reactions: ['👍', '❤️', '🔥', '😂', '😮', '😢', '🙏', '👏'],
-      pinned: { title: 'Закрепленное сообщение', text: 'Здравствуте! Помогите разобраться...' },
       attachOpen: false,
       recState: 'idle', // idle | recording | locked | paused
-      recTime: '01:00:39',
-      photoViewer: false,
-      mentionList: [
-        { name: 'Владислав', handle: '@Submetal' },
-        { name: 'Артем', handle: '@Submetalllliiist' },
-        { name: 'Влад', handle: '@Submetaliiist' },
-      ],
-      groupMessages: [
-        { id: 1, mine: false, author: 'Артем', role: 'Участник', text: 'Здравствуте! Помогите разобраться с графиком', time: '20:41' },
-        { id: 2, mine: true, text: 'А то никак понять не могу', time: '20:42', read: true },
-        {
-          id: 3, mine: false, author: 'Владимир', role: 'Участник',
-          reply: { author: 'Алексей', text: 'Я сам немного не оче...' },
-          text: 'Ага, сам не понял, но видно, что очень хорошо сделан отчет и много чего было все равно было объяснено русским языком',
-          time: '20:42',
-          reactions: [{ emoji: '👍', count: 2 }],
-        },
-        { id: 4, mine: true, voice: { duration: '10:42' }, time: '20:42', read: true },
-        { id: 5, mine: false, author: 'Артем', role: 'Участник', voice: { duration: '00:42' }, time: '20:42' },
-        {
-          id: 6, mine: false, author: 'Артем', role: 'Участник',
-          text: 'Здравствуте! Помогите разобраться с графиком',
-          file: { ext: 'zip', name: 'zip file for windows', size: '1.9 мб' },
-          time: '20:42',
-        },
-        { id: 7, mine: true, image: true, time: '20:42', read: true },
-        { id: 8, mine: true, toAuthor: true, text: '«Как долго вы делали этот отчет?»', time: '20:42', read: true },
-      ],
-      // Личный чат с админом (1:1) — без подписей автора и ролей.
-      directMessages: [
-        { id: 1, mine: false, text: 'Здравствуйте! Чем могу помочь?', time: '16:30' },
-        { id: 2, mine: true, text: 'Здравствуйте! Не получается оплатить подписку', time: '16:31', read: true },
-        { id: 3, mine: false, text: 'Подскажите, пожалуйста, какой способ оплаты выбираете?', time: '16:31' },
-        { id: 4, mine: true, text: 'СБП', time: '16:32', read: true },
-        { id: 5, mine: false, text: 'Что интересует?', time: '16:32' },
-      ],
+      recSeconds: 0,
+      photoViewer: null, // { url, author, time }
+      sending: false,
+      error: '',
+      // не реактивные ссылки записи
+      recorder: null,
+      stream: null,
+      chunks: [],
+      recTimer: null,
     }
   },
   computed: {
+    slug() {
+      return String(this.$route.params.id)
+    },
     isDirect() {
-      const id = String(this.$route.params.id)
-      return id === 'admin' || id.startsWith('dm-') || Boolean(this.serverChat && this.serverChat.type === 'direct')
+      return Boolean(this.serverChat && this.serverChat.type === 'direct')
     },
     chat() {
       if (this.serverChat) {
         return { title: this.serverChat.title, subtitle: this.serverChat.subtitle }
       }
-      return this.isDirect
-        ? { title: 'Игорь Гломозда', subtitle: 'Был в сети 1 час назад' }
-        : { title: 'Нефть 12.12.27', subtitle: '15 участников' }
-    },
-    messages() {
-      if (this.serverMessages) return this.serverMessages
-      return this.isDirect ? this.directMessages : this.groupMessages
+      return { title: '', subtitle: '' }
     },
     menuMessage() {
       return this.messages.find((m) => m.id === this.menuFor) || null
@@ -94,58 +64,210 @@ export default {
     showSend() {
       return this.draft.trim().length > 0 || !!this.replyTo
     },
+    recTime() {
+      const m = Math.floor(this.recSeconds / 60)
+      const s = String(this.recSeconds % 60).padStart(2, '0')
+      return `${m}:${s}`
+    },
+    mentionMatch() {
+      const m = this.draft.match(/@([^\s@]*)$/)
+      return m ? m[1].toLowerCase() : null
+    },
+    mentionList() {
+      const q = this.mentionMatch
+      return this.participants
+        .filter((p) => p.username)
+        .filter((p) => q == null || `${p.name} ${p.username}`.toLowerCase().includes(q))
+        .slice(0, 6)
+    },
     showMentions() {
-      return this.draft.includes('@')
+      return this.mentionMatch !== null && this.mentionList.length > 0
+    },
+  },
+  watch: {
+    '$route.params.id'() {
+      this.load()
     },
   },
   mounted() {
     this.load()
   },
+  beforeUnmount() {
+    this.cleanupRec()
+  },
   methods: {
     async load() {
+      this.error = ''
       try {
-        const resp = await fetchMessages(this.$route.params.id)
+        const resp = await fetchMessages(this.slug)
         this.serverChat = resp.chat
-        this.serverMessages = resp.data
+        this.messages = resp.data || []
+        this.pinned = resp.pinned || null
       } catch {
-        // чат не найден на бэкенде — показываем демо-ленту
-        this.serverMessages = null
         this.serverChat = null
+        this.messages = []
+        this.pinned = null
+        this.error = 'Не удалось загрузить чат'
       }
+      try {
+        this.participants = await fetchParticipants(this.slug)
+      } catch {
+        this.participants = []
+      }
+      this.$nextTick(this.scrollToBottom)
+    },
+    scrollToBottom() {
+      const el = this.$refs.scroll
+      if (el) el.scrollTop = el.scrollHeight
     },
     openInfo() {
-      this.$router.push({ name: 'chat-info', params: { id: this.$route.params.id } })
+      this.$router.push({ name: 'chat-info', params: { id: this.slug } })
     },
-    goUser() {
-      this.$router.push({ name: 'chat-user', params: { id: this.$route.params.id, uid: 'artem' } })
+    goUser(m) {
+      if (!m || !m.user_id) return
+      this.$router.push({ name: 'chat-user', params: { id: this.slug, uid: m.user_id } })
     },
     onBubble(m) {
       if (this.selectMode) {
         this.toggleSelect(m.id)
       } else if (m.image) {
-        this.photoViewer = true
+        this.photoViewer = { url: m.image.url, author: m.mine ? 'Вы' : m.author, time: m.time }
       } else {
         this.menuFor = m.id
       }
     },
     pickMention(u) {
-      this.draft = this.draft.replace(/@\S*$/, u.handle + ' ')
+      this.draft = this.draft.replace(/@([^\s@]*)$/, `${u.username} `)
     },
-    startRec() {
-      this.recState = 'recording'
+    // --- отправка ---
+    async send() {
+      if (!this.showSend || this.sending) return
+      const body = this.draft.trim()
+      if (!body) return
+      this.sending = true
+      this.draft = ''
+      const replyId = this.replyTo ? this.replyTo.id : null
+      this.replyTo = null
+      try {
+        const msg = await sendMessage(this.slug, { body, replyTo: replyId })
+        this.messages.push(msg)
+        this.$nextTick(this.scrollToBottom)
+      } catch {
+        this.draft = body
+        this.error = 'Не удалось отправить сообщение'
+      } finally {
+        this.sending = false
+      }
+    },
+    triggerImage() {
+      this.attachOpen = false
+      this.$refs.imageInput && this.$refs.imageInput.click()
+    },
+    triggerFile() {
+      this.attachOpen = false
+      this.$refs.fileInput && this.$refs.fileInput.click()
+    },
+    async onFilePicked(event, kind) {
+      const file = event.target.files && event.target.files[0]
+      event.target.value = ''
+      if (!file) return
+      const replyId = this.replyTo ? this.replyTo.id : null
+      this.replyTo = null
+      this.sending = true
+      try {
+        const msg = await sendMessage(this.slug, { attachment: file, kind, replyTo: replyId })
+        this.messages.push(msg)
+        this.$nextTick(this.scrollToBottom)
+      } catch {
+        this.error = 'Не удалось отправить вложение'
+      } finally {
+        this.sending = false
+      }
+    },
+    // --- голосовое (MediaRecorder) ---
+    async startRec() {
+      if (this.sending) return
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === 'undefined') {
+        this.error = 'Запись голоса недоступна в этом окружении'
+        return
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        const mr = new MediaRecorder(stream)
+        this.stream = stream
+        this.recorder = mr
+        this.chunks = []
+        mr.ondataavailable = (e) => {
+          if (e.data && e.data.size) this.chunks.push(e.data)
+        }
+        mr.start()
+        this.recSeconds = 0
+        this.recState = 'recording'
+        haptic('light')
+        this.recTimer = setInterval(() => { this.recSeconds += 1 }, 1000)
+      } catch {
+        this.error = 'Нет доступа к микрофону'
+        this.recState = 'idle'
+      }
     },
     lockRec() {
-      this.recState = 'locked'
+      if (this.recState === 'recording') this.recState = 'locked'
     },
     pauseRec() {
+      if (this.recorder && this.recorder.state === 'recording') this.recorder.pause()
+      if (this.recTimer) { clearInterval(this.recTimer); this.recTimer = null }
       this.recState = 'paused'
     },
     cancelRec() {
+      const mr = this.recorder
+      if (mr && mr.state !== 'inactive') {
+        mr.onstop = null
+        try { mr.stop() } catch { /* noop */ }
+      }
+      this.cleanupRec()
+    },
+    finishRecording() {
+      return new Promise((resolve) => {
+        const mr = this.recorder
+        if (!mr || mr.state === 'inactive') { resolve(null); return }
+        mr.onstop = () => {
+          resolve(new Blob(this.chunks, { type: mr.mimeType || 'audio/webm' }))
+        }
+        if (mr.state === 'paused') mr.resume()
+        mr.stop()
+      })
+    },
+    async sendRec() {
+      const dur = this.recSeconds
+      const blob = await this.finishRecording()
+      this.cleanupRec()
+      if (!blob || blob.size === 0) return
+      const replyId = this.replyTo ? this.replyTo.id : null
+      this.replyTo = null
+      this.sending = true
+      try {
+        const file = new File([blob], 'voice.webm', { type: blob.type })
+        const msg = await sendMessage(this.slug, { attachment: file, kind: 'voice', duration: dur, replyTo: replyId })
+        this.messages.push(msg)
+        this.$nextTick(this.scrollToBottom)
+      } catch {
+        this.error = 'Не удалось отправить голосовое'
+      } finally {
+        this.sending = false
+      }
+    },
+    cleanupRec() {
+      if (this.recTimer) { clearInterval(this.recTimer); this.recTimer = null }
+      if (this.stream) {
+        this.stream.getTracks().forEach((t) => t.stop())
+        this.stream = null
+      }
+      this.recorder = null
+      this.chunks = []
+      this.recSeconds = 0
       this.recState = 'idle'
     },
-    sendRec() {
-      this.recState = 'idle'
-    },
+    // --- контекстное меню ---
     closeMenu() {
       this.menuFor = null
     },
@@ -155,6 +277,82 @@ export default {
     },
     cancelReply() {
       this.replyTo = null
+    },
+    async copyText() {
+      const m = this.menuMessage
+      this.closeMenu()
+      if (m && m.text && navigator.clipboard) {
+        try { await navigator.clipboard.writeText(m.text) } catch { /* noop */ }
+      }
+    },
+    async togglePin() {
+      const m = this.menuMessage
+      this.closeMenu()
+      if (!m) return
+      try {
+        const resp = await pinMessage(this.slug, m.id)
+        this.pinned = resp.pinned || null
+        this.messages.forEach((x) => { x.pinned = false })
+        if (this.pinned) {
+          const target = this.messages.find((x) => x.id === this.pinned.id)
+          if (target) target.pinned = true
+        }
+      } catch {
+        this.error = 'Не удалось закрепить сообщение'
+      }
+    },
+    unpin() {
+      if (this.pinned) {
+        const id = this.pinned.id
+        this.menuFor = id
+        this.togglePin()
+      }
+    },
+    async react(emoji) {
+      const m = this.menuMessage
+      this.closeMenu()
+      if (!m) return
+      try {
+        const updated = await reactToMessage(this.slug, m.id, emoji)
+        const i = this.messages.findIndex((x) => x.id === m.id)
+        if (i !== -1) this.messages.splice(i, 1, updated)
+      } catch {
+        this.error = 'Не удалось поставить реакцию'
+      }
+    },
+    async removeMessage() {
+      const m = this.menuMessage
+      this.closeMenu()
+      if (!m) return
+      try {
+        await deleteMessage(this.slug, m.id)
+        this.messages = this.messages.filter((x) => x.id !== m.id)
+        if (this.pinned && this.pinned.id === m.id) this.pinned = null
+      } catch {
+        this.error = 'Не удалось удалить сообщение'
+      }
+    },
+    async deleteSelected() {
+      const ids = [...this.selected]
+      for (const id of ids) {
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          await deleteMessage(this.slug, id)
+          this.messages = this.messages.filter((x) => x.id !== id)
+          if (this.pinned && this.pinned.id === id) this.pinned = null
+        } catch { /* пропускаем те, что не удалось */ }
+      }
+      this.exitSelect()
+    },
+    async deleteViewerPhoto() {
+      const url = this.photoViewer && this.photoViewer.url
+      const m = this.messages.find((x) => x.image && x.image.url === url)
+      this.photoViewer = null
+      if (!m) return
+      try {
+        await deleteMessage(this.slug, m.id)
+        this.messages = this.messages.filter((x) => x.id !== m.id)
+      } catch { /* noop */ }
     },
     enterSelect() {
       this.selectMode = true
@@ -172,22 +370,6 @@ export default {
     },
     isSelected(id) {
       return this.selected.includes(id)
-    },
-    async send() {
-      if (!this.showSend) return
-      const body = this.draft.trim()
-      this.draft = ''
-      this.replyTo = null
-      if (!body) return
-      // Отправляем на бэкенд только если чат загружен с сервера.
-      if (this.serverMessages) {
-        try {
-          const message = await sendMessage(this.$route.params.id, body)
-          this.serverMessages.push(message)
-        } catch {
-          /* не удалось отправить — молча игнорируем в демо-режиме */
-        }
-      }
     },
   },
 }
@@ -209,17 +391,19 @@ export default {
     </header>
 
     <!-- Закреплённое сообщение -->
-    <div v-if="pinned && !selectMode && !isDirect" class="chat__pinned">
+    <div v-if="pinned && !selectMode" class="chat__pinned">
       <div class="chat__pinned-body">
-        <span class="chat__pinned-title">{{ pinned.title }}</span>
+        <span class="chat__pinned-title">Закреплённое сообщение</span>
         <span class="chat__pinned-text">{{ pinned.text }}</span>
       </div>
-      <button type="button" class="chat__pinned-x" aria-label="Открепить" @click="pinned = null"><IconClose /></button>
+      <button type="button" class="chat__pinned-x" aria-label="Открепить" @click="unpin"><IconClose /></button>
     </div>
 
     <!-- Лента сообщений -->
-    <div class="chat__scroll">
-      <div class="chat__day"><span class="chat__day-pill">Сегодня</span></div>
+    <div ref="scroll" class="chat__scroll">
+      <div v-if="messages.length" class="chat__day"><span class="chat__day-pill">Сегодня</span></div>
+      <p v-else-if="!error" class="chat__empty">Пока нет сообщений. Напишите первым!</p>
+      <p v-if="error" class="chat__empty">{{ error }}</p>
 
       <div
         v-for="m in messages"
@@ -233,15 +417,14 @@ export default {
           :class="{ 'chat__check--on': isSelected(m.id) }"
           @click="toggleSelect(m.id)"
         ></span>
-        <span v-if="!m.mine && !selectMode && !isDirect" class="chat__msg-avatar" @click="goUser"></span>
+        <span v-if="!m.mine && !selectMode && !isDirect" class="chat__msg-avatar" @click="goUser(m)"></span>
         <MessageBubble :message="m" @click="onBubble(m)" />
       </div>
     </div>
 
     <!-- Нижняя панель режима выбора -->
     <div v-if="selectMode" class="chat__select-actions">
-      <button type="button" class="chat__round chat__round--danger" aria-label="Удалить"><IconTrash /></button>
-      <button type="button" class="chat__round" aria-label="Переслать"><IconForward /></button>
+      <button type="button" class="chat__round chat__round--danger" aria-label="Удалить" @click="deleteSelected"><IconTrash /></button>
     </div>
 
     <!-- Запись голосового -->
@@ -265,8 +448,7 @@ export default {
             <span class="chat__wave-mini">
               <span v-for="i in 34" :key="i" class="chat__bar-mini" :style="{ height: (4 + (i * 37 % 15)) + 'px' }"></span>
             </span>
-            <span class="chat__rec-play"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13a1 1 0 0 0 1.5.9l10-6.5a1 1 0 0 0 0-1.7l-10-6.5A1 1 0 0 0 8 5.5z"/></svg></span>
-            <span class="chat__rec-time">1:30</span>
+            <span class="chat__rec-time">{{ recTime }}</span>
           </div>
           <button type="button" class="chat__send" aria-label="Отправить" @click="sendRec">
             <svg viewBox="0 0 24 24" fill="none" stroke="#fff"><path d="M5 12h13M12 5l7 7-7 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -276,10 +458,11 @@ export default {
           <div class="chat__rec-status">
             <span class="chat__rec-dot"></span>
             <span class="chat__rec-timer">{{ recTime }}</span>
-            <span class="chat__rec-hint">{{ recState === 'recording' ? '‹ Влево — отмена' : 'Отмена' }}</span>
+            <span class="chat__rec-hint">{{ recState === 'recording' ? 'Нажмите замок, чтобы не держать' : 'Запись…' }}</span>
           </div>
+          <button type="button" class="chat__round chat__round--danger chat__rec-trash" aria-label="Отмена" @click="cancelRec"><IconTrash /></button>
           <button type="button" class="chat__rec-mic" :aria-label="recState === 'locked' ? 'Отправить' : 'Запись'" @click="recState === 'locked' ? sendRec() : lockRec()">
-            <svg v-if="recState === 'locked'" viewBox="0 0 24 24" fill="none" stroke="#fff"><path d="M12 19V5M6 11l6-6 6 6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <svg v-if="recState === 'locked'" viewBox="0 0 24 24" fill="none" stroke="#fff"><path d="M5 12h13M12 5l7 7-7 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <IconMic v-else />
           </button>
         </template>
@@ -290,11 +473,11 @@ export default {
     <div v-else class="chat__composer">
       <!-- всплывающее меню вложений -->
       <div v-if="attachOpen" class="chat__attach">
-        <button type="button" class="chat__attach-item" @click="attachOpen = false">
+        <button type="button" class="chat__attach-item" @click="triggerImage">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="16" rx="3" stroke-width="1.6"/><circle cx="9" cy="10" r="2" stroke-width="1.6"/><path d="M5 18l5-4 4 3 3-2 2 2" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
           Изображение
         </button>
-        <button type="button" class="chat__attach-item" @click="attachOpen = false">
+        <button type="button" class="chat__attach-item" @click="triggerFile">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M7 3h7l5 5v13H7z" stroke-width="1.6" stroke-linejoin="round"/><path d="M14 3v5h5" stroke-width="1.6" stroke-linejoin="round"/></svg>
           Файл
         </button>
@@ -302,10 +485,10 @@ export default {
 
       <!-- подсказки упоминаний -->
       <div v-if="showMentions" class="chat__mentions">
-        <button v-for="u in mentionList" :key="u.handle" type="button" class="chat__mention" @click="pickMention(u)">
+        <button v-for="u in mentionList" :key="u.id" type="button" class="chat__mention" @click="pickMention(u)">
           <span class="chat__mention-av"></span>
           <span class="chat__mention-name">{{ u.name }}</span>
-          <span class="chat__mention-handle">{{ u.handle }}</span>
+          <span class="chat__mention-handle">{{ u.username }}</span>
         </button>
       </div>
 
@@ -313,12 +496,14 @@ export default {
         <IconReply class="chat__reply-ic" />
         <div class="chat__reply-body">
           <span class="chat__reply-author">{{ replyTo.author || 'Вы' }}</span>
-          <span class="chat__reply-text">{{ replyTo.text || 'Сообщение' }}</span>
+          <span class="chat__reply-text">{{ replyTo.text || 'Вложение' }}</span>
         </div>
         <button type="button" class="chat__reply-x" aria-label="Отменить" @click="cancelReply"><IconClose /></button>
       </div>
 
       <div class="chat__input-bar">
+        <input ref="imageInput" type="file" accept="image/*" class="chat__hidden-file" @change="onFilePicked($event, 'image')" />
+        <input ref="fileInput" type="file" class="chat__hidden-file" @change="onFilePicked($event, 'file')" />
         <button type="button" class="chat__plus" :class="{ 'chat__plus--open': attachOpen }" aria-label="Вложение" @click="attachOpen = !attachOpen"><IconPlus /></button>
         <div class="chat__input">
           <input v-model="draft" type="text" placeholder="Напишите что-нибудь" @keyup.enter="send" />
@@ -335,19 +520,16 @@ export default {
     <!-- Просмотр фото -->
     <div v-if="photoViewer" class="viewer">
       <header class="viewer__top">
-        <button type="button" class="viewer__back" aria-label="Назад" @click="photoViewer = false"><IconBack /></button>
+        <button type="button" class="viewer__back" aria-label="Назад" @click="photoViewer = null"><IconBack /></button>
         <div class="viewer__title">
-          <span class="viewer__name">Вы</span>
-          <span class="viewer__date">Сегодня в 1:42</span>
+          <span class="viewer__name">{{ photoViewer.author }}</span>
+          <span class="viewer__date">Сегодня в {{ photoViewer.time }}</span>
         </div>
-        <button type="button" class="viewer__more" aria-label="Ещё">
-          <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
-        </button>
+        <span class="viewer__more" aria-hidden="true"></span>
       </header>
-      <div class="viewer__img"></div>
+      <div class="viewer__img" :style="{ backgroundImage: `url(${photoViewer.url})` }"></div>
       <div class="viewer__actions">
-        <button type="button" class="chat__round" aria-label="Переслать"><IconForward /></button>
-        <button type="button" class="chat__round chat__round--danger" aria-label="Удалить"><IconTrash /></button>
+        <button type="button" class="chat__round chat__round--danger" aria-label="Удалить" @click="deleteViewerPhoto"><IconTrash /></button>
       </div>
     </div>
 
@@ -355,18 +537,16 @@ export default {
     <div v-if="menuFor" class="menu-root" @click.self="closeMenu">
       <div class="menu-wrap">
         <div class="menu-reactions">
-          <span v-for="(r, i) in reactions" :key="i" class="menu-reaction">{{ r }}</span>
+          <button v-for="(r, i) in reactions" :key="i" type="button" class="menu-reaction" @click="react(r)">{{ r }}</button>
         </div>
         <div class="menu-msg">
           <MessageBubble :message="menuMessage" />
         </div>
         <div class="menu-card">
           <button type="button" class="menu-item" @click="doReply"><IconReply /> Ответить</button>
-          <button type="button" class="menu-item" @click="closeMenu"><IconCopy /> Скопировать</button>
-          <button type="button" class="menu-item" @click="closeMenu"><IconPin /> Закрепить</button>
-          <button type="button" class="menu-item" @click="closeMenu"><IconLink /> Копировать ссылку</button>
-          <button type="button" class="menu-item" @click="closeMenu"><IconReport /> Пожаловаться</button>
-          <button type="button" class="menu-item menu-item--danger" @click="closeMenu"><IconTrash /> Удалить</button>
+          <button v-if="menuMessage && menuMessage.text" type="button" class="menu-item" @click="copyText"><IconCopy /> Скопировать</button>
+          <button type="button" class="menu-item" @click="togglePin"><IconPin /> {{ menuMessage && menuMessage.pinned ? 'Открепить' : 'Закрепить' }}</button>
+          <button type="button" class="menu-item menu-item--danger" @click="removeMessage"><IconTrash /> Удалить</button>
           <div class="menu-sep"></div>
           <button type="button" class="menu-item" @click="enterSelect"><IconCheckSquare /> Выбрать</button>
         </div>
@@ -799,4 +979,16 @@ export default {
   justify-content: space-between;
   padding: 14px var(--space-screen-x) calc(env(safe-area-inset-bottom, 0px) + 16px);
 }
+
+/* Доп. правила продукта */
+.chat__hidden-file { display: none; }
+.chat__empty {
+  text-align: center;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-base);
+  margin: auto 0;
+  padding: 24px;
+}
+.menu-reaction { cursor: pointer; background: transparent; }
+.viewer__img { background-size: contain; background-repeat: no-repeat; background-position: center; }
 </style>

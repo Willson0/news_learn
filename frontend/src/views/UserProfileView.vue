@@ -1,10 +1,50 @@
 <script>
+import IconBack from '@/components/icons/IconBack.vue'
+import { fetchUser } from '@/api/resources'
+
 export default {
   name: 'UserProfileView',
+  components: { IconBack },
   data() {
     return {
-      user: { name: 'Артем', tag: '@AlexeyRub', registered: '14.09.2026 (7 дней)' },
+      user: null,
+      loading: true,
     }
+  },
+  computed: {
+    registered() {
+      if (!this.user || !this.user.registered_at) return ''
+      const days = this.user.registered_days
+      if (days == null) return this.user.registered_at
+      const n = Number(days)
+      const word = this.plural(n, ['день', 'дня', 'дней'])
+      return `${this.user.registered_at} (${n} ${word})`
+    },
+    backTo() {
+      return { name: 'chat', params: { id: this.$route.params.id } }
+    },
+  },
+  mounted() {
+    this.load()
+  },
+  methods: {
+    async load() {
+      try {
+        this.user = await fetchUser(this.$route.params.uid)
+      } catch {
+        this.user = null
+      } finally {
+        this.loading = false
+      }
+    },
+    plural(n, forms) {
+      const a = Math.abs(n) % 100
+      const b = a % 10
+      if (a > 10 && a < 20) return forms[2]
+      if (b > 1 && b < 5) return forms[1]
+      if (b === 1) return forms[0]
+      return forms[2]
+    },
   },
 }
 </script>
@@ -13,12 +53,19 @@ export default {
   <section class="uprofile">
     <div class="uprofile__bg"></div>
 
-    <div class="uprofile__center">
+    <router-link :to="backTo" class="uprofile__back" aria-label="Назад"><IconBack /></router-link>
+
+    <div v-if="user" class="uprofile__center">
       <p class="uprofile__status">Зарегистрирован</p>
-      <p class="uprofile__date">{{ user.registered }}</p>
-      <div class="uprofile__avatar"></div>
+      <p class="uprofile__date">{{ registered }}</p>
+      <img v-if="user.avatar_url" class="uprofile__avatar" :src="user.avatar_url" alt="" />
+      <div v-else class="uprofile__avatar"></div>
       <p class="uprofile__name">{{ user.name }}</p>
-      <p class="uprofile__tag">{{ user.tag }}</p>
+      <p v-if="user.username" class="uprofile__tag">{{ user.username }}</p>
+      <p v-if="user.seen" class="uprofile__seen">{{ user.seen }}</p>
+    </div>
+    <div v-else-if="!loading" class="uprofile__center">
+      <p class="uprofile__status">Пользователь не найден</p>
     </div>
   </section>
 </template>
@@ -76,10 +123,12 @@ export default {
   height: 160px;
   border-radius: 50%;
   margin-bottom: 14px;
+  object-fit: cover;
   background:
     radial-gradient(60% 60% at 40% 35%, #9aa86a, transparent 70%),
     linear-gradient(135deg, #6b7350 0%, #3f4a2c 100%);
 }
 .uprofile__name { font-size: var(--font-size-title); font-weight: 700; }
 .uprofile__tag { font-size: var(--font-size-md); color: var(--color-text-secondary); }
+.uprofile__seen { font-size: var(--font-size-sm); color: var(--color-text-muted); margin-top: 4px; }
 </style>
