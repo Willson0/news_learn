@@ -109,18 +109,68 @@ class AuthTest extends TestCase
 
     public function test_recovery_flow_resets_password(): void
     {
-        $user = User::factory()->create(['email' => 'r@example.com', 'password' => 'oldpass123']);
+        Mail::fake();
+
+        User::factory()->create(['email' => 'r@example.com', 'password' => 'oldpass123']);
 
         $this->postJson('/api/auth/recovery', ['email' => 'r@example.com'])->assertOk();
+
+        $code = null;
+        Mail::assertSent(CodeMail::class, function (CodeMail $mail) use (&$code) {
+            $code = $mail->code;
+
+            return $mail->purpose === 'recovery';
+        });
 
         $this->postJson('/api/auth/recovery/reset', [
             'email' => 'r@example.com',
             'password' => 'newpass123',
+            'code' => $code,
         ])->assertOk();
 
         $this->postJson('/api/auth/login', [
             'identifier' => 'r@example.com',
             'password' => 'newpass123',
+        ])->assertOk();
+    }
+
+    public function test_recovery_reset_requires_code(): void
+    {
+        Mail::fake();
+
+        User::factory()->create(['email' => 'r@example.com', 'password' => 'oldpass123']);
+        $this->postJson('/api/auth/recovery', ['email' => 'r@example.com'])->assertOk();
+
+        // Без кода сброс недопустим.
+        $this->postJson('/api/auth/recovery/reset', [
+            'email' => 'r@example.com',
+            'password' => 'newpass123',
+        ])->assertStatus(422);
+
+        // Старый пароль всё ещё действует.
+        $this->postJson('/api/auth/login', [
+            'identifier' => 'r@example.com',
+            'password' => 'oldpass123',
+        ])->assertOk();
+    }
+
+    public function test_recovery_reset_rejects_wrong_code(): void
+    {
+        Mail::fake();
+
+        User::factory()->create(['email' => 'r@example.com', 'password' => 'oldpass123']);
+        $this->postJson('/api/auth/recovery', ['email' => 'r@example.com'])->assertOk();
+
+        $this->postJson('/api/auth/recovery/reset', [
+            'email' => 'r@example.com',
+            'password' => 'newpass123',
+            'code' => '000000',
+        ])->assertStatus(422);
+
+        // Пароль не изменился.
+        $this->postJson('/api/auth/login', [
+            'identifier' => 'r@example.com',
+            'password' => 'oldpass123',
         ])->assertOk();
     }
 

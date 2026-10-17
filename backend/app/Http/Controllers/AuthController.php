@@ -224,29 +224,40 @@ class AuthController extends Controller
     }
 
     /**
-     * Установка нового пароля. Требует, чтобы ранее был запрошен код (пользователь
-     * подтвердил доступ к почте), срок действия — 15 минут.
+     * Установка нового пароля. Требует код из письма: он обязателен и всегда
+     * проверяется. Срок действия кода — 15 минут, не больше 5 неверных попыток.
      */
     public function resetPassword(Request $request): JsonResponse
     {
         $data = $request->validate([
             'email' => ['required', 'email'],
             'password' => ['required', 'string', 'min:8'],
-            'code' => ['nullable', 'string'],
+            'code' => ['required', 'string'],
+        ], [
+            'code.required' => 'Введите код из письма.',
         ]);
 
         $record = PasswordResetCode::where('email', $data['email'])
-            ->where('expires_at', '>', now())
             ->latest()
             ->first();
 
-        if (! $record) {
+        if (! $record || $record->isExpired()) {
+            $record?->delete();
             throw ValidationException::withMessages([
-                'email' => 'Сначала запросите временный пароль на почту.',
+                'email' => 'Сначала запросите код восстановления на почту.',
             ]);
         }
 
-        if (! empty($data['code']) && ! Hash::check($data['code'], $record->code)) {
+        // Защита от перебора: не больше 5 неверных попыток.
+        if ($record->attempts >= 5) {
+            $record->delete();
+            throw ValidationException::withMessages([
+                'code' => 'Слишком много попыток. Запросите новый код.',
+            ]);
+        }
+
+        if (! Hash::check($data['code'], $record->code)) {
+            $record->increment('attempts');
             throw ValidationException::withMessages([
                 'code' => 'Неверный код.',
             ]);
@@ -254,6 +265,7 @@ class AuthController extends Controller
 
         $user = User::where('email', $data['email'])->first();
         if (! $user) {
+            $record->delete();
             throw ValidationException::withMessages([
                 'email' => 'Пользователь с такой почтой не найден.',
             ]);

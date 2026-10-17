@@ -24,6 +24,7 @@ class User extends Authenticatable
         'phone',
         'username',
         'avatar_url',
+        'last_active_at',
         'notify_all',
         'notify_by_instrument',
     ];
@@ -40,6 +41,7 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
+            'last_active_at' => 'datetime',
             'password' => 'hashed',
             'notify_all' => 'boolean',
             'notify_by_instrument' => 'boolean',

@@ -8,6 +8,7 @@ use App\Http\Controllers\InstrumentController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SubscriptionController;
+use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 
 // Проверка доступности API.
@@ -38,10 +39,19 @@ Route::get('/reports/{report}/cover', [ReportController::class, 'cover']);
 Route::get('/reports/{report}/html', [ReportController::class, 'html']);
 Route::get('/chats/{slug}/avatar', [ChatController::class, 'avatar']);
 
+// Файл вложения чата — по подписанной ссылке (её выдаёт API вместе с сообщением),
+// чтобы открывать в <img>/<audio> и скачивать без заголовка авторизации.
+Route::get('/chats/attachments/{attachment}', [ChatController::class, 'attachmentFile'])
+    ->middleware('signed')
+    ->name('chat.attachment');
+
 // --- Требуют токен Sanctum ---
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::get('/user', [AuthController::class, 'me']);
     Route::post('/auth/logout', [AuthController::class, 'logout']);
+
+    // Профиль другого пользователя.
+    Route::get('/users/{user}', [UserController::class, 'show']);
 
     // Отчёты / материалы (главная, аналитика, детальный отчёт).
     Route::get('/reports', [ReportController::class, 'index']);
@@ -66,6 +76,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/chats', [ChatController::class, 'index']);
     Route::get('/chats/{slug}/messages', [ChatController::class, 'messages']);
     Route::post('/chats/{slug}/messages', [ChatController::class, 'send']);
+    Route::delete('/chats/{slug}/messages/{message}', [ChatController::class, 'destroyMessage']);
+    Route::post('/chats/{slug}/messages/{message}/react', [ChatController::class, 'react']);
+    Route::post('/chats/{slug}/messages/{message}/pin', [ChatController::class, 'pin']);
+    Route::get('/chats/{slug}/participants', [ChatController::class, 'participants']);
+    Route::get('/chats/{slug}/attachments/{kind}', [ChatController::class, 'attachments']);
 
     // --- Админка: только для админов (по Telegram ID) ---
     Route::middleware('admin')->prefix('admin')->group(function () {
