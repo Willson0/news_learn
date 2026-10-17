@@ -6,7 +6,7 @@ import IconContact from '@/components/icons/IconContact.vue'
 import IconPlay from '@/components/icons/IconPlay.vue'
 import IconDownloadCloud from '@/components/icons/IconDownloadCloud.vue'
 import IconGear from '@/components/icons/IconGear.vue'
-import { fetchMessages } from '@/api/resources'
+import { fetchMessages, fetchParticipants, fetchChatAttachments } from '@/api/resources'
 import { fileUrl } from '@/api/client'
 import { session } from '@/api/session'
 
@@ -15,8 +15,8 @@ export default {
   components: { IconBell, IconSearch, IconLeave, IconContact, IconPlay, IconDownloadCloud, IconGear },
   data() {
     return {
-      chat: { title: 'Нефть 12.12.27', members: '15 участников', avatar: null },
-      tab: 'media',
+      chat: { title: '', members: '', avatar: null },
+      tab: 'members',
       tabs: [
         { value: 'members', label: 'Участники' },
         { value: 'media', label: 'Медиа' },
@@ -24,36 +24,14 @@ export default {
         { value: 'files', label: 'Файлы' },
         { value: 'links', label: 'Ссылки' },
       ],
-      members: [
-        { name: 'Владислав', seen: 'Был в сети 58 минут назад', role: 'Автор' },
-        { name: 'Алексей', seen: 'Был в сети 15 минут назад', role: 'Участник' },
-        { name: 'Борат', seen: 'Был в сети 1 час назад', role: 'Участник' },
-        { name: 'Владимир', seen: 'Был в сети 2 часа назад', role: 'Участник' },
-        { name: 'Артем в2', seen: 'Был в сети 50 минут назад', role: 'Участник' },
-      ],
-      voices: Array.from({ length: 6 }, () => ({ name: 'Владислав', meta: '20:42 / 6 сент. 2026 в 8:32' })),
-      files: [
-        { ext: 'pdf', color: '#e8503a', name: 'pdf file for windows', meta: '1.9 мб / 6 сент. 2026 в 8:32' },
-        { ext: 'exe', color: '#3a7be8', name: 'pdf file for windows', meta: '1.9 мб / 6 сент. 2026 в 8:32' },
-        { ext: 'zip', color: '#7fbf1f', name: 'pdf file for windows', meta: '1.9 мб / 6 сент. 2026 в 8:32' },
-        { ext: '', color: '#cfcfcf', name: 'Image0340', meta: '1.9 мб / 6 сент. 2026 в 8:32' },
-      ],
-      linkGroups: [
-        {
-          month: '',
-          items: [
-            { title: 'Telegram', text: 'Новые функции уже в телеграм, работают не только с премиум, но и без премиума, переходите чтобы узнать больше!', url: 'rbk.ru/news' },
-          ],
-        },
-        {
-          month: 'Август 2026',
-          items: [
-            { title: 'Telegram', text: 'Новые функции уже в телеграм, работают не только с премиум, но и без премиума, переходите чтобы узнать больше!', url: 'rbk.ru/news' },
-            { title: 'Telegram', text: 'Новые функции уже в телеграм, работают не только с премиум, но и без премиума, переходите чтобы узнать больше!', url: 'rbk.ru/news' },
-          ],
-        },
-      ],
-      mediaCount: 9,
+      members: [],
+      media: [],
+      voices: [],
+      files: [],
+      links: [],
+      loaded: {}, // кэш загруженных вкладок
+      audio: null,
+      playingId: null,
     }
   },
   computed: {
@@ -63,26 +41,84 @@ export default {
     backTo() {
       return { name: 'chat', params: { id: this.$route.params.id } }
     },
+    linkGroups() {
+      const groups = []
+      const byMonth = {}
+      for (const l of this.links) {
+        const key = l.month || ''
+        if (!byMonth[key]) {
+          byMonth[key] = { month: key, items: [] }
+          groups.push(byMonth[key])
+        }
+        byMonth[key].items.push(l)
+      }
+      return groups
+    },
+  },
+  watch: {
+    tab(value) {
+      this.loadTab(value)
+    },
   },
   mounted() {
     this.load()
   },
+  beforeUnmount() {
+    this.stopAudio()
+  },
   methods: {
+    slug() {
+      return this.$route.params.id
+    },
     async load() {
       try {
-        const resp = await fetchMessages(this.$route.params.id)
+        const resp = await fetchMessages(this.slug())
         const c = resp.chat || {}
         this.chat = {
-          title: c.title || this.chat.title,
+          title: c.title || '',
           members: c.subtitle || '',
           avatar: fileUrl(c.avatar_url),
         }
-      } catch {
-        /* оставляем демо-данные */
-      }
+      } catch { /* оставляем пустым */ }
+      this.loadTab(this.tab)
     },
+    async loadTab(tab) {
+      if (this.loaded[tab]) return
+      try {
+        if (tab === 'members') {
+          this.members = await fetchParticipants(this.slug())
+          if (!this.chat.members && this.members.length) {
+            this.chat.members = `${this.members.length} участников`
+          }
+        } else if (tab === 'media') {
+          this.media = await fetchChatAttachments(this.slug(), 'image')
+        } else if (tab === 'voice') {
+          this.voices = await fetchChatAttachments(this.slug(), 'voice')
+        } else if (tab === 'files') {
+          this.files = await fetchChatAttachments(this.slug(), 'file')
+        } else if (tab === 'links') {
+          this.links = await fetchChatAttachments(this.slug(), 'link')
+        }
+        this.loaded = { ...this.loaded, [tab]: true }
+      } catch { /* показываем пустую вкладку */ }
+    },
+    fileUrl,
     openEdit() {
       this.$router.push({ name: 'chat-edit', params: { id: this.$route.params.id } })
+    },
+    toggleVoice(v) {
+      if (this.playingId === v.id) {
+        this.stopAudio()
+        return
+      }
+      this.stopAudio()
+      this.audio = new Audio(fileUrl(v.url))
+      this.audio.addEventListener('ended', () => { this.playingId = null })
+      this.audio.play().then(() => { this.playingId = v.id }).catch(() => { this.playingId = null })
+    },
+    stopAudio() {
+      if (this.audio) { this.audio.pause(); this.audio = null }
+      this.playingId = null
     },
   },
 }
@@ -92,7 +128,6 @@ export default {
   <section class="info">
     <!-- Шапка с аватаром -->
     <header class="info__hero">
-      <!-- Админ: шестерёнка ведёт в настройки чата, «контакт» уходит к названию -->
       <button
         v-if="isAdmin"
         type="button"
@@ -141,8 +176,10 @@ export default {
     <div class="info__content">
       <!-- Участники -->
       <ul v-if="tab === 'members'" class="info__list">
+        <li v-if="!members.length" class="info__empty">Пока нет участников</li>
         <li v-for="(m, i) in members" :key="i" class="info__member">
-          <span class="info__av"></span>
+          <img v-if="m.avatar_url" class="info__av" :src="m.avatar_url" alt="" />
+          <span v-else class="info__av"></span>
           <div class="info__member-body">
             <span class="info__member-name">{{ m.name }}</span>
             <span class="info__member-seen">{{ m.seen }}</span>
@@ -153,15 +190,27 @@ export default {
 
       <!-- Медиа -->
       <div v-else-if="tab === 'media'" class="info__grid">
-        <span v-for="i in mediaCount" :key="i" class="info__cell"></span>
+        <p v-if="!media.length" class="info__empty">Пока нет медиа</p>
+        <a
+          v-for="(a, i) in media"
+          :key="i"
+          class="info__cell"
+          :href="fileUrl(a.url)"
+          target="_blank"
+          rel="noopener"
+          :style="{ backgroundImage: `url(${fileUrl(a.url)})` }"
+        ></a>
       </div>
 
       <!-- Голосовые -->
       <ul v-else-if="tab === 'voice'" class="info__list">
+        <li v-if="!voices.length" class="info__empty">Пока нет голосовых</li>
         <li v-for="(v, i) in voices" :key="i" class="info__voice">
-          <span class="info__play"><IconPlay /></span>
+          <button type="button" class="info__play" :aria-label="playingId === v.id ? 'Пауза' : 'Играть'" @click="toggleVoice(v)">
+            <IconPlay />
+          </button>
           <div class="info__member-body">
-            <span class="info__member-name">{{ v.name }}</span>
+            <span class="info__member-name">{{ v.author || 'Голосовое' }}</span>
             <span class="info__member-seen">{{ v.meta }}</span>
           </div>
         </li>
@@ -169,28 +218,39 @@ export default {
 
       <!-- Файлы -->
       <ul v-else-if="tab === 'files'" class="info__list">
+        <li v-if="!files.length" class="info__empty">Пока нет файлов</li>
         <li v-for="(f, i) in files" :key="i" class="info__file">
-          <span class="info__file-badge" :style="{ background: f.color }">{{ f.ext }}</span>
+          <span class="info__file-badge">{{ f.ext }}</span>
           <div class="info__member-body">
             <span class="info__member-name">{{ f.name }}</span>
             <span class="info__member-seen">{{ f.meta }}</span>
           </div>
-          <IconDownloadCloud class="info__file-dl" />
+          <a :href="fileUrl(f.url)" :download="f.name" target="_blank" rel="noopener" aria-label="Скачать">
+            <IconDownloadCloud class="info__file-dl" />
+          </a>
         </li>
       </ul>
 
       <!-- Ссылки -->
       <div v-else class="info__links">
+        <p v-if="!links.length" class="info__empty">Пока нет ссылок</p>
         <template v-for="(g, gi) in linkGroups" :key="gi">
           <p v-if="g.month" class="info__link-month">{{ g.month }}</p>
-          <div v-for="(l, li) in g.items" :key="li" class="info__link">
+          <a
+            v-for="(l, li) in g.items"
+            :key="li"
+            class="info__link"
+            :href="l.url"
+            target="_blank"
+            rel="noopener"
+          >
             <span class="info__av info__av--sq"></span>
             <div class="info__link-body">
               <span class="info__member-name">{{ l.title }}</span>
               <span class="info__link-text">{{ l.text }}</span>
               <span class="info__link-url">{{ l.url }}</span>
             </div>
-          </div>
+          </a>
         </template>
       </div>
     </div>
@@ -344,4 +404,11 @@ export default {
 .info__link-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .info__link-text { font-size: var(--font-size-base); color: var(--color-text-secondary); line-height: 1.3; }
 .info__link-url { font-size: var(--font-size-base); color: #6ea8e0; }
+
+/* Доп. правила продукта */
+.info__empty { color: var(--color-text-secondary); font-size: var(--font-size-base); padding: 20px 0; }
+.info__av { object-fit: cover; }
+.info__cell { display: block; background-size: cover; background-position: center; }
+.info__play { cursor: pointer; }
+.info__links a.info__link { text-decoration: none; color: inherit; }
 </style>

@@ -13,10 +13,12 @@ export default {
   components: { AppInput, AppButton },
   data() {
     return {
-      email: '',
+      email: this.$route.query.email || '',
+      code: '',
       newPassword: '',
       errors: {},
-      secondsLeft: RESEND_SECONDS,
+      codeSent: false,
+      secondsLeft: 0,
       timer: null,
     }
   },
@@ -25,14 +27,11 @@ export default {
       return this.secondsLeft <= 0
     },
     resendLabel() {
-      if (this.canResend) return 'Отправить повторно'
+      if (this.canResend) return this.codeSent ? 'Отправить код повторно' : 'Отправить код'
       const m = Math.floor(this.secondsLeft / 60)
       const s = String(this.secondsLeft % 60).padStart(2, '0')
       return `Повторное сообщение через ${m}:${s}`
     },
-  },
-  mounted() {
-    this.startTimer()
   },
   beforeUnmount() {
     this.stopTimer()
@@ -40,6 +39,7 @@ export default {
   methods: {
     startTimer() {
       this.stopTimer()
+      this.secondsLeft = RESEND_SECONDS
       this.timer = setInterval(() => {
         if (this.secondsLeft > 0) this.secondsLeft -= 1
         else this.stopTimer()
@@ -51,8 +51,12 @@ export default {
         this.timer = null
       }
     },
+    onCodeInput(val) {
+      this.code = String(val).replace(/\D/g, '').slice(0, 6)
+      this.errors = { ...this.errors, code: undefined }
+    },
     async resend() {
-      if (!this.canResend && this.secondsLeft < RESEND_SECONDS) return
+      if (!this.canResend) return
       if (!EMAIL_RE.test(this.email.trim())) {
         this.errors = { email: 'Введите email, чтобы отправить код' }
         haptic('rigid')
@@ -61,16 +65,20 @@ export default {
       haptic('light')
       try {
         await requestRecovery(this.email.trim())
-      } catch {
-        /* показываем таймер в любом случае */
+        this.codeSent = true
+        this.startTimer()
+      } catch (e) {
+        this.errors = { email: e instanceof ApiError ? e.message : 'Не удалось отправить код' }
+        haptic('rigid')
       }
-      this.secondsLeft = RESEND_SECONDS
-      this.startTimer()
     },
     async submit() {
       const errors = {}
       if (!EMAIL_RE.test(this.email.trim())) {
         errors.email = 'Неверный формат email'
+      }
+      if (this.code.length < 6) {
+        errors.code = 'Введите код из 6 цифр из письма'
       }
       if (this.newPassword.length < 8) {
         errors.newPassword = 'Пароль должен содержать от 8 символов'
@@ -82,14 +90,20 @@ export default {
       }
       haptic('medium')
       try {
-        // Если код ещё не запрашивали — делаем это перед сбросом.
-        await requestRecovery(this.email.trim())
-        await resetPassword(this.email.trim(), this.newPassword)
+        await resetPassword(this.email.trim(), this.newPassword, this.code)
         this.$router.push({ name: 'home' })
       } catch (e) {
         haptic('rigid')
-        const msg = e instanceof ApiError ? e.message : 'Не удалось сменить пароль'
-        this.errors = { email: msg }
+        if (e instanceof ApiError && e.errors) {
+          const first = {}
+          for (const [k, v] of Object.entries(e.errors)) {
+            const key = k === 'password' ? 'newPassword' : k
+            first[key] = Array.isArray(v) ? v[0] : String(v)
+          }
+          this.errors = Object.keys(first).length ? first : { email: e.message }
+        } else {
+          this.errors = { email: 'Не удалось сменить пароль' }
+        }
       }
     },
   },
@@ -103,8 +117,8 @@ export default {
 
     <h1 class="recovery__title screen-title">Восстановление пароля</h1>
     <p class="recovery__subtitle">
-      Временный пароль придёт на указанную почту, позднее пароль можно сменить в
-      профиле
+      Отправим код на указанную почту. Введите его вместе с новым паролем — позднее
+      пароль можно сменить в профиле.
     </p>
 
     <form class="recovery__form" novalidate @submit.prevent="submit">
@@ -118,6 +132,18 @@ export default {
           :error="!!errors.email"
         />
         <p v-if="errors.email" class="recovery__error">{{ errors.email }}</p>
+      </div>
+
+      <div class="recovery__field">
+        <AppInput
+          :model-value="code"
+          placeholder="Код из письма"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          :error="!!errors.code"
+          @update:model-value="onCodeInput"
+        />
+        <p v-if="errors.code" class="recovery__error">{{ errors.code }}</p>
       </div>
 
       <div class="recovery__field">

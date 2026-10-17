@@ -39,8 +39,8 @@ export async function requestRecovery(email) {
   return api.post('/auth/recovery', { email })
 }
 
-export async function resetPassword(email, password) {
-  const data = await api.post('/auth/recovery/reset', { email, password })
+export async function resetPassword(email, password, code) {
+  const data = await api.post('/auth/recovery/reset', { email, password, code })
   setToken(data.token)
   setSessionUser(data.user)
   return data.user

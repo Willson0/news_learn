@@ -73,8 +73,48 @@ export function fetchMessages(slug) {
   return api.get(`/chats/${slug}/messages`)
 }
 
-export function sendMessage(slug, body) {
-  return api.post(`/chats/${slug}/messages`, { body }).then((r) => r.data)
+/**
+ * Отправка сообщения: текст и/или вложение (image|file|voice), опционально ответ.
+ * attachment — File/Blob; при наличии уходит multipart-формой.
+ */
+export function sendMessage(slug, { body, replyTo, attachment, kind, duration } = {}) {
+  if (attachment) {
+    const form = new FormData()
+    if (body) form.append('body', body)
+    if (replyTo) form.append('reply_to', replyTo)
+    form.append('kind', kind)
+    if (duration != null) form.append('duration', String(duration))
+    const filename = attachment.name || (kind === 'voice' ? 'voice.webm' : 'file')
+    form.append('attachment', attachment, filename)
+    return api.post(`/chats/${slug}/messages`, form).then((r) => r.data)
+  }
+  const payload = { body }
+  if (replyTo) payload.reply_to = replyTo
+  return api.post(`/chats/${slug}/messages`, payload).then((r) => r.data)
+}
+
+export function reactToMessage(slug, id, emoji) {
+  return api.post(`/chats/${slug}/messages/${id}/react`, { emoji }).then((r) => r.data)
+}
+
+export function pinMessage(slug, id) {
+  return api.post(`/chats/${slug}/messages/${id}/pin`)
+}
+
+export function deleteMessage(slug, id) {
+  return api.del(`/chats/${slug}/messages/${id}`)
+}
+
+export function fetchParticipants(slug) {
+  return api.get(`/chats/${slug}/participants`).then((r) => r.data)
+}
+
+export function fetchChatAttachments(slug, kind) {
+  return api.get(`/chats/${slug}/attachments/${kind}`).then((r) => r.data)
+}
+
+export function fetchUser(id) {
+  return api.get(`/users/${id}`).then((r) => r.data)
 }
 
 // --- Админка (только для админов) ---

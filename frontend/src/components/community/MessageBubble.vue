@@ -1,13 +1,17 @@
 <script>
 import IconPlay from '@/components/icons/IconPlay.vue'
 import IconDownloadCloud from '@/components/icons/IconDownloadCloud.vue'
+import { fileUrl } from '@/api/client'
 
 export default {
   name: 'MessageBubble',
   components: { IconPlay, IconDownloadCloud },
   props: {
     message: { type: Object, required: true },
-    // message: { mine, author, role, type, text, time, read, reply, file, voice, image }
+    // message: { mine, author, role, text, time, read, reply, file, voice, image, reactions }
+  },
+  data() {
+    return { audio: null, playing: false }
   },
   computed: {
     bars() {
@@ -17,6 +21,43 @@ export default {
         const v = Math.abs(Math.sin(seed * 7.3 + i * 1.7))
         return 4 + Math.round(v * 14)
       })
+    },
+    imageSrc() {
+      return this.message.image ? fileUrl(this.message.image.url) : null
+    },
+    fileHref() {
+      return this.message.file ? fileUrl(this.message.file.url) : null
+    },
+  },
+  beforeUnmount() {
+    this.stopAudio()
+  },
+  methods: {
+    toggleVoice() {
+      if (!this.message.voice) return
+      if (!this.audio) {
+        this.audio = new Audio(fileUrl(this.message.voice.url))
+        this.audio.addEventListener('ended', () => {
+          this.playing = false
+        })
+      }
+      if (this.playing) {
+        this.audio.pause()
+        this.playing = false
+      } else {
+        this.audio.play().then(() => {
+          this.playing = true
+        }).catch(() => {
+          this.playing = false
+        })
+      }
+    },
+    stopAudio() {
+      if (this.audio) {
+        this.audio.pause()
+        this.audio = null
+      }
+      this.playing = false
     },
   },
 }
@@ -39,21 +80,32 @@ export default {
     </div>
 
     <!-- Изображение -->
-    <div v-if="message.image" class="bubble__image"></div>
+    <img v-if="message.image" class="bubble__image" :src="imageSrc" alt="" />
 
     <!-- Файл -->
-    <div v-if="message.file" class="bubble__file">
+    <a
+      v-if="message.file"
+      class="bubble__file"
+      :href="fileHref"
+      :download="message.file.name"
+      target="_blank"
+      rel="noopener"
+      @click.stop
+    >
       <span class="bubble__file-badge">{{ message.file.ext }}</span>
       <span class="bubble__file-info">
         <span class="bubble__file-name">{{ message.file.name }}</span>
         <span class="bubble__file-size">{{ message.file.size }}</span>
       </span>
       <IconDownloadCloud class="bubble__file-dl" />
-    </div>
+    </a>
 
     <!-- Голосовое -->
     <div v-if="message.voice" class="bubble__voice">
-      <span class="bubble__play"><IconPlay /></span>
+      <button type="button" class="bubble__play" :aria-label="playing ? 'Пауза' : 'Воспроизвести'" @click.stop="toggleVoice">
+        <svg v-if="playing" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="5" width="3.5" height="14" rx="1"/><rect x="13.5" y="5" width="3.5" height="14" rx="1"/></svg>
+        <IconPlay v-else />
+      </button>
       <span class="bubble__wave">
         <span v-for="(h, i) in bars" :key="i" class="bubble__bar" :style="{ height: h + 'px' }"></span>
       </span>
@@ -65,7 +117,12 @@ export default {
 
     <!-- Реакции -->
     <div v-if="message.reactions && message.reactions.length" class="bubble__reactions">
-      <span v-for="(r, i) in message.reactions" :key="i" class="bubble__reaction">
+      <span
+        v-for="(r, i) in message.reactions"
+        :key="i"
+        class="bubble__reaction"
+        :class="{ 'bubble__reaction--mine': r.mine }"
+      >
         {{ r.emoji }} <small>{{ r.count }}</small>
       </span>
     </div>
@@ -73,7 +130,7 @@ export default {
     <span v-if="message.time" class="bubble__meta">
       {{ message.time }}
       <svg v-if="message.mine" class="bubble__read" viewBox="0 0 20 12" aria-hidden="true">
-        <rect x="1" y="1" width="18" height="10" rx="5" fill="rgba(255,255,255,0.25)" />
+        <rect x="1" y="1" width="18" height="10" rx="5" :fill="message.read ? '#7bc043' : 'rgba(255,255,255,0.25)'" />
         <circle cx="13" cy="6" r="4" fill="#fff" />
       </svg>
     </span>
@@ -259,5 +316,14 @@ export default {
 .bubble__read {
   width: 20px;
   height: 12px;
+}
+
+/* Доп. правила продукта */
+.bubble__image { display: block; object-fit: cover; cursor: pointer; }
+.bubble__file { text-decoration: none; color: inherit; }
+.bubble__play { cursor: pointer; }
+.bubble__reaction--mine {
+  background: rgba(123, 192, 67, 0.35);
+  box-shadow: inset 0 0 0 1px rgba(123, 192, 67, 0.6);
 }
 </style>
