@@ -6,6 +6,7 @@ struct AnalyticsView: View {
     @State private var reports: [ReportDto] = []
     @State private var statusFilter: [String]? = nil
     @State private var filtersOpen = false
+    @State private var loaded = false
 
     private var visible: [ReportDto] {
         let q = query.trimmed.lowercased()
@@ -30,12 +31,16 @@ struct AnalyticsView: View {
                 }
 
                 LazyVStack(spacing: 16) {
-                    ForEach(visible) { report in
-                        ReportCard(report: report) { router.push(.reportDetail(id: report.id)) }
-                    }
-                    if visible.isEmpty {
-                        Text("Ничего не найдено").foregroundStyle(Theme.textSecondary)
-                            .frame(maxWidth: .infinity).padding(.vertical, 40)
+                    if !loaded {
+                        ForEach(0..<4, id: \.self) { _ in ReportCardSkeleton() }
+                    } else {
+                        ForEach(visible) { report in
+                            ReportCard(report: report) { router.push(.reportDetail(id: report.id)) }
+                        }
+                        if visible.isEmpty {
+                            Text("Ничего не найдено").foregroundStyle(Theme.textSecondary)
+                                .frame(maxWidth: .infinity).padding(.vertical, 40)
+                        }
                     }
                 }
             }
@@ -57,5 +62,6 @@ struct AnalyticsView: View {
     private func load() async {
         do { reports = try await Api.fetchReports(status: statusFilter) }
         catch { reports = [] }
+        loaded = true
     }
 }

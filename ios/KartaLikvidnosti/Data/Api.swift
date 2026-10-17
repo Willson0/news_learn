@@ -80,6 +80,11 @@ enum Api {
         try await ApiClient.get("profile", as: ProfileResponse.self)
     }
 
+    /// Правка профиля: имя и тег (username). Бэкенд: PUT /profile.
+    static func updateProfile(name: String, username: String?) async throws {
+        _ = try await ApiClient.put("profile", body: ["name": name, "username": username], as: StatusResponse.self)
+    }
+
     static func syncInstruments(_ keys: [String]) async throws {
         _ = try await ApiClient.put("profile/instruments", body: ["instruments": keys], as: InstrumentsResponse.self)
     }

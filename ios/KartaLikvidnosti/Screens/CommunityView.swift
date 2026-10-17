@@ -7,6 +7,7 @@ struct CommunityView: View {
     @State private var query = ""
     @State private var tab = "all"
     @State private var sections: [ChatSectionDto] = CommunityView.demo
+    @State private var loaded = false
 
     static let demo: [ChatSectionDto] = [
         ChatSectionDto(key: "admin", title: "Чат с админом", items: [
@@ -50,24 +51,30 @@ struct CommunityView: View {
                         .overlay(RoundedRectangle(cornerRadius: Theme.radiusPill).stroke(Color.white.opacity(0.14), lineWidth: 1))
                 }
 
-                ForEach(visibleSections) { section in
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(section.title).font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
-                        VStack(spacing: 0) {
-                            ForEach(section.items) { item in
-                                chatRow(item)
-                                if item.id != section.items.last?.id {
-                                    Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
+                if !loaded {
+                    VStack(spacing: 0) {
+                        ForEach(0..<6, id: \.self) { _ in ChatRowSkeleton() }
+                    }
+                } else {
+                    ForEach(visibleSections) { section in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(section.title).font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
+                            VStack(spacing: 0) {
+                                ForEach(section.items) { item in
+                                    chatRow(item)
+                                    if item.id != section.items.last?.id {
+                                        Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
+                                    }
                                 }
                             }
                         }
                     }
-                }
 
-                if visibleSections.isEmpty {
-                    Text(session.isAdmin && tab == "direct" ? "Личных сообщений пока нет" : "Ничего не найдено")
-                        .foregroundStyle(Theme.textSecondary)
-                        .frame(maxWidth: .infinity).padding(.vertical, 40)
+                    if visibleSections.isEmpty {
+                        Text(session.isAdmin && tab == "direct" ? "Личных сообщений пока нет" : "Ничего не найдено")
+                            .foregroundStyle(Theme.textSecondary)
+                            .frame(maxWidth: .infinity).padding(.vertical, 40)
+                    }
                 }
             }
             .padding(.horizontal, Theme.screenX)
@@ -116,5 +123,6 @@ struct CommunityView: View {
             let s = try await Api.fetchChats()
             if !s.isEmpty { sections = s }
         } catch {}
+        loaded = true
     }
 }

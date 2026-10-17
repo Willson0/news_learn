@@ -27,6 +27,7 @@ struct ProfileView: View {
                 hero
                 subscriptionCard
                 Text("Отслеживаемые инструменты").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
+                    .padding(.horizontal, Theme.screenX)
                 FlowLayout(spacing: 8) {
                     ForEach(instruments.indices, id: \.self) { i in
                         InstrumentChip(label: instruments[i].label, on: Binding(
@@ -35,8 +36,10 @@ struct ProfileView: View {
                     }
                 }
                 .padding(16).background(Theme.surface).clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+                .padding(.horizontal, Theme.screenX)
 
                 Text("Настройки").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
+                    .padding(.horizontal, Theme.screenX)
                 settingsList
 
                 historyHeader
@@ -45,6 +48,7 @@ struct ProfileView: View {
                         ReportCard(report: report) { router.push(.reportDetail(id: report.id)) }
                     }
                 }
+                .padding(.horizontal, Theme.screenX)
             }
             .padding(.bottom, 120)
         }
@@ -97,7 +101,7 @@ struct ProfileView: View {
             if session.isAdmin { settingRow("Администраторы") { router.push(.admins) } }
             settingRow("Push-уведомления") { router.push(.notifications) }
             settingRow("Данные аккаунта") { router.push(.accountData) }
-            settingRow("Пользовательское соглашение") {}
+            settingRow("Пользовательское соглашение") { router.push(.userAgreement) }
         }
         .padding(.horizontal, Theme.screenX)
     }

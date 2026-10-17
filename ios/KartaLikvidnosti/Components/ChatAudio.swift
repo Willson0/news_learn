@@ -8,12 +8,15 @@ final class ChatAudio: NSObject, ObservableObject {
     @Published var recording = false
     @Published var elapsed = 0
     @Published var playingId: Int? = nil
+    /// Прогресс воспроизведения текущего голосового, 0…1 (для заполнения волны).
+    @Published var progress: Double = 0
 
     private var recorder: AVAudioRecorder?
     private var recordURL: URL?
     private var timer: Timer?
     private var player: AVPlayer?
     private var endObserver: NSObjectProtocol?
+    private var timeObserver: Any?
 
     // MARK: - Разрешение на микрофон
 
@@ -96,18 +99,35 @@ final class ChatAudio: NSObject, ObservableObject {
         let p = AVPlayer(url: url)
         player = p
         playingId = id
+        progress = 0
         endObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime, object: p.currentItem, queue: .main
         ) { [weak self] _ in
             Task { @MainActor in self?.stopPlayback() }
         }
+        // Периодически обновляем прогресс, чтобы волна заполнялась по ходу.
+        let interval = CMTime(seconds: 0.05, preferredTimescale: 600)
+        timeObserver = p.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
+            let seconds = time.seconds
+            Task { @MainActor in
+                guard let self, let item = self.player?.currentItem else { return }
+                let dur = item.duration.seconds
+                guard dur.isFinite, dur > 0 else { return }
+                self.progress = min(1, max(0, seconds / dur))
+            }
+        }
         p.play()
     }
 
     func stopPlayback() {
+        if let t = timeObserver {
+            player?.removeTimeObserver(t)
+            timeObserver = nil
+        }
         player?.pause()
         player = nil
         playingId = nil
+        progress = 0
         if let o = endObserver {
             NotificationCenter.default.removeObserver(o)
             endObserver = nil

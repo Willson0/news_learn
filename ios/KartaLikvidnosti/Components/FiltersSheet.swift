@@ -28,9 +28,26 @@ struct FiltersSheet: View {
         .init(key: "archive", label: "Архивное", on: false),
     ]
     @State private var dateMode = "week"
-    @State private var selectedDate = "2026-03-17"
-    @State private var range = "С 17 МАР - 28 МАР"
+    @State private var dateStart: String? = "2026-03-17"
+    @State private var dateEnd: String? = "2026-03-28"
     @State private var calendarOpen = true
+
+    private static let shortMonths = ["ЯНВ", "ФЕВ", "МАР", "АПР", "МАЙ", "ИЮН",
+                                      "ИЮЛ", "АВГ", "СЕН", "ОКТ", "НОЯ", "ДЕК"]
+
+    private static func shortDate(_ iso: String?) -> String? {
+        guard let iso = iso else { return nil }
+        let p = iso.split(separator: "-")
+        guard p.count == 3, let m = Int(p[1]), (1...12).contains(m), let d = Int(p[2]) else { return nil }
+        return "\(d) \(shortMonths[m - 1])"
+    }
+
+    /// Подпись выбранного диапазона дат: «С 17 МАР - 28 МАР» или «С 17 МАР».
+    private var rangeLabel: String {
+        guard let s = Self.shortDate(dateStart) else { return "" }
+        if let e = Self.shortDate(dateEnd) { return "С \(s) - \(e)" }
+        return "С \(s)"
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -59,11 +76,11 @@ struct FiltersSheet: View {
                     HStack {
                         Text("По дате").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
                         Spacer()
-                        if !range.isEmpty {
-                            Button { range = ""; calendarOpen = true } label: {
+                        if !rangeLabel.isEmpty {
+                            Button { dateStart = nil; dateEnd = nil; calendarOpen = true } label: {
                                 Icon(AppIcons.close, size: 18, color: Theme.textSecondary)
                             }.buttonStyle(.plain)
-                            Text(range).font(.system(size: Theme.fontSm))
+                            Text(rangeLabel).font(.system(size: Theme.fontSm))
                                 .padding(.horizontal, 12).padding(.vertical, 8)
                                 .background(Theme.gradientAccent).clipShape(Capsule())
                         }
@@ -73,7 +90,7 @@ struct FiltersSheet: View {
                     }
 
                     if calendarOpen {
-                        AppCalendar(selected: $selectedDate)
+                        AppCalendar(start: $dateStart, end: $dateEnd)
                     }
 
                     SegmentedControl(selection: $dateMode, options: [

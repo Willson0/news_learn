@@ -4,6 +4,7 @@ struct HomeView: View {
     @EnvironmentObject var router: Router
     @State private var filter = "all"
     @State private var reports: [ReportDto] = []
+    @State private var loaded = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -11,13 +12,17 @@ struct HomeView: View {
                 Text("Лента материалов").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
                 MaterialChips(selected: $filter)
                 LazyVStack(spacing: 16) {
-                    ForEach(reports) { report in
-                        ReportCard(report: report) { router.push(.reportDetail(id: report.id)) }
-                    }
-                    if reports.isEmpty {
-                        Text("По этому фильтру материалов пока нет")
-                            .foregroundStyle(Theme.textSecondary)
-                            .frame(maxWidth: .infinity).padding(.vertical, 40)
+                    if !loaded {
+                        ForEach(0..<4, id: \.self) { _ in ReportCardSkeleton() }
+                    } else {
+                        ForEach(reports) { report in
+                            ReportCard(report: report) { router.push(.reportDetail(id: report.id)) }
+                        }
+                        if reports.isEmpty {
+                            Text("По этому фильтру материалов пока нет")
+                                .foregroundStyle(Theme.textSecondary)
+                                .frame(maxWidth: .infinity).padding(.vertical, 40)
+                        }
                     }
                 }
             }
@@ -32,5 +37,6 @@ struct HomeView: View {
     private func load() async {
         do { reports = try await Api.fetchReports(instrument: filter) }
         catch { reports = [] }
+        loaded = true
     }
 }

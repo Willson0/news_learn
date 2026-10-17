@@ -99,3 +99,90 @@ struct PressableStyle: ButtonStyle {
         configuration.label.opacity(configuration.isPressed ? 0.85 : 1)
     }
 }
+
+// MARK: - Скелетоны загрузки (чтобы вёрстка не прыгала)
+
+/// Лёгкий «shimmer» — бегущий блик поверх плейсхолдера.
+struct Shimmer: ViewModifier {
+    @State private var phase: CGFloat = -1
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(
+                GeometryReader { geo in
+                    LinearGradient(
+                        colors: [.clear, Color.white.opacity(0.14), .clear],
+                        startPoint: .leading, endPoint: .trailing
+                    )
+                    .frame(width: geo.size.width * 0.5)
+                    .offset(x: phase * geo.size.width * 1.5)
+                }
+                .allowsHitTesting(false)
+            )
+            .clipped()
+            .onAppear {
+                withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) { phase = 1 }
+            }
+    }
+}
+
+extension View {
+    func shimmer() -> some View { modifier(Shimmer()) }
+}
+
+/// Прямоугольник-заглушка с лёгким shimmer.
+struct SkeletonBlock: View {
+    var width: CGFloat? = nil
+    var height: CGFloat
+    var radius: CGFloat = 10
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: radius, style: .continuous)
+            .fill(Color.white.opacity(0.07))
+            .frame(width: width, height: height)
+            .shimmer()
+    }
+}
+
+/// Заглушка карточки отчёта (лента/аналитика/история).
+struct ReportCardSkeleton: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SkeletonBlock(height: 150, radius: Theme.radiusCard)
+            SkeletonBlock(width: 180, height: 16)
+            SkeletonBlock(width: 240, height: 12)
+        }
+        .padding(16)
+        .background(Theme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+    }
+}
+
+/// Заглушка строки чата в сообществе.
+struct ChatRowSkeleton: View {
+    var body: some View {
+        HStack(spacing: 12) {
+            Circle().fill(Color.white.opacity(0.07)).frame(width: 56, height: 56).shimmer()
+            VStack(alignment: .leading, spacing: 8) {
+                SkeletonBlock(width: 140, height: 14)
+                SkeletonBlock(width: 220, height: 12)
+            }
+            Spacer()
+        }
+        .padding(.vertical, 12)
+    }
+}
+
+/// Заглушка пузыря сообщения в чате.
+struct MessageSkeleton: View {
+    var mine: Bool = false
+    var wide: Bool = false
+
+    var body: some View {
+        HStack {
+            if mine { Spacer(minLength: 40) }
+            SkeletonBlock(width: wide ? 230 : 150, height: 44, radius: 16)
+            if !mine { Spacer(minLength: 40) }
+        }
+    }
+}

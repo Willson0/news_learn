@@ -20,6 +20,7 @@ enum Route: Hashable {
     case accountSuccess(field: String)
     case admins
     case subscription
+    case userAgreement
 }
 
 /// Маршруты экрана авторизации (hideNav).

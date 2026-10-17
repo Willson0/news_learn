@@ -48,6 +48,8 @@ struct ChatMessage: Identifiable {
 struct MessageBubble: View {
     let message: ChatMessage
     var isPlaying: Bool = false
+    /// Прогресс проигрывания голосового, 0…1 — для заполнения волны.
+    var voiceProgress: Double = 0
     var onPlayVoice: (() -> Void)? = nil
     var onOpenFile: (() -> Void)? = nil
 
@@ -129,11 +131,16 @@ struct MessageBubble: View {
                         }
                     }.buttonStyle(.plain)
                     HStack(alignment: .center, spacing: 2) {
-                        ForEach(Array(bars.enumerated()), id: \.offset) { _, h in
-                            Capsule().fill(Color.white.opacity(isPlaying ? 0.85 : 0.55)).frame(width: 2, height: h)
+                        ForEach(Array(bars.enumerated()), id: \.offset) { idx, h in
+                            let frac = Double(idx) / Double(max(bars.count - 1, 1))
+                            let played = isPlaying && frac <= voiceProgress
+                            Capsule()
+                                .fill(Color.white.opacity(played ? 0.98 : (isPlaying ? 0.4 : 0.55)))
+                                .frame(width: 2, height: h)
                         }
                     }
                     .frame(height: 24)
+                    .animation(.linear(duration: 0.08), value: voiceProgress)
                     Text(voice.duration).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
                 }
                 .padding(.vertical, 2)

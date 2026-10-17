@@ -79,6 +79,7 @@ private struct MainFlow: View {
         case .accountSuccess(let field): AccountSuccessView(field: field)
         case .admins: AdminsView()
         case .subscription: SubscriptionView()
+        case .userAgreement: UserAgreementView()
         }
     }
 }

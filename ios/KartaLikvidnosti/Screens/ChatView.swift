@@ -22,6 +22,7 @@ struct ChatView: View {
     @State private var photoItem: PhotosPickerItem? = nil
     @State private var fileImporterOpen = false
     @State private var photoViewerURL: URL? = nil
+    @State private var loaded = false
 
     private let reactions = ["👍", "❤️", "🔥", "😂", "😮", "😢", "🙏", "👏"]
 
@@ -57,15 +58,22 @@ struct ChatView: View {
 
             ScrollView(showsIndicators: false) {
                 LazyVStack(spacing: 10) {
-                    HStack { Spacer()
-                        Text("Сегодня").font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
-                            .padding(.horizontal, 14).padding(.vertical, 4)
-                            .liquidGlass()
-                        Spacer() }
-                        .padding(.vertical, 8)
-                    ForEach(messages) { m in messageRow(m) }
+                    if !loaded {
+                        ForEach(0..<7, id: \.self) { i in
+                            MessageSkeleton(mine: i % 3 == 0, wide: i % 2 == 0)
+                        }
+                    } else {
+                        HStack { Spacer()
+                            Text("Сегодня").font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
+                                .padding(.horizontal, 14).padding(.vertical, 4)
+                                .liquidGlass()
+                            Spacer() }
+                            .padding(.vertical, 8)
+                        ForEach(messages) { m in messageRow(m) }
+                    }
                 }
                 .padding(.horizontal, Theme.screenX).padding(.bottom, 16)
+                .animation(.spring(response: 0.35, dampingFraction: 0.82), value: messages.count)
             }
 
             composer
@@ -75,7 +83,7 @@ struct ChatView: View {
                 RadialGradient(colors: [Color(hex: "#463746").opacity(0.4), .clear], center: .top, startRadius: 0, endRadius: 300) }
         }
         .overlay { if photoViewerURL != nil { photoViewerOverlay } }
-        .overlay { if menuFor != nil { contextMenuOverlay } }
+        .overlay { if menuFor != nil { contextMenuOverlay.transition(.opacity) } }
         .fileImporter(isPresented: $fileImporterOpen, allowedContentTypes: [.item], allowsMultipleSelection: false) { result in
             handleFileImport(result)
         }
@@ -151,18 +159,32 @@ struct ChatView: View {
             if m.mine { Spacer(minLength: 0) }
             MessageBubble(message: m,
                           isPlaying: audio.playingId == m.id,
+                          voiceProgress: audio.playingId == m.id ? audio.progress : 0,
                           onPlayVoice: { audio.togglePlay(id: m.id, url: m.voice?.url) },
                           onOpenFile: { openURL(m.file?.url) })
-                .onTapGesture { onBubble(m) }
+                .scaleEffect(menuFor == m.id ? 1.04 : 1)
+                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: menuFor)
+                .onTapGesture { onTap(m) }
+                .onLongPressGesture(minimumDuration: 0.3) { onLongPress(m) }
             if !m.mine { Spacer(minLength: 0) }
         }
         .frame(maxWidth: .infinity, alignment: m.mine ? .trailing : .leading)
+        .transition(.asymmetric(
+            insertion: .move(edge: .bottom).combined(with: .opacity).combined(with: .scale(scale: 0.92, anchor: m.mine ? .bottomTrailing : .bottomLeading)),
+            removal: .opacity))
     }
 
-    private func onBubble(_ m: ChatMessage) {
+    /// Тап: в режиме выбора — отметить; фото — открыть просмотр. Меню — только по долгому нажатию.
+    private func onTap(_ m: ChatMessage) {
         if selectMode { toggleSelect(m.id) }
         else if let url = m.image?.url { photoViewerURL = url }
-        else { menuFor = m.id }
+    }
+
+    /// Долгое нажатие — контекстное меню сообщения с подъёмом и вибрацией (как в TG/iMessage).
+    private func onLongPress(_ m: ChatMessage) {
+        if selectMode { toggleSelect(m.id); return }
+        Haptics.medium()
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.78)) { menuFor = m.id }
     }
 
     private func openUser(_ m: ChatMessage) {
@@ -319,7 +341,8 @@ struct ChatView: View {
     private var contextMenuOverlay: some View {
         let m = messages.first { $0.id == menuFor }
         return ZStack {
-            Color.black.opacity(0.6).ignoresSafeArea().onTapGesture { menuFor = nil }
+            Color.black.opacity(0.6).ignoresSafeArea()
+                .onTapGesture { withAnimation(.easeOut(duration: 0.2)) { menuFor = nil } }
             VStack(spacing: 12) {
                 HStack {
                     ForEach(reactions, id: \.self) { r in
@@ -503,6 +526,7 @@ struct ChatView: View {
 
     private func load() async {
         await reloadMessages()
+        loaded = true
         if let parts = try? await Api.chatParticipants(chatId) { participants = parts }
     }
 

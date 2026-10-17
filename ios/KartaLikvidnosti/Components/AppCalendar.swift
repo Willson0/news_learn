@@ -1,8 +1,11 @@
 import SwiftUI
 
-/// Календарь выбора даты (ui/AppCalendar.vue).
+/// Календарь выбора диапазона дат (ui/AppCalendar.vue).
+/// Поддерживает выбор начальной и конечной даты: первый тап задаёт начало,
+/// следующий — конец (если он позже начала), иначе диапазон начинается заново.
 struct AppCalendar: View {
-    @Binding var selected: String      // ISO yyyy-MM-dd
+    @Binding var start: String?   // ISO yyyy-MM-dd
+    @Binding var end: String?     // ISO yyyy-MM-dd
     var today: String = "2026-03-28"
 
     @State private var viewYear: Int
@@ -12,10 +15,12 @@ struct AppCalendar: View {
                                  "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
     private static let weekdays = ["ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "ВС"]
 
-    init(selected: Binding<String>, today: String = "2026-03-28") {
-        _selected = selected
+    init(start: Binding<String?>, end: Binding<String?>, today: String = "2026-03-28") {
+        _start = start
+        _end = end
         self.today = today
-        let comps = Self.parse(selected.wrappedValue) ?? (2026, 3, 1)
+        let base = start.wrappedValue ?? today
+        let comps = Self.parse(base) ?? (2026, 3, 1)
         _viewYear = State(initialValue: comps.0)
         _viewMonth = State(initialValue: comps.1 - 1)
     }
@@ -27,7 +32,7 @@ struct AppCalendar: View {
             HStack {
                 Button { prevMonth() } label: { Icon(AppIcons.back, size: 20, color: Theme.text) }
                 Spacer()
-                Text(Self.months[viewMonth]).font(.system(size: Theme.fontMd, weight: .bold))
+                Text("\(Self.months[viewMonth]) \(String(viewYear))").font(.system(size: Theme.fontMd, weight: .bold))
                     .foregroundStyle(Theme.text)
                 Spacer()
                 Button { nextMonth() } label: { Icon(AppIcons.chevronRight, size: 20, color: Theme.text) }
@@ -54,11 +59,18 @@ struct AppCalendar: View {
     }
 
     @ViewBuilder private func dayView(_ cell: Cell) -> some View {
-        let isSelected = cell.iso == selected
-        let isToday = cell.iso == today && cell.iso != selected
+        let isStart = cell.iso != nil && cell.iso == start
+        let isEnd = cell.iso != nil && cell.iso == end
+        let isEdge = isStart || isEnd
+        let inRange = isInRange(cell.iso)
+        let isToday = cell.iso == today && !isEdge
         ZStack {
+            // Подсветка диапазона между краями.
+            if inRange && !isEdge {
+                Rectangle().fill(Theme.green.opacity(0.18)).frame(height: 34)
+            }
             Circle()
-                .fill(isSelected ? Theme.green : (isToday ? Color.white : Color.clear))
+                .fill(isEdge ? Theme.green : (isToday ? Color.white : Color.clear))
                 .frame(width: 34, height: 34)
             Text("\(cell.day)")
                 .font(.system(size: Theme.fontBase))
@@ -66,6 +78,12 @@ struct AppCalendar: View {
         }
         .frame(height: 40)
         .frame(maxWidth: .infinity)
+    }
+
+    /// Дата строго между выбранными краями (для подсветки «моста»).
+    private func isInRange(_ iso: String?) -> Bool {
+        guard let iso = iso, let s = start, let e = end else { return false }
+        return iso > s && iso < e
     }
 
     private var cells: [Cell] {
@@ -96,9 +114,16 @@ struct AppCalendar: View {
     private func nextMonth() {
         if viewMonth == 11 { viewMonth = 0; viewYear += 1 } else { viewMonth += 1 }
     }
+
+    /// Логика диапазона: нет начала или уже выбраны обе даты → начинаем заново.
+    /// Иначе второй тап задаёт конец (если позже начала) либо переносит начало.
     private func select(_ cell: Cell) {
         guard !cell.out, let iso = cell.iso else { return }
-        selected = iso
+        if start == nil || end != nil {
+            start = iso; end = nil
+        } else if let s = start {
+            if iso >= s { end = iso } else { start = iso }
+        }
     }
 
     private static func parse(_ iso: String) -> (Int, Int, Int)? {
