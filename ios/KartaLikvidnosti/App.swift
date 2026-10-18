@@ -6,7 +6,9 @@ struct KartaLikvidnostiApp: App {
     @StateObject private var router = Router()
     @StateObject private var appData = AppData()
 
-    init() { Self.configureAppearance() }
+    init() {
+        Self.configureAppearance()
+    }
 
     var body: some Scene {
         WindowGroup {
