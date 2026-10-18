@@ -59,6 +59,13 @@ interface ApiService {
     @PUT("profile")
     suspend fun updateProfile(@Body body: ProfileBody): StatusResponse
 
+    @Multipart
+    @POST("profile/avatar")
+    suspend fun uploadAvatar(@Part parts: List<MultipartBody.Part>): DataWrapper<UserDto>
+
+    @DELETE("profile/avatar")
+    suspend fun removeAvatar(): StatusResponse
+
     @PUT("profile/instruments")
     suspend fun syncInstruments(@Body body: InstrumentsBody): InstrumentsResponse
 

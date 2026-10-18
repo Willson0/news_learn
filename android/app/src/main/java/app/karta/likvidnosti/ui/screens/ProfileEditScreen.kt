@@ -30,10 +30,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.karta.likvidnosti.data.Repository
 import app.karta.likvidnosti.data.Session
+import app.karta.likvidnosti.data.Uploads
 import app.karta.likvidnosti.data.fileUrl
 import app.karta.likvidnosti.ui.components.Screen
 import app.karta.likvidnosti.ui.theme.T
@@ -49,7 +51,9 @@ fun ProfileEditScreen(onDone: () -> Unit) {
     // с общим бэкенд-эндпоинтом загрузки аватара.
     var pickedPhoto by remember { mutableStateOf<android.net.Uri?>(null) }
     var saving by remember { mutableStateOf(false) }
+    var uploading by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     LaunchedEffect(Unit) {
         runCatching { Repository.profile() }.getOrNull()?.user?.let {
@@ -59,8 +63,35 @@ fun ProfileEditScreen(onDone: () -> Unit) {
         }
     }
 
+    fun uploadPhoto(uri: android.net.Uri) {
+        if (uploading) return
+        pickedPhoto = uri
+        uploading = true
+        scope.launch {
+            val part = Uploads.filePart(context, "avatar", uri)
+            if (part != null) {
+                runCatching { Repository.uploadAvatar(part) }.getOrNull()?.let { avatarUrl = it.avatarUrl }
+                runCatching { Session.load(force = true) }
+            }
+            pickedPhoto = null
+            uploading = false
+        }
+    }
+
+    fun removePhoto() {
+        if (uploading) return
+        uploading = true
+        scope.launch {
+            runCatching { Repository.removeAvatar() }
+            runCatching { Session.load(force = true) }
+            avatarUrl = null
+            pickedPhoto = null
+            uploading = false
+        }
+    }
+
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) pickedPhoto = uri
+        if (uri != null) uploadPhoto(uri)
     }
 
     fun save() {
@@ -115,11 +146,19 @@ fun ProfileEditScreen(onDone: () -> Unit) {
                 }
             }
             Text(
-                "Изменить фотографию",
+                if (uploading) "Загрузка…" else "Изменить фотографию",
                 color = T.Text,
                 fontSize = T.FsMd,
-                modifier = Modifier.clickable { photoPicker.launch("image/*") },
+                modifier = Modifier.clickable(enabled = !uploading) { photoPicker.launch("image/*") },
             )
+            if (avatarUrl != null) {
+                Text(
+                    "Удалить фото",
+                    color = Color(0xFFFF4D4D),
+                    fontSize = T.FsSm,
+                    modifier = Modifier.clickable(enabled = !uploading) { removePhoto() },
+                )
+            }
         }
 
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {

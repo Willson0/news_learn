@@ -101,6 +101,12 @@ object Repository {
     suspend fun updateProfile(name: String, username: String?) =
         apiCall { api.updateProfile(ProfileBody(name = name, username = username)) }
 
+    suspend fun uploadAvatar(part: MultipartBody.Part): UserDto? =
+        apiCall { api.uploadAvatar(listOf(part)).data }
+
+    suspend fun removeAvatar() =
+        apiCall { api.removeAvatar() }
+
     suspend fun syncInstruments(keys: List<String>): List<InstrumentDto> =
         apiCall { api.syncInstruments(InstrumentsBody(keys)).instruments }
 
