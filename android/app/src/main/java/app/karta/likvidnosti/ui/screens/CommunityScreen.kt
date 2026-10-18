@@ -84,7 +84,7 @@ fun CommunityScreen(onOpenChat: (String) -> Unit) {
         }
         val fetched = runCatching { Repository.chats() }.getOrNull()
         sections = if (!fetched.isNullOrEmpty()) {
-            AppData.setChats(fetched)
+            AppData.chats = fetched
             fetched
         } else {
             DEMO_SECTIONS

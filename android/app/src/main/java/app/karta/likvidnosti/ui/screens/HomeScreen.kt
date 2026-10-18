@@ -43,7 +43,7 @@ fun HomeScreen(onOpenReport: (Long) -> Unit) {
         reports = runCatching {
             Repository.reports(instrument = if (filter == "all") null else filter)
         }.getOrDefault(emptyList())
-        if (filter == "all") AppData.setReports(reports)
+        if (filter == "all") AppData.reports = reports
         loaded = true
     }
 

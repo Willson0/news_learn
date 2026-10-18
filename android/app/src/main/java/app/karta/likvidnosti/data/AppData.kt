@@ -18,18 +18,13 @@ import kotlinx.coroutines.launch
  */
 object AppData {
     var reports by mutableStateOf<List<ReportDto>?>(null)
-        private set
     var chats by mutableStateOf<List<ChatSectionDto>?>(null)
-        private set
 
     /** Сбрасывает кэш (при выходе/смене аккаунта). */
     fun reset() {
         reports = null
         chats = null
     }
-
-    fun setReports(list: List<ReportDto>) { reports = list }
-    fun setChats(list: List<ChatSectionDto>) { chats = list }
 
     /** Параллельно подгружает ленту (фильтр «все») и чаты. Ошибки гасит. */
     suspend fun preload() = coroutineScope {
