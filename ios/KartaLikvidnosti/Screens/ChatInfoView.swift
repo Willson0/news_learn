@@ -54,7 +54,7 @@ struct ChatInfoView: View {
 
     private var hero: some View {
         VStack(spacing: 4) {
-            AvatarCircle(url: avatar, size: 150).padding(.top, 8)
+            AvatarCircle(url: avatar, size: 150, name: title).padding(.top, 8)
             Text(title).font(.system(size: Theme.fontTitle, weight: .bold)).foregroundStyle(Theme.text).padding(.top, 10)
             Text(members).font(.system(size: Theme.fontBase)).foregroundStyle(Theme.textSecondary)
         }
@@ -94,7 +94,7 @@ struct ChatInfoView: View {
             ForEach(participants) { m in
                 Button { router.push(.chatUser(id: chatId, uid: String(m.id))) } label: {
                     HStack(spacing: 12) {
-                        AvatarCircle(url: fileURL(m.avatarUrl), size: 44)
+                        AvatarCircle(url: fileURL(m.avatarUrl), size: 44, name: m.name ?? m.username)
                         VStack(alignment: .leading) {
                             Text(m.name ?? "").font(.system(size: Theme.fontMd, weight: .bold))
                             Text(m.seen ?? "").font(.system(size: Theme.fontBase)).foregroundStyle(Theme.textSecondary)

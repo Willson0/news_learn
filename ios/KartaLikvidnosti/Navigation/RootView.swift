@@ -44,31 +44,38 @@ private struct AuthFlow: View {
     }
 }
 
-/// Основной поток приложения: корневые вкладки + стек pushed-экранов.
+/// Основной поток приложения: системный TabView (на iOS 26+ — нативный
+/// Liquid Glass таб-бар с перетаскиваемой капсулой и системной анимацией),
+/// у каждой вкладки свой стек pushed-экранов.
 private struct MainFlow: View {
     @EnvironmentObject var router: Router
-    @EnvironmentObject var session: Session
 
     var body: some View {
-        NavigationStack(path: $router.path) {
-            ZStack(alignment: .bottom) {
-                base
-                    .toolbar(.hidden, for: .navigationBar)
-                BottomNav()
-                    .padding(.bottom, 24)
-            }
-            .navigationDestination(for: Route.self) { route in
-                destination(route)
-            }
+        TabView(selection: $router.tab) {
+            stack(.home) { HomeView() }
+                .tabItem { Label("Лента", systemImage: "house.fill") }
+                .tag(Tab.home)
+            stack(.analytics) { AnalyticsView() }
+                .tabItem { Label("Материалы", systemImage: "chart.bar.fill") }
+                .tag(Tab.analytics)
+            stack(.community) { CommunityView() }
+                .tabItem { Label("Чаты", systemImage: "person.2.fill") }
+                .tag(Tab.community)
+            stack(.profile) { ProfileView() }
+                .tabItem { Label("Профиль", systemImage: "person.crop.circle.fill") }
+                .tag(Tab.profile)
         }
+        .tint(Theme.text)
     }
 
-    @ViewBuilder private var base: some View {
-        switch router.tab {
-        case .home: HomeView()
-        case .analytics: AnalyticsView()
-        case .community: CommunityView()
-        case .profile: ProfileView()
+    private func stack<Content: View>(_ t: Tab, @ViewBuilder _ root: () -> Content) -> some View {
+        NavigationStack(path: router.path(for: t)) {
+            root()
+                .toolbar(.hidden, for: .navigationBar)
+                .navigationDestination(for: Route.self) { route in
+                    destination(route)
+                        .toolbar(.hidden, for: .tabBar)
+                }
         }
     }
 

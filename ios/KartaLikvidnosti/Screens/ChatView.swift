@@ -57,12 +57,15 @@ struct ChatView: View {
             if let pinned = pinned, !selectMode { pinnedBar(pinned) }
 
             ScrollView(showsIndicators: false) {
-                LazyVStack(spacing: 10) {
-                    if !loaded {
+                if !loaded {
+                    VStack(spacing: 10) {
                         ForEach(0..<7, id: \.self) { i in
                             MessageSkeleton(mine: i % 3 == 0, wide: i % 2 == 0)
                         }
-                    } else {
+                    }
+                    .padding(.horizontal, Theme.screenX).padding(.bottom, 16)
+                } else {
+                LazyVStack(spacing: 10) {
                         HStack { Spacer()
                             Text("Сегодня").font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
                                 .padding(.horizontal, 14).padding(.vertical, 4)
@@ -70,10 +73,10 @@ struct ChatView: View {
                             Spacer() }
                             .padding(.vertical, 8)
                         ForEach(messages) { m in messageRow(m) }
-                    }
                 }
                 .padding(.horizontal, Theme.screenX).padding(.bottom, 16)
                 .animation(.spring(response: 0.35, dampingFraction: 0.82), value: messages.count)
+                }
             }
 
             composer
@@ -116,7 +119,7 @@ struct ChatView: View {
                         .liquidGlass()
                     }.buttonStyle(.plain)
                     Button { router.push(.chatInfo(id: chatId)) } label: {
-                        AvatarCircle(url: fileURL(serverChat?.avatarUrl), size: 48)
+                        AvatarCircle(url: fileURL(serverChat?.avatarUrl), size: 48, name: serverChat?.title)
                     }.buttonStyle(.plain)
                 }
             }
@@ -153,7 +156,7 @@ struct ChatView: View {
             }
             if !m.mine && !selectMode && !isDirect {
                 Button { openUser(m) } label: {
-                    AvatarCircle(url: fileURL(m.avatarUrl), size: 32)
+                    AvatarCircle(url: fileURL(m.avatarUrl), size: 32, name: m.author)
                 }.buttonStyle(.plain)
             }
             if m.mine { Spacer(minLength: 0) }
@@ -278,7 +281,7 @@ struct ChatView: View {
             ForEach(mentionMatches) { u in
                 Button { applyMention(u) } label: {
                     HStack(spacing: 10) {
-                        AvatarCircle(url: fileURL(u.avatarUrl), size: 28)
+                        AvatarCircle(url: fileURL(u.avatarUrl), size: 28, name: u.name ?? u.username)
                         Text(u.name ?? "").font(.system(size: Theme.fontBase, weight: .bold))
                         if let un = u.username { Text(un).font(.system(size: Theme.fontBase)).foregroundStyle(Theme.textSecondary) }
                         Spacer()

@@ -45,26 +45,35 @@ struct HoloFoil: View {
     }
 }
 
-/// Круглый аватар: фото по URL либо зеленоватый градиент-заглушка.
+/// Круглый аватар: фото по URL поверх градиента с первой буквой имени.
+/// Пока фото грузится (или если его нет / не загрузилось) — видна буква,
+/// а не пустой кружок-заглушка.
 struct AvatarCircle: View {
     var url: URL? = nil
     var size: CGFloat = 56
     var initial: String? = nil
+    /// Имя/название, из которого берётся буква, если `initial` не задан.
+    var name: String? = nil
+
+    private var letter: String {
+        if let initial = initial, !initial.isEmpty { return initial }
+        guard let ch = name?.first(where: { $0.isLetter || $0.isNumber }) else { return "" }
+        return String(ch).uppercased()
+    }
 
     var body: some View {
         ZStack {
+            Circle().fill(
+                LinearGradient(colors: [Color(hex: "#6b7350"), Color(hex: "#3f4a2c")],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+            )
+            if !letter.isEmpty {
+                Text(letter)
+                    .font(Theme.heading(size * 0.4))
+                    .foregroundStyle(Theme.text)
+            }
             if let url = url {
                 RemoteImage(url: url).frame(width: size, height: size).clipShape(Circle())
-            } else {
-                Circle().fill(
-                    LinearGradient(colors: [Color(hex: "#6b7350"), Color(hex: "#3f4a2c")],
-                                   startPoint: .topLeading, endPoint: .bottomTrailing)
-                )
-                if let initial = initial, !initial.isEmpty {
-                    Text(initial)
-                        .font(Theme.heading(size * 0.4))
-                        .foregroundStyle(Theme.text)
-                }
             }
         }
         .frame(width: size, height: size)
@@ -103,26 +112,31 @@ struct PressableStyle: ButtonStyle {
 // MARK: - Скелетоны загрузки (чтобы вёрстка не прыгала)
 
 /// Лёгкий «shimmer» — бегущий блик поверх плейсхолдера.
+///
+/// Фаза считается от времени в `TimelineView`, а не через
+/// `withAnimation(.repeatForever)`: бесконечная анимация в `onAppear` захватывала
+/// и удаление скелетона из иерархии — заглушки «зависали» поверх реального контента.
 struct Shimmer: ViewModifier {
-    @State private var phase: CGFloat = -1
+    private let period: Double = 1.2
 
     func body(content: Content) -> some View {
         content
             .overlay(
-                GeometryReader { geo in
-                    LinearGradient(
-                        colors: [.clear, Color.white.opacity(0.14), .clear],
-                        startPoint: .leading, endPoint: .trailing
-                    )
-                    .frame(width: geo.size.width * 0.5)
-                    .offset(x: phase * geo.size.width * 1.5)
+                TimelineView(.animation) { context in
+                    let t = context.date.timeIntervalSinceReferenceDate
+                    let phase = CGFloat(t.truncatingRemainder(dividingBy: period) / period) * 2 - 1
+                    GeometryReader { geo in
+                        LinearGradient(
+                            colors: [.clear, Color.white.opacity(0.14), .clear],
+                            startPoint: .leading, endPoint: .trailing
+                        )
+                        .frame(width: geo.size.width * 0.5)
+                        .offset(x: phase * geo.size.width * 1.5)
+                    }
                 }
                 .allowsHitTesting(false)
             )
             .clipped()
-            .onAppear {
-                withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) { phase = 1 }
-            }
     }
 }
 

@@ -12,10 +12,12 @@ struct HomeView: View {
             VStack(alignment: .leading, spacing: 20) {
                 Text("Лента материалов").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
                 MaterialChips(selected: $filter)
-                LazyVStack(spacing: 16) {
-                    if !loaded {
+                if !loaded {
+                    VStack(spacing: 16) {
                         ForEach(0..<4, id: \.self) { _ in ReportCardSkeleton() }
-                    } else {
+                    }
+                } else {
+                    LazyVStack(spacing: 16) {
                         ForEach(reports) { report in
                             ReportCard(report: report) { router.push(.reportDetail(id: report.id)) }
                         }
@@ -29,7 +31,7 @@ struct HomeView: View {
             }
             .padding(.horizontal, Theme.screenX)
             .padding(.top, 60)
-            .padding(.bottom, 120)
+            .padding(.bottom, 24)
         }
         .screenBackground(Theme.bg)
         .onAppear(perform: seed)

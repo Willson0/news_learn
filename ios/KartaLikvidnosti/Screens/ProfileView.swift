@@ -51,7 +51,7 @@ struct ProfileView: View {
                 }
                 .padding(.horizontal, Theme.screenX)
             }
-            .padding(.bottom, 120)
+            .padding(.bottom, 24)
         }
         .screenBackground(Theme.bg)
         .onAppear(perform: seed)

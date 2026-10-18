@@ -3,6 +3,7 @@ import SwiftUI
 struct AnalyticsView: View {
     @EnvironmentObject var router: Router
     @EnvironmentObject var appData: AppData
+    @EnvironmentObject var session: Session
     @State private var query = ""
     @State private var reports: [ReportDto] = []
     @State private var statusFilter: [String]? = nil
@@ -31,10 +32,12 @@ struct AnalyticsView: View {
                     .buttonStyle(.plain)
                 }
 
-                LazyVStack(spacing: 16) {
-                    if !loaded {
+                if !loaded {
+                    VStack(spacing: 16) {
                         ForEach(0..<4, id: \.self) { _ in ReportCardSkeleton() }
-                    } else {
+                    }
+                } else {
+                    LazyVStack(spacing: 16) {
                         ForEach(visible) { report in
                             ReportCard(report: report) { router.push(.reportDetail(id: report.id)) }
                         }
@@ -47,9 +50,25 @@ struct AnalyticsView: View {
             }
             .padding(.horizontal, Theme.screenX)
             .padding(.top, 60)
-            .padding(.bottom, 120)
+            .padding(.bottom, 24)
         }
         .screenBackground(Theme.bg)
+        .overlay(alignment: .bottomTrailing) {
+            if session.isAdmin {
+                Button {
+                    Haptics.light()
+                    router.push(.reportCreate)
+                } label: {
+                    Icon(AppIcons.plus, size: 30, color: Theme.text)
+                        .frame(width: 62, height: 62)
+                        .background(Theme.gradientAccent, in: Circle())
+                        .shadow(color: .black.opacity(0.35), radius: 10, y: 6)
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, Theme.screenX)
+                .padding(.bottom, 16)
+            }
+        }
         .onAppear(perform: seed)
         .task(id: statusFilter ?? []) { await load() }
         .sheet(isPresented: $filtersOpen) {

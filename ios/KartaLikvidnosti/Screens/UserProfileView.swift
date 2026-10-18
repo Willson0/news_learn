@@ -24,7 +24,7 @@ struct UserProfileView: View {
                 VStack(spacing: 6) {
                     Text("Зарегистрирован").font(.system(size: Theme.fontTitle, weight: .bold)).foregroundStyle(Theme.text)
                     Text(registered).font(.system(size: Theme.fontBase)).foregroundStyle(Theme.textSecondary).padding(.bottom, 20)
-                    AvatarCircle(url: fileURL(u.avatarUrl), size: 160).padding(.bottom, 14)
+                    AvatarCircle(url: fileURL(u.avatarUrl), size: 160, name: u.name ?? u.username).padding(.bottom, 14)
                     Text(u.name ?? "").font(.system(size: Theme.fontTitle, weight: .bold)).foregroundStyle(Theme.text)
                     if let un = u.username { Text(un).font(.system(size: Theme.fontMd)).foregroundStyle(Theme.textSecondary) }
                     if let seen = u.seen { Text(seen).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textMuted).padding(.top, 4) }

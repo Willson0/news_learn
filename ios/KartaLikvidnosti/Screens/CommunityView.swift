@@ -80,7 +80,7 @@ struct CommunityView: View {
             }
             .padding(.horizontal, Theme.screenX)
             .padding(.top, 56)
-            .padding(.bottom, 120)
+            .padding(.bottom, 24)
         }
         .screenBackground(Theme.bg)
         .onAppear(perform: seed)
@@ -97,7 +97,7 @@ struct CommunityView: View {
     private func chatRow(_ item: ChatItemDto) -> some View {
         Button { router.push(.chat(id: item.id)) } label: {
             HStack(spacing: 12) {
-                AvatarCircle(url: fileURL(item.avatarUrl), size: 56)
+                AvatarCircle(url: fileURL(item.avatarUrl), size: 56, name: item.title)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack {
                         Text(item.title).font(.system(size: Theme.fontMd, weight: .bold)).foregroundStyle(Theme.text)

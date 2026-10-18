@@ -33,29 +33,43 @@ enum AuthRoute: Hashable {
 final class Router: ObservableObject {
     @Published var authed: Bool
     @Published var tab: Tab = .home
-    @Published var path: [Route] = []
+    /// У каждой вкладки системного TabView свой стек pushed-экранов.
+    @Published var paths: [Tab: [Route]] = [:]
     @Published var authPath: [AuthRoute] = []
 
     init() { authed = TokenStore.isAuthenticated }
+
+    /// Стек текущей вкладки.
+    var path: [Route] {
+        get { paths[tab] ?? [] }
+        set { paths[tab] = newValue }
+    }
+
+    func path(for t: Tab) -> Binding<[Route]> {
+        Binding(get: { self.paths[t] ?? [] }, set: { self.paths[t] = $0 })
+    }
 
     func push(_ route: Route) { path.append(route) }
     func pop() { if !path.isEmpty { path.removeLast() } }
     func popToRoot() { path.removeAll() }
 
+    /// Программный переход на вкладку (из pushed-экрана): закрываем текущий стек
+    /// и открываем вкладку с корня.
     func switchTab(_ t: Tab) {
+        paths[tab] = []
+        paths[t] = []
         tab = t
-        path.removeAll()
     }
 
     func enterApp() {
         authed = true
-        path.removeAll()
+        paths = [:]
         authPath.removeAll()
     }
 
     func logout() {
         authed = false
-        path.removeAll()
+        paths = [:]
         authPath.removeAll()
         tab = .home
     }
