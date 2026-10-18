@@ -1,6 +1,7 @@
 <script>
 import IconBack from '@/components/icons/IconBack.vue'
 import { fetchUser } from '@/api/resources'
+import { fileUrl } from '@/api/client'
 
 export default {
   name: 'UserProfileView',
@@ -22,6 +23,9 @@ export default {
     },
     backTo() {
       return { name: 'chat', params: { id: this.$route.params.id } }
+    },
+    avatarSrc() {
+      return fileUrl(this.user && this.user.avatar_url)
     },
   },
   mounted() {
@@ -58,7 +62,7 @@ export default {
     <div v-if="user" class="uprofile__center">
       <p class="uprofile__status">Зарегистрирован</p>
       <p class="uprofile__date">{{ registered }}</p>
-      <img v-if="user.avatar_url" class="uprofile__avatar" :src="user.avatar_url" alt="" />
+      <img v-if="user.avatar_url" class="uprofile__avatar" :src="avatarSrc" alt="" />
       <div v-else class="uprofile__avatar"></div>
       <p class="uprofile__name">{{ user.name }}</p>
       <p v-if="user.username" class="uprofile__tag">{{ user.username }}</p>
