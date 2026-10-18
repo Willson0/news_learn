@@ -30,6 +30,18 @@ export function updateProfile(payload) {
   return api.put('/profile', payload)
 }
 
+/** Загрузка/смена фото профиля (multipart). Возвращает обновлённого пользователя. */
+export function uploadAvatar(file) {
+  const form = new FormData()
+  form.append('avatar', file)
+  return api.post('/profile/avatar', form).then((r) => r.data)
+}
+
+/** Удаление фото профиля. */
+export function removeAvatar() {
+  return api.del('/profile/avatar').then((r) => r.data)
+}
+
 export function syncInstruments(keys) {
   return api.put('/profile/instruments', { instruments: keys })
 }

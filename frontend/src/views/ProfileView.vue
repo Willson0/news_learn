@@ -6,6 +6,7 @@ import IconSettings from '@/components/icons/IconSettings.vue'
 import IconSort from '@/components/icons/IconSort.vue'
 import IconChevronRight from '@/components/icons/IconChevronRight.vue'
 import { fetchProfile, syncInstruments, fetchReports } from '@/api/resources'
+import { fileUrl } from '@/api/client'
 import { decorateReport } from '@/api/materialIcon'
 import { session } from '@/api/session'
 import { getTelegramUser } from '@/telegram/webapp'
@@ -74,7 +75,7 @@ export default {
       const tag = (s && s.username) || (tg && tg.username ? '@' + tg.username : '')
       const avatar = (s && s.avatar_url) || (tg && tg.photo_url) || null
       if (tag) this.user.tag = tag
-      if (avatar) this.user.avatar = avatar
+      if (avatar) this.user.avatar = fileUrl(avatar)
     },
     async load() {
       try {
@@ -83,7 +84,7 @@ export default {
           this.user = {
             ...this.user,
             tag: profile.user.username || this.user.tag,
-            avatar: profile.user.avatar_url || this.user.avatar,
+            avatar: fileUrl(profile.user.avatar_url) || this.user.avatar,
           }
         }
         if (profile.subscription) {
