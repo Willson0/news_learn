@@ -5,9 +5,12 @@ namespace App\Http\Controllers;
 use App\Models\Instrument;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class ProfileController extends Controller
 {
+    private const DISK = 'local';
+
     /**
      * Данные профиля: пользователь, подписка, отслеживаемые инструменты,
      * настройки уведомлений.
@@ -17,14 +20,7 @@ class ProfileController extends Controller
         $user = $request->user()->load(['instruments', 'subscription']);
 
         return response()->json([
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'phone' => $user->phone,
-                'username' => $user->username,
-                'avatar_url' => $user->avatar_url,
-            ],
+            'user' => $this->userPayload($user),
             'subscription' => $this->subscriptionPayload($user),
             'notifications' => [
                 'all' => $user->notify_all,
@@ -47,6 +43,63 @@ class ProfileController extends Controller
         $request->user()->update($data);
 
         return response()->json(['status' => 'ok']);
+    }
+
+    /**
+     * Загрузка/смена фото профиля (multipart, поле avatar).
+     * Файл кладётся на диск, avatar_url указывает на публичный роут отдачи.
+     */
+    public function updateAvatar(Request $request): JsonResponse
+    {
+        $request->validate([
+            'avatar' => ['required', 'image', 'max:5120'],
+        ]);
+
+        $user = $request->user();
+        $path = $request->file('avatar')->store('avatars', self::DISK);
+
+        $this->deleteAvatarFile($user->avatar_path);
+
+        $user->update([
+            'avatar_path' => $path,
+            'avatar_url' => "/users/{$user->id}/avatar?v=".now()->timestamp,
+        ]);
+
+        return response()->json(['data' => $this->userPayload($user)]);
+    }
+
+    /**
+     * Удалить фото профиля.
+     */
+    public function deleteAvatar(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $this->deleteAvatarFile($user->avatar_path);
+        $user->update(['avatar_path' => null, 'avatar_url' => null]);
+
+        return response()->json(['data' => $this->userPayload($user)]);
+    }
+
+    private function deleteAvatarFile(?string $path): void
+    {
+        if ($path && Storage::disk(self::DISK)->exists($path)) {
+            Storage::disk(self::DISK)->delete($path);
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function userPayload($user): array
+    {
+        return [
+            'id' => $user->id,
+            'name' => $user->name,
+            'email' => $user->email,
+            'phone' => $user->phone,
+            'username' => $user->username,
+            'avatar_url' => $user->avatar_url,
+        ];
     }
 
     /**

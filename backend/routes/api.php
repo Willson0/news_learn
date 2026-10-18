@@ -38,6 +38,7 @@ Route::get('/instruments', [InstrumentController::class, 'index']);
 Route::get('/reports/{report}/cover', [ReportController::class, 'cover']);
 Route::get('/reports/{report}/html', [ReportController::class, 'html']);
 Route::get('/chats/{slug}/avatar', [ChatController::class, 'avatar']);
+Route::get('/users/{user}/avatar', [UserController::class, 'avatar']);
 
 // Файл вложения чата — по подписанной ссылке (её выдаёт API вместе с сообщением),
 // чтобы открывать в <img>/<audio> и скачивать без заголовка авторизации.
@@ -60,6 +61,8 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     // Профиль.
     Route::get('/profile', [ProfileController::class, 'show']);
     Route::put('/profile', [ProfileController::class, 'update']);
+    Route::post('/profile/avatar', [ProfileController::class, 'updateAvatar']);
+    Route::delete('/profile/avatar', [ProfileController::class, 'deleteAvatar']);
     Route::put('/profile/instruments', [ProfileController::class, 'syncInstruments']);
     Route::put('/profile/notifications', [ProfileController::class, 'updateNotifications']);
 

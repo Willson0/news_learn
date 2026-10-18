@@ -24,6 +24,7 @@ class User extends Authenticatable
         'phone',
         'username',
         'avatar_url',
+        'avatar_path',
         'last_active_at',
         'notify_all',
         'notify_by_instrument',

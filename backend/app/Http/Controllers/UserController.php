@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 /**
  * Публичный профиль другого пользователя (экран «профиль юзера» в чате).
@@ -24,5 +26,15 @@ class UserController extends Controller
                 'is_admin' => $user->isAdmin(),
             ],
         ]);
+    }
+
+    /**
+     * Фото пользователя (без токена — для <img>/AsyncImage).
+     */
+    public function avatar(User $user): BinaryFileResponse
+    {
+        abort_unless($user->avatar_path && Storage::disk('local')->exists($user->avatar_path), 404);
+
+        return response()->file(Storage::disk('local')->path($user->avatar_path));
     }
 }
