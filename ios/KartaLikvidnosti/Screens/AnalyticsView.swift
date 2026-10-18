@@ -65,7 +65,12 @@ struct AnalyticsView: View {
                 statusFilter = result.statuses.isEmpty ? nil : result.statuses
             }
         }
-        .onAppear(perform: seed)
+        .onAppear {
+            seed()
+            #if DEBUG
+            if UserDefaults.standard.bool(forKey: "kl_filters") { filtersOpen = true }
+            #endif
+        }
         .task(id: statusFilter ?? []) { await load() }
     }
 

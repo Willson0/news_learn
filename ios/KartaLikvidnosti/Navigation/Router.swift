@@ -41,7 +41,51 @@ final class Router: ObservableObject {
     @Published var paths: [Tab: [Route]] = [:]
     @Published var authPath: [AuthRoute] = []
 
-    init() { authed = TokenStore.isAuthenticated }
+    init() {
+        authed = TokenStore.isAuthenticated
+        #if DEBUG
+        applyDebugLaunchArgs()
+        #endif
+    }
+
+    #if DEBUG
+    /// Для сверки с макетом в симуляторе: `-kl_tab analytics`,
+    /// `-kl_route report:1 | chat:<id> | chatInfo:<id> | profileEdit | notifications |
+    /// accountData | subscription | admins | reportCreate`, `-kl_auth recovery | register`.
+    private func applyDebugLaunchArgs() {
+        let d = UserDefaults.standard
+        if let t = d.string(forKey: "kl_tab"), let tab = Tab(rawValue: t) { self.tab = tab }
+        if let a = d.string(forKey: "kl_auth") {
+            switch a {
+            case "recovery": authPath = [.passwordRecovery]
+            case "register": authPath = [.registerConfirm(email: "demo@karta.app")]
+            default: break
+            }
+        }
+        guard let r = d.string(forKey: "kl_route") else { return }
+        let parts = r.split(separator: ":", maxSplits: 1).map(String.init)
+        let arg = parts.count > 1 ? parts[1] : ""
+        let route: Route?
+        switch parts[0] {
+        case "report": route = .reportDetail(id: Int(arg))
+        case "reportCreate": route = .reportCreate
+        case "reportEdit": route = .reportEdit(id: Int(arg) ?? 1)
+        case "chat": route = .chat(id: arg)
+        case "chatInfo": route = .chatInfo(id: arg)
+        case "chatEdit": route = .chatEdit(id: arg)
+        case "profileEdit": route = .profileEdit
+        case "notifications": route = .notifications
+        case "accountData": route = .accountData
+        case "accountChange": route = .accountChange(field: arg.isEmpty ? "password" : arg)
+        case "accountSuccess": route = .accountSuccess(field: arg.isEmpty ? "password" : arg)
+        case "admins": route = .admins
+        case "subscription": route = .subscription
+        case "agreement": route = .userAgreement
+        default: route = nil
+        }
+        if let route { paths[tab] = [route] }
+    }
+    #endif
 
     /// Стек текущей вкладки.
     var path: [Route] {
