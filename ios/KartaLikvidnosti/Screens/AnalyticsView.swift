@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AnalyticsView: View {
     @EnvironmentObject var router: Router
+    @EnvironmentObject var appData: AppData
     @State private var query = ""
     @State private var reports: [ReportDto] = []
     @State private var statusFilter: [String]? = nil
@@ -49,6 +50,7 @@ struct AnalyticsView: View {
             .padding(.bottom, 120)
         }
         .screenBackground(Theme.bg)
+        .onAppear(perform: seed)
         .task(id: statusFilter ?? []) { await load() }
         .sheet(isPresented: $filtersOpen) {
             FiltersSheet { result in
@@ -59,9 +61,16 @@ struct AnalyticsView: View {
         }
     }
 
+    /// Мгновенно показываем предзагруженные материалы (без фильтра), чтобы без скелетона.
+    private func seed() {
+        guard !loaded, statusFilter == nil, !appData.reports.isEmpty else { return }
+        reports = appData.reports
+        loaded = true
+    }
+
     private func load() async {
         do { reports = try await Api.fetchReports(status: statusFilter) }
-        catch { reports = [] }
+        catch { /* при сбое обновления оставляем предзагруженные данные */ }
         loaded = true
     }
 }

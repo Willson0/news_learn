@@ -3,6 +3,7 @@ import SwiftUI
 struct ProfileView: View {
     @EnvironmentObject var router: Router
     @EnvironmentObject var session: Session
+    @EnvironmentObject var appData: AppData
 
     @State private var tag = ""
     @State private var avatar: URL? = nil
@@ -53,6 +54,7 @@ struct ProfileView: View {
             .padding(.bottom, 120)
         }
         .screenBackground(Theme.bg)
+        .onAppear(perform: seed)
         .task { await load() }
     }
 
@@ -135,16 +137,25 @@ struct ProfileView: View {
         .padding(.horizontal, Theme.screenX)
     }
 
+    /// Мгновенно наполняем экран предзагруженными данными, чтобы при открытии не было пустого кадра.
+    private func seed() {
+        tag = session.user?.username ?? tag
+        avatar = fileURL(session.user?.avatarUrl)
+        if let p = appData.profile { apply(p) }
+        if history.isEmpty, !appData.reports.isEmpty { history = appData.reports }
+    }
+
+    private func apply(_ p: ProfileResponse) {
+        if let u = p.user { tag = u.username ?? tag; if let a = u.avatarUrl { avatar = fileURL(a) } }
+        if let s = p.subscription { subActive = s.active; subUntil = s.until ?? ""; subPlan = s.plan ?? "" }
+        instruments = p.instruments
+    }
+
     private func load() async {
         tag = session.user?.username ?? tag
         avatar = fileURL(session.user?.avatarUrl)
-        do {
-            let p = try await Api.fetchProfile()
-            if let u = p.user { tag = u.username ?? tag; if let a = u.avatarUrl { avatar = fileURL(a) } }
-            if let s = p.subscription { subActive = s.active; subUntil = s.until ?? ""; subPlan = s.plan ?? "" }
-            instruments = p.instruments
-        } catch {}
-        do { history = try await Api.fetchReports() } catch { history = [] }
+        do { apply(try await Api.fetchProfile()) } catch {}
+        do { history = try await Api.fetchReports() } catch { /* оставляем предзагруженную историю */ }
     }
 
     private func saveInstruments() {

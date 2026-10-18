@@ -3,6 +3,7 @@ import SwiftUI
 struct CommunityView: View {
     @EnvironmentObject var router: Router
     @EnvironmentObject var session: Session
+    @EnvironmentObject var appData: AppData
 
     @State private var query = ""
     @State private var tab = "all"
@@ -82,7 +83,15 @@ struct CommunityView: View {
             .padding(.bottom, 120)
         }
         .screenBackground(Theme.bg)
+        .onAppear(perform: seed)
         .task { await load() }
+    }
+
+    /// Мгновенно показываем предзагруженные чаты, чтобы без скелетона.
+    private func seed() {
+        guard !loaded, !appData.chats.isEmpty else { return }
+        sections = appData.chats
+        loaded = true
     }
 
     private func chatRow(_ item: ChatItemDto) -> some View {

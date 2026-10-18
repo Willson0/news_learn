@@ -2,6 +2,7 @@ import SwiftUI
 
 struct HomeView: View {
     @EnvironmentObject var router: Router
+    @EnvironmentObject var appData: AppData
     @State private var filter = "all"
     @State private var reports: [ReportDto] = []
     @State private var loaded = false
@@ -31,12 +32,20 @@ struct HomeView: View {
             .padding(.bottom, 120)
         }
         .screenBackground(Theme.bg)
+        .onAppear(perform: seed)
         .task(id: filter) { await load() }
+    }
+
+    /// Мгновенно показываем предзагруженную ленту (фильтр «все»), чтобы без скелетона.
+    private func seed() {
+        guard !loaded, filter == "all", !appData.reports.isEmpty else { return }
+        reports = appData.reports
+        loaded = true
     }
 
     private func load() async {
         do { reports = try await Api.fetchReports(instrument: filter) }
-        catch { reports = [] }
+        catch { /* при сбое обновления оставляем предзагруженные данные */ }
         loaded = true
     }
 }

@@ -3,6 +3,7 @@ import SwiftUI
 struct RootView: View {
     @EnvironmentObject var router: Router
     @EnvironmentObject var session: Session
+    @EnvironmentObject var appData: AppData
 
     var body: some View {
         Group {
@@ -12,7 +13,15 @@ struct RootView: View {
                 AuthFlow()
             }
         }
-        .task { await session.load() }
+        .task {
+            await session.load()
+            await appData.preload()
+        }
+        .onChange(of: router.authed) { authed in
+            Task {
+                if authed { await appData.preload() } else { appData.clear() }
+            }
+        }
     }
 }
 

@@ -4,6 +4,7 @@ import SwiftUI
 struct KartaLikvidnostiApp: App {
     @StateObject private var session = Session()
     @StateObject private var router = Router()
+    @StateObject private var appData = AppData()
 
     init() { Self.configureAppearance() }
 
@@ -12,6 +13,7 @@ struct KartaLikvidnostiApp: App {
             RootView()
                 .environmentObject(session)
                 .environmentObject(router)
+                .environmentObject(appData)
                 .preferredColorScheme(.dark)
                 .tint(Theme.green)
         }
