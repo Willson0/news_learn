@@ -82,7 +82,7 @@ struct CommunityView: View {
             .padding(.top, 56)
             .padding(.bottom, 24)
         }
-        .screenBackground(Theme.bg)
+        .screenBackground()
         .onAppear(perform: seed)
         .task { await load() }
     }
@@ -100,22 +100,22 @@ struct CommunityView: View {
                 AvatarCircle(url: fileURL(item.avatarUrl), size: 56, name: item.title)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack {
-                        Text(item.title).font(.system(size: Theme.fontMd, weight: .bold)).foregroundStyle(Theme.text)
+                        Text(item.title).font(Theme.sans(Theme.fontMd, .bold)).foregroundStyle(Theme.text)
                         Spacer()
                         HStack(spacing: 4) {
                             if item.pinned { Icon(AppIcons.pin, size: 14, color: Theme.textSecondary) }
-                            Text(item.time ?? "").font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
+                            Text(item.time ?? "").font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
                         }
                     }
                     if let sender = item.sender {
-                        Text(sender).font(.system(size: Theme.fontBase)).foregroundStyle(Theme.text)
+                        Text(sender).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
                     }
                     HStack {
-                        Text(item.preview ?? "").font(.system(size: Theme.fontBase)).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                        Text(item.preview ?? "").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary).lineLimit(1)
                         Spacer()
                         if item.unread > 0 {
                             Text("\(item.unread)")
-                                .font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
+                                .font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
                                 .padding(.horizontal, 8).frame(minWidth: 34, minHeight: 20)
                                 .overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 1))
                         }

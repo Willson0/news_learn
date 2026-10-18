@@ -20,6 +20,16 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<!-- Шрифты макета: Kreadon (заголовки) и Min Sans (весь остальной текст). -->
+	<key>UIAppFonts</key>
+	<array>
+		<string>Kreadon-D.otf</string>
+		<string>MinSans-Light.otf</string>
+		<string>MinSans-Regular.otf</string>
+		<string>MinSans-Medium.otf</string>
+		<string>MinSans-SemiBold.otf</string>
+		<string>MinSans-Bold.otf</string>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<!-- Базовый адрес REST API (см. project.yml → API_BASE_URL). -->

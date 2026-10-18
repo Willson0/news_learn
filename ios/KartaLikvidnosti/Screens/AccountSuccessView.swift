@@ -14,10 +14,10 @@ struct AccountSuccessView: View {
 
     var body: some View {
         Text(message)
-            .font(.system(size: Theme.fontLg)).foregroundStyle(Theme.text)
+            .font(Theme.sans(Theme.fontLg)).foregroundStyle(Theme.text)
             .multilineTextAlignment(.center)
             .padding(Theme.screenX)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .screenBackground(Theme.bg)
+            .screenBackground()
     }
 }

@@ -57,7 +57,7 @@ struct ReportFormView: View {
                 field(error: errors["description"]) {
                     VStack(alignment: .trailing, spacing: 2) {
                         Text("Описание   \(descriptionText.count)/\(descriptionMax) символов")
-                            .font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
+                            .font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
                             .frame(maxWidth: .infinity, alignment: .trailing)
                         TextField("Введите текст", text: $descriptionText, axis: .vertical)
                             .lineLimit(3...6).foregroundStyle(Theme.text)
@@ -79,20 +79,20 @@ struct ReportFormView: View {
                 fileRow(name: htmlName.isEmpty ? "Отчет html" : htmlName, has: !htmlName.isEmpty,
                         icon: { if htmlName.isEmpty { AnyView(addIcon) } else { AnyView(FileHtmlIcon(size: 32)) } },
                         add: { htmlImporter = true }, drop: { htmlData = nil; htmlName = ""; removeHtml = isEdit })
-                if let e = errors["html"] { Text(e).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.error) }
+                if let e = errors["html"] { Text(e).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.error) }
 
                 fileRowCover
 
-                if let e = errors["cover"] { Text(e).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.error) }
+                if let e = errors["cover"] { Text(e).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.error) }
 
-                if let e = errors["form"] { Text(e).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.error).frame(maxWidth: .infinity, alignment: .center) }
+                if let e = errors["form"] { Text(e).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.error).frame(maxWidth: .infinity, alignment: .center) }
 
                 AppButton(title: isEdit ? "Сохранить" : "Создать отчет", variant: .accent, disabled: saving) { submit() }
                     .padding(.top, 20)
             }
             .padding(.horizontal, Theme.screenX).padding(.top, 16).padding(.bottom, 32)
         }
-        .screenBackground(Theme.bg)
+        .screenBackground()
         .task { await load() }
         .onChange(of: coverItem) { item in
             Task {
@@ -131,7 +131,7 @@ struct ReportFormView: View {
                     instrument = instrument == item.key ? nil : item.key
                     errors["instrument"] = nil; Haptics.light()
                 } label: {
-                    Text(item.label).font(.system(size: Theme.fontBase)).foregroundStyle(Theme.text)
+                    Text(item.label).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
                         .padding(.horizontal, 16).frame(height: 40)
                         .background(instrument == item.key ? AnyShapeStyle(Theme.gradientAccent) : AnyShapeStyle(Color.clear),
                                     in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -141,7 +141,7 @@ struct ReportFormView: View {
         }
         .padding(12).background(Theme.surface).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(alignment: .bottomLeading) {
-            if let e = errors["instrument"] { Text(e).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.error).offset(y: 22) }
+            if let e = errors["instrument"] { Text(e).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.error).offset(y: 22) }
         }
     }
 
@@ -155,7 +155,7 @@ struct ReportFormView: View {
                 }
                 .frame(width: 32, height: 32).background(Color.white).clipShape(RoundedRectangle(cornerRadius: 6))
             } else { addIcon }
-            Text(coverName.isEmpty ? "Обложка" : coverName).font(.system(size: Theme.fontMd)).foregroundStyle(Theme.text).lineLimit(1)
+            Text(coverName.isEmpty ? "Обложка" : coverName).font(Theme.sans(Theme.fontMd)).foregroundStyle(Theme.text).lineLimit(1)
             Spacer()
             if coverName.isEmpty {
                 PhotosPicker(selection: $coverItem, matching: .images) { pillLabel("Добавить") }
@@ -169,7 +169,7 @@ struct ReportFormView: View {
     private func fileRow(name: String, has: Bool, icon: () -> AnyView, add: @escaping () -> Void, drop: @escaping () -> Void) -> some View {
         HStack(spacing: 12) {
             icon()
-            Text(name).font(.system(size: Theme.fontMd)).foregroundStyle(Theme.text).lineLimit(1)
+            Text(name).font(Theme.sans(Theme.fontMd)).foregroundStyle(Theme.text).lineLimit(1)
             Spacer()
             Button(action: has ? drop : add) { pillLabel(has ? "Удалить" : "Добавить") }.buttonStyle(.plain)
         }
@@ -177,18 +177,18 @@ struct ReportFormView: View {
     }
 
     private func pillLabel(_ t: String) -> some View {
-        Text(t).font(.system(size: Theme.fontBase)).foregroundStyle(Theme.text)
+        Text(t).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
             .padding(.horizontal, 12).frame(height: 32).background(Theme.gradientPurpleSolid).clipShape(Capsule())
     }
 
     private func field<C: View>(error: String?, @ViewBuilder _ content: () -> C) -> some View {
-        VStack(alignment: .leading, spacing: 6) { content(); if let error = error { Text(error).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.error) } }
+        VStack(alignment: .leading, spacing: 6) { content(); if let error = error { Text(error).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.error) } }
     }
 
     private func labeledInput<C: View>(title: String, error: String?, @ViewBuilder _ content: () -> C) -> some View {
         field(error: error) {
             VStack(alignment: .trailing, spacing: 2) {
-                Text(title).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
+                Text(title).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .trailing)
                 content().foregroundStyle(Theme.text).tint(Theme.green)
             }

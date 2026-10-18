@@ -1,66 +1,74 @@
 import SwiftUI
 
-// Базовые элементы управления (перенос ui/*.vue).
+// Базовые элементы управления — 1:1 с UI-китом макета (Button/default,
+// input/Строка ввода, Button/Switch, чипы, Button/в отчете …). Все они в макете
+// стеклянные (эффект «glass»).
 
 enum AppButtonVariant { case accent, soft, secondary, danger }
 
+/// Button/default: 48 pt, скругление 24, Min Sans 14, стекло.
+/// accent/soft — заливка «active»; secondary — «Second color» 20%; danger — «red».
 struct AppButton: View {
     let title: String
     var variant: AppButtonVariant = .accent
     var disabled: Bool = false
     let action: () -> Void
 
+    private let shape = RoundedRectangle(cornerRadius: Theme.radiusInput, style: .continuous)
+
     var body: some View {
         Button(action: { if !disabled { action() } }) {
             Text(title)
-                .font(.system(size: Theme.fontBase))
+                .font(Theme.sans(Theme.fontBase))
                 .foregroundStyle(Theme.text)
+                .lineLimit(1)
                 .frame(maxWidth: .infinity)
                 .frame(height: 48)
-                .background(background)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusInput, style: .continuous))
+                .contentShape(shape)
+                .modifier(Fill(variant: variant, shape: shape))
         }
         .buttonStyle(PressableStyle())
         .opacity(disabled ? 0.5 : 1)
         .disabled(disabled)
     }
 
-    @ViewBuilder private var background: some View {
-        switch variant {
-        case .accent: Theme.gradientAccent
-        case .soft: Theme.gradientAccentSoft
-        case .secondary: Theme.surfaceMuted
-        case .danger: Theme.danger
+    private struct Fill: ViewModifier {
+        let variant: AppButtonVariant
+        let shape: RoundedRectangle
+        func body(content: Content) -> some View {
+            switch variant {
+            case .accent, .soft: content.liquidGlass(shape, fill: ActiveFill())
+            case .secondary: content.liquidGlass(shape)
+            case .danger: content.liquidGlass(shape, fill: Theme.danger)
+            }
         }
     }
 }
 
+/// input/Строка ввода: стекло, 48 pt, отступы 16, Min Sans 14.
+/// С `label` — вариант «Строка ввода изменение чата» (64 pt, подпись 12 сверху).
 struct AppInput: View {
     @Binding var text: String
     var placeholder: String = ""
+    var label: String? = nil
     var isSecure: Bool = false
     var error: Bool = false
     var keyboard: UIKeyboardType = .default
     var textContentType: UITextContentType? = nil
+    var height: CGFloat? = nil
 
     @State private var revealed = false
 
     var body: some View {
         HStack(spacing: 8) {
-            Group {
-                if isSecure && !revealed {
-                    SecureField("", text: $text, prompt: prompt)
-                } else {
-                    TextField("", text: $text, prompt: prompt)
-                        .keyboardType(keyboard)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+            VStack(alignment: .leading, spacing: 4) {
+                if let label {
+                    Text(label)
+                        .font(Theme.sans(Theme.fontSm))
+                        .foregroundStyle(Theme.textSecondary)
                 }
+                field
             }
-            .foregroundStyle(error ? Theme.error : Theme.text)
-            .textContentType(textContentType)
-            .tint(Theme.green)
-
             if isSecure {
                 Button {
                     revealed.toggle()
@@ -70,17 +78,36 @@ struct AppInput: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 16)
-        .frame(height: 48)
-        .background(Theme.surfaceMuted)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusInput, style: .continuous))
+        .padding(.leading, 16)
+        .padding(.trailing, isSecure ? 16 : 12)
+        .frame(height: height ?? (label == nil ? 48 : 64))
+        .liquidGlass(RoundedRectangle(cornerRadius: Theme.radiusInput, style: .continuous))
+    }
+
+    @ViewBuilder private var field: some View {
+        Group {
+            if isSecure && !revealed {
+                SecureField("", text: $text, prompt: prompt)
+            } else {
+                TextField("", text: $text, prompt: prompt)
+                    .keyboardType(keyboard)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+            }
+        }
+        .font(Theme.sans(Theme.fontBase))
+        .foregroundStyle(error ? Theme.error : Theme.text)
+        .textContentType(textContentType)
+        .tint(Theme.green)
     }
 
     private var prompt: Text {
-        Text(placeholder).foregroundColor(error ? Theme.error : Theme.textMuted)
+        Text(placeholder).foregroundColor(Theme.textMuted)
     }
 }
 
+/// Button/Switch: капсула 50×30 со стеклом. Вкл — заливка «active» и белый
+/// кружок справа; выкл — «Second color» 20% и зелёный кружок (#629F00) слева.
 struct AppToggle: View {
     @Binding var isOn: Bool
     var disabled: Bool = false
@@ -90,122 +117,213 @@ struct AppToggle: View {
             if !disabled { Haptics.light(); isOn.toggle() }
         } label: {
             ZStack(alignment: isOn ? .trailing : .leading) {
-                Capsule()
-                    .fill(AnyShapeStyle(isOn ? AnyShapeStyle(Theme.gradientAccent) : AnyShapeStyle(Theme.surface2)))
-                    .frame(width: 56, height: 30)
+                Color.clear
+                    .frame(width: 50, height: 30)
+                    .modifier(Track(isOn: isOn))
                 Circle()
                     .fill(isOn ? Color.white : Theme.green)
-                    .frame(width: 24, height: 24)
-                    .padding(3)
+                    .frame(width: 22, height: 22)
+                    .padding(4)
             }
         }
         .buttonStyle(.plain)
         .opacity(disabled ? 0.5 : 1)
         .disabled(disabled)
-        .animation(.easeInOut(duration: 0.18), value: isOn)
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isOn)
+    }
+
+    private struct Track: ViewModifier {
+        let isOn: Bool
+        func body(content: Content) -> some View {
+            if isOn { content.liquidGlass(Capsule(), fill: ActiveFill()) }
+            else { content.liquidGlass(Capsule()) }
+        }
     }
 }
 
+/// Чип инструмента с чекбоксом (фильтры, уведомления, отслеживаемые):
+/// скругление 12, отступы 10, Min Sans 14 + иконка чекбокса 20, стекло.
 struct InstrumentChip: View {
     let label: String
     @Binding var on: Bool
 
+    private let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+
     var body: some View {
         Button {
+            Haptics.light()
             on.toggle()
         } label: {
-            HStack(spacing: 8) {
-                Text(label).font(.system(size: Theme.fontBase))
-                ZStack {
-                    RoundedRectangle(cornerRadius: 5)
-                        .stroke(on ? Color.white.opacity(0.9) : Color.white.opacity(0.6), lineWidth: 1.5)
-                        .background(on ? Color.black.opacity(0.25) : Color.clear)
-                        .frame(width: 18, height: 18)
-                    if on {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(.white)
-                    }
-                }
+            HStack(spacing: 4) {
+                Text(label).font(Theme.sans(Theme.fontBase)).lineLimit(1)
+                Icon(on ? AppIcons.checkboxOn : AppIcons.checkboxOff, size: 20, color: Theme.text)
             }
             .foregroundStyle(Theme.text)
-            .padding(.horizontal, 12)
+            .padding(10)
             .frame(height: 40)
-            .background(chipBackground)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusChip, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.radiusChip, style: .continuous)
-                    .stroke(on ? Color.clear : Color.white.opacity(0.12), lineWidth: 1)
-            )
+            .contentShape(shape)
+            .modifier(Fill(on: on, shape: shape))
         }
         .buttonStyle(.plain)
     }
 
-    @ViewBuilder private var chipBackground: some View {
-        if on { Theme.gradientAccent } else { Color.clear }
+    private struct Fill: ViewModifier {
+        let on: Bool
+        let shape: RoundedRectangle
+        func body(content: Content) -> some View {
+            if on { content.liquidGlass(shape, fill: ActiveFill()) }
+            else { content.liquidGlass(shape) }
+        }
     }
 }
 
+/// Сегменты («Неделя / Месяц / Год», «Все чаты / Личные чаты»): подложка
+/// «Фон плашки 2» (или стекло), выбранный — пурпур «акцент 3», скругление 20.
 struct SegmentedControl: View {
     @Binding var selection: String
     let options: [(value: String, label: String)]
+    /// true — подложка стеклянная (как в «Сообществе»), иначе плашка #2D2E35.
+    var glass: Bool = false
+
+    @Namespace private var lens
 
     var body: some View {
         HStack(spacing: 4) {
             ForEach(options, id: \.value) { opt in
                 Button {
-                    selection = opt.value
+                    guard selection != opt.value else { return }
+                    Haptics.light()
+                    withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) { selection = opt.value }
                 } label: {
                     Text(opt.label)
-                        .font(.system(size: Theme.fontBase))
+                        .font(Theme.sans(Theme.fontBase))
                         .foregroundStyle(Theme.text)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 44)
-                        .background(selection == opt.value ? AnyShapeStyle(Theme.gradientAccentPurple) : AnyShapeStyle(Color.clear),
-                                    in: RoundedRectangle(cornerRadius: Theme.radiusChip, style: .continuous))
+                        .frame(height: 48)
+                        .background {
+                            if selection == opt.value {
+                                SelectionLens(radius: Theme.radiusChip)
+                                    .matchedGeometryEffect(id: "lens", in: lens)
+                            }
+                        }
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(6)
-        .liquidGlass(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+        .padding(4)
+        .frame(height: 56)
+        .modifier(Container(glass: glass))
+    }
+
+    private struct Container: ViewModifier {
+        let glass: Bool
+        func body(content: Content) -> some View {
+            let shape = RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
+            if glass { content.liquidGlass(shape) }
+            else { content.background(Theme.surface2Plate, in: shape) }
+        }
     }
 }
 
+/// Пурпурная «линза» выбранного пункта (чипы материалов, сегменты): стекло с
+/// заливкой «акцент 3».
+struct SelectionLens: View {
+    var radius: CGFloat = Theme.radiusChip
+    var body: some View {
+        Color.clear.liquidGlass(RoundedRectangle(cornerRadius: radius, style: .continuous), fill: PurpleFill())
+    }
+}
+
+/// Button/в отчете и Button/Button chart: 48 pt, скругление 24, текст 14 слева,
+/// справа кружок 32 с иконкой 20.
 struct ReportActionButton: View {
     let label: String
-    enum Variant { case accent, purple, dark }
-    enum Badge { case green, pink }
+    /// accent — «Открыть отчет»; pink — «Обсудить»; chartOff — «Открыть график»
+    /// (белая обводка, белый кружок); chartOn — «Закрыть график» (стекло).
+    enum Variant { case accent, pink, chartOff, chartOn }
     var variant: Variant = .accent
-    var badge: Badge = .green
     let icon: IconDef
     let action: () -> Void
+
+    private let shape = RoundedRectangle(cornerRadius: 24, style: .continuous)
 
     var body: some View {
         Button(action: action) {
             HStack {
-                Text(label).font(.system(size: Theme.fontMd)).foregroundStyle(Theme.text)
+                Text(label).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
                 Spacer(minLength: 8)
-                ZStack {
-                    Circle().fill(badge == .green ? Color(hex: "#4e9c17") : Color(hex: "#d7609f"))
-                        .frame(width: 40, height: 40)
-                    Icon(icon, size: 22, color: .white)
-                }
+                Icon(icon, size: 20, color: variant == .chartOff ? Theme.green : .white)
+                    .frame(width: 32, height: 32)
+                    .background(badge, in: Circle())
             }
-            .padding(.leading, 20)
+            .padding(.leading, 16)
             .padding(.trailing, 8)
-            .frame(height: 56)
-            .background(background)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusPill, style: .continuous))
+            .frame(height: 48)
+            .contentShape(shape)
+            .modifier(Fill(variant: variant, shape: shape))
         }
         .buttonStyle(PressableStyle())
     }
 
-    @ViewBuilder private var background: some View {
+    private var badge: Color {
         switch variant {
-        case .accent: Theme.gradientAccent
-        case .purple: LinearGradient(colors: [Color(hex: "#3a1230"), Color(hex: "#9c2f6e")], startPoint: .leading, endPoint: .trailing)
-        case .dark: Theme.surfaceMuted
+        case .pink: return Color(hex: "#da517d")
+        case .chartOff: return .white
+        default: return Theme.green
         }
+    }
+
+    private struct Fill: ViewModifier {
+        let variant: Variant
+        let shape: RoundedRectangle
+        func body(content: Content) -> some View {
+            switch variant {
+            case .accent: content.liquidGlass(shape, fill: ActiveFill())
+            case .pink: content.liquidGlass(shape, fill: PinkFill())
+            case .chartOn: content.liquidGlass(shape)
+            case .chartOff: content.overlay(shape.stroke(Color.white, lineWidth: 1))
+            }
+        }
+    }
+}
+
+/// Маленькая пилюля-действие «Искать» (Button/искать): 42 pt, скругление 44,
+/// Min Sans 13 с трекингом 0.52, стекло с «active».
+struct PillActionButton: View {
+    let title: String
+    var height: CGFloat = 42
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(Theme.sans(13))
+                .tracking(0.52)
+                .foregroundStyle(Theme.text)
+                .padding(.horizontal, 12)
+                .frame(height: height)
+                .liquidGlass(Capsule(), fill: ActiveFill())
+        }
+        .buttonStyle(PressableStyle())
+    }
+}
+
+/// Пурпурная пилюля «Отвязать / Привязать / Добавить / Удалить» (32 pt).
+struct PurplePillButton: View {
+    let title: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(Theme.sans(13))
+                .tracking(0.52)
+                .foregroundStyle(Theme.text)
+                .padding(.horizontal, 12)
+                .frame(height: 32)
+                .liquidGlass(Capsule(), fill: PurpleFill())
+        }
+        .buttonStyle(PressableStyle())
     }
 }

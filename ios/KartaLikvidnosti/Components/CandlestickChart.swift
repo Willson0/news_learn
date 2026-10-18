@@ -38,17 +38,17 @@ struct CandlestickChart: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(symbol).font(.system(size: Theme.fontMd, weight: .bold)).foregroundStyle(Theme.text)
+                Text(symbol).font(Theme.sans(Theme.fontMd, .bold)).foregroundStyle(Theme.text)
                 HStack(spacing: 6) {
                     Circle().fill(Color(hex: "#d9d9de")).frame(width: 10, height: 10)
-                    Text(name).font(.system(size: Theme.fontBase)).foregroundStyle(Theme.textSecondary)
+                    Text(name).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
                 }
                 HStack(spacing: 6) {
-                    Text(price).font(.system(size: Theme.fontBase, weight: .semibold)).foregroundStyle(Theme.text)
-                    Text(change).font(.system(size: Theme.fontBase)).foregroundStyle(Color(hex: "#ff5a5a"))
+                    Text(price).font(Theme.sans(Theme.fontBase, .semibold)).foregroundStyle(Theme.text)
+                    Text(change).font(Theme.sans(Theme.fontBase)).foregroundStyle(Color(hex: "#ff5a5a"))
                 }
                 Text("Объём - Тики ▾")
-                    .font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
+                    .font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
                     .padding(.horizontal, 10).padding(.vertical, 6)
                     .background(Theme.surfaceMuted)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
@@ -64,9 +64,9 @@ struct CandlestickChart: View {
             .frame(maxWidth: .infinity)
 
             HStack {
-                Text("Диапазон дат ▾").font(.system(size: Theme.fontBase)).foregroundStyle(Theme.text)
+                Text("Диапазон дат ▾").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
                 Spacer()
-                Text(time).font(.system(size: Theme.fontBase)).foregroundStyle(Theme.textSecondary)
+                Text(time).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
             }
             .padding(.top, 8)
         }
@@ -90,7 +90,7 @@ struct CandlestickChart: View {
             var line = Path()
             line.move(to: CGPoint(x: 0, y: gy)); line.addLine(to: CGPoint(x: plotW, y: gy))
             ctx.stroke(line, with: .color(.white.opacity(0.06)), lineWidth: 1)
-            let label = Text(v.formattedRu).font(.system(size: 8)).foregroundColor(.white.opacity(0.5))
+            let label = Text(v.formattedRu).font(Theme.sans(8)).foregroundColor(.white.opacity(0.5))
             ctx.draw(label, at: CGPoint(x: plotW + 6, y: gy), anchor: .leading)
             v += step
         }
@@ -118,12 +118,12 @@ struct CandlestickChart: View {
         ctx.stroke(dash, with: .color(.white.opacity(0.35)), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
         let tag = Path(roundedRect: CGRect(x: plotW, y: cy - 9, width: padRight, height: 18), cornerRadius: 3)
         ctx.fill(tag, with: .color(Color(hex: "#3a3b40")))
-        ctx.draw(Text(current.formattedRu).font(.system(size: 8)).foregroundColor(.white),
+        ctx.draw(Text(current.formattedRu).font(Theme.sans(8)).foregroundColor(.white),
                  at: CGPoint(x: plotW + 5, y: cy), anchor: .leading)
 
         // Подписи месяцев
         for (label, frac) in [("Июль", 0.1), ("Авг", 0.45), ("Сен", 0.78)] {
-            ctx.draw(Text(label).font(.system(size: 9)).foregroundColor(.white.opacity(0.6)),
+            ctx.draw(Text(label).font(Theme.sans(9)).foregroundColor(.white.opacity(0.6)),
                      at: CGPoint(x: plotW * CGFloat(frac), y: vbH - 10), anchor: .leading)
         }
     }

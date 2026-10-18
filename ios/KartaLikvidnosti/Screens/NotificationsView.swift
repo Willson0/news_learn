@@ -12,13 +12,13 @@ struct NotificationsView: View {
 
                 VStack(spacing: 18) {
                     HStack {
-                        Text("Все уведомления").font(.system(size: Theme.fontMd)).foregroundStyle(Theme.text)
+                        Text("Все уведомления").font(Theme.sans(Theme.fontMd)).foregroundStyle(Theme.text)
                         Spacer()
                         AppToggle(isOn: $allNotifications)
                     }
                     if !allNotifications {
                         HStack {
-                            Text("Только по инструментам").font(.system(size: Theme.fontMd)).foregroundStyle(Theme.text)
+                            Text("Только по инструментам").font(Theme.sans(Theme.fontMd)).foregroundStyle(Theme.text)
                             Spacer()
                             AppToggle(isOn: $byInstrument)
                         }
@@ -28,7 +28,7 @@ struct NotificationsView: View {
 
                 Text("Уведомления\nпо инструментам").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
                 Text("Для этой функции выше включите уведомления по инструментам")
-                    .font(.system(size: Theme.fontBase)).foregroundStyle(Theme.textMuted)
+                    .font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textMuted)
 
                 FlowLayout(spacing: 8) {
                     ForEach(instruments.indices, id: \.self) { i in
@@ -41,7 +41,7 @@ struct NotificationsView: View {
             }
             .padding(.horizontal, Theme.screenX).padding(.top, 16).padding(.bottom, 40)
         }
-        .screenBackground(Theme.bg)
+        .screenBackground()
         .task { await load() }
         .onChange(of: allNotifications) { v in Task { try? await Api.updateNotifications(["all": v]) } }
         .onChange(of: byInstrument) { v in Task { try? await Api.updateNotifications(["by_instrument": v]) } }

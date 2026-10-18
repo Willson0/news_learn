@@ -44,26 +44,18 @@ private struct AuthFlow: View {
     }
 }
 
-/// Основной поток приложения: системный TabView (на iOS 26+ — нативный
-/// Liquid Glass таб-бар с перетаскиваемой капсулой и системной анимацией),
-/// у каждой вкладки свой стек pushed-экранов.
+/// Основной поток приложения: TabView со скрытым системным таб-баром — у
+/// каждой вкладки свой стек pushed-экранов, а навбар из макета (стеклянная
+/// капсула) рисуется внутри корневого экрана вкладки и уезжает вместе с ним.
 private struct MainFlow: View {
     @EnvironmentObject var router: Router
 
     var body: some View {
         TabView(selection: $router.tab) {
-            stack(.home) { HomeView() }
-                .tabItem { Label("Лента", systemImage: "house.fill") }
-                .tag(Tab.home)
-            stack(.analytics) { AnalyticsView() }
-                .tabItem { Label("Материалы", systemImage: "chart.bar.fill") }
-                .tag(Tab.analytics)
-            stack(.community) { CommunityView() }
-                .tabItem { Label("Чаты", systemImage: "person.2.fill") }
-                .tag(Tab.community)
-            stack(.profile) { ProfileView() }
-                .tabItem { Label("Профиль", systemImage: "person.crop.circle.fill") }
-                .tag(Tab.profile)
+            stack(.home) { HomeView() }.tag(Tab.home)
+            stack(.analytics) { AnalyticsView() }.tag(Tab.analytics)
+            stack(.community) { CommunityView() }.tag(Tab.community)
+            stack(.profile) { ProfileView() }.tag(Tab.profile)
         }
         .tint(Theme.text)
     }
@@ -72,14 +64,14 @@ private struct MainFlow: View {
         NavigationStack(path: router.path(for: t)) {
             root()
                 .toolbar(.hidden, for: .navigationBar)
-                .tabBarSlidesWithScreen()
+                .toolbar(.hidden, for: .tabBar)
                 .navigationDestination(for: Route.self) { route in
                     destination(route)
+                        .toolbar(.hidden, for: .navigationBar)
                         .toolbar(.hidden, for: .tabBar)
-                        // Без тёмной подложки навбара: кнопка «назад» парит над экраном.
-                        .toolbarBackground(.hidden, for: .navigationBar)
                 }
         }
+        .toolbar(.hidden, for: .tabBar)
     }
 
     @ViewBuilder private func destination(_ route: Route) -> some View {

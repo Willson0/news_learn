@@ -18,19 +18,19 @@ struct AdminsView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Администраторы").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
                 Text("Админы видят админ-панель: создают и редактируют отчёты, настраивают чаты и отвечают в личных чатах. Добавить нового админа можно по его Telegram ID.")
-                    .font(.system(size: Theme.fontBase)).foregroundStyle(Theme.textSecondary).lineSpacing(2)
+                    .font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary).lineSpacing(2)
 
                 HStack(spacing: 8) {
                     AppInput(text: $telegramId, placeholder: "Telegram ID", error: !error.isEmpty, keyboard: .numberPad)
                         .onChange(of: telegramId) { _ in error = "" }
                     Button { add() } label: {
-                        Text("Добавить").font(.system(size: Theme.fontBase)).foregroundStyle(Theme.text)
+                        Text("Добавить").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
                             .padding(.horizontal, 20).frame(height: 48).background(Theme.gradientAccent)
                             .clipShape(RoundedRectangle(cornerRadius: Theme.radiusInput, style: .continuous))
                     }.buttonStyle(.plain).disabled(adding)
                 }
 
-                if !error.isEmpty { Text(error).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.error) }
+                if !error.isEmpty { Text(error).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.error) }
 
                 VStack(spacing: 8) {
                     ForEach(admins) { a in adminRow(a) }
@@ -39,7 +39,7 @@ struct AdminsView: View {
             }
             .padding(.horizontal, Theme.screenX).padding(.top, 16).padding(.bottom, 32)
         }
-        .screenBackground(Theme.bg)
+        .screenBackground()
         .task { await load() }
         .overlay {
             if let a = confirmFor {
@@ -54,19 +54,19 @@ struct AdminsView: View {
             Circle().fill(Color(hex: "#8a8a8a")).frame(width: 40, height: 40)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
-                    Text(a.name ?? "Ещё не заходил").font(.system(size: Theme.fontMd, weight: .bold))
-                    if a.telegramId == myTelegramId { Text("(вы)").font(.system(size: Theme.fontMd)).foregroundStyle(Theme.textSecondary) }
+                    Text(a.name ?? "Ещё не заходил").font(Theme.sans(Theme.fontMd, .bold))
+                    if a.telegramId == myTelegramId { Text("(вы)").font(Theme.sans(Theme.fontMd)).foregroundStyle(Theme.textSecondary) }
                 }
                 Text("ID \(a.telegramId)" + (a.username.map { " · \($0)" } ?? ""))
-                    .font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
+                    .font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
             }
             Spacer()
             if a.root {
-                Text("Главный").font(.system(size: Theme.fontSm)).foregroundStyle(Theme.text)
+                Text("Главный").font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.text)
                     .padding(.horizontal, 12).padding(.vertical, 6).background(Theme.gradientAccent).clipShape(Capsule())
             } else {
                 Button { confirmFor = a } label: {
-                    Text("Удалить").font(.system(size: Theme.fontBase)).foregroundStyle(Theme.text)
+                    Text("Удалить").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
                         .padding(.horizontal, 12).frame(height: 32).background(Theme.gradientPurpleSolid).clipShape(Capsule())
                 }.buttonStyle(.plain).disabled(removing == a.telegramId)
             }

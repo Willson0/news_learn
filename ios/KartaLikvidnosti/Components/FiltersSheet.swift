@@ -58,7 +58,7 @@ struct FiltersSheet: View {
                 Text("Инструменты").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
                 Spacer()
                 Button(action: apply) {
-                    Text("Искать").font(.system(size: Theme.fontBase)).foregroundStyle(Theme.text)
+                    Text("Искать").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
                         .padding(.horizontal, 22).padding(.vertical, 10)
                         .background(Theme.gradientAccent).clipShape(Capsule())
                 }
@@ -80,7 +80,7 @@ struct FiltersSheet: View {
                             Button { dateStart = nil; dateEnd = nil; calendarOpen = true } label: {
                                 Icon(AppIcons.close, size: 18, color: Theme.textSecondary)
                             }.buttonStyle(.plain)
-                            Text(rangeLabel).font(.system(size: Theme.fontSm))
+                            Text(rangeLabel).font(Theme.sans(Theme.fontSm))
                                 .padding(.horizontal, 12).padding(.vertical, 8)
                                 .background(Theme.gradientAccent).clipShape(Capsule())
                         }

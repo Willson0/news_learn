@@ -26,7 +26,7 @@ struct AccountDataView: View {
             .background(Theme.surface).clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
 
             Button("Сменить пароль") { router.push(.accountChange(field: "password")) }
-                .font(.system(size: Theme.fontBase)).foregroundStyle(Theme.textMuted)
+                .font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textMuted)
                 .frame(maxWidth: .infinity, alignment: .trailing)
 
             VStack(spacing: 12) {
@@ -36,7 +36,7 @@ struct AccountDataView: View {
             Spacer()
         }
         .padding(.horizontal, Theme.screenX).padding(.top, 16).padding(.bottom, 40)
-        .screenBackground(Theme.bg)
+        .screenBackground()
         .task { await load() }
     }
 
@@ -45,7 +45,7 @@ struct AccountDataView: View {
     private func row(label: String, value: String, icon: IconDef, action: @escaping () -> Void) -> some View {
         HStack {
             (Text(label).foregroundColor(Theme.textSecondary) + Text(" \(value)").foregroundColor(Theme.text))
-                .font(.system(size: Theme.fontBase))
+                .font(Theme.sans(Theme.fontBase))
             Spacer()
             Button(action: action) { Icon(icon, size: 22, color: Theme.text) }.buttonStyle(.plain)
         }

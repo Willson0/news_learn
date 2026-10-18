@@ -17,7 +17,7 @@ struct ChatEditView: View {
             HStack {
                 Spacer()
                 Button { save() } label: {
-                    Text("Готово").font(.system(size: Theme.fontBase)).foregroundStyle(Theme.text)
+                    Text("Готово").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
                         .padding(.horizontal, 14).padding(.vertical, 11)
                         .background(Theme.surfaceMuted).overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 1)).clipShape(Capsule())
                 }.buttonStyle(.plain).opacity(saving ? 0.6 : 1)
@@ -28,12 +28,12 @@ struct ChatEditView: View {
                     avatarView.frame(width: 150, height: 150).clipShape(Circle())
                 }
                 PhotosPicker(selection: $pickerItem, matching: .images) {
-                    Text("Изменить фотографию").font(.system(size: Theme.fontMd)).foregroundStyle(Theme.text)
+                    Text("Изменить фотографию").font(Theme.sans(Theme.fontMd)).foregroundStyle(Theme.text)
                 }
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("Название").font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
+                Text("Название").font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
                 TextField("", text: $name).foregroundStyle(Theme.text).tint(Theme.green)
                     .onChange(of: name) { _ in error = "" }
             }
@@ -41,11 +41,11 @@ struct ChatEditView: View {
             .background(Theme.surfaceMuted).overlay(RoundedRectangle(cornerRadius: Theme.radiusInput).stroke(Color.white.opacity(0.12), lineWidth: 1))
             .clipShape(RoundedRectangle(cornerRadius: Theme.radiusInput, style: .continuous))
 
-            if !error.isEmpty { Text(error).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.error).frame(maxWidth: .infinity, alignment: .leading) }
+            if !error.isEmpty { Text(error).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.error).frame(maxWidth: .infinity, alignment: .leading) }
             Spacer()
         }
         .padding(.horizontal, Theme.screenX).padding(.top, 16).padding(.bottom, 40)
-        .screenBackground(Theme.bg)
+        .screenBackground()
         .task { await load() }
         .onChange(of: pickerItem) { item in
             Task { if let data = try? await item?.loadTransferable(type: Data.self) { previewData = data; previewURL = nil } }

@@ -9,15 +9,15 @@ struct HomeView: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 24) {
                 Text("Лента материалов").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
                 MaterialChips(selected: $filter)
                 if !loaded {
-                    VStack(spacing: 16) {
+                    VStack(spacing: 12) {
                         ForEach(0..<4, id: \.self) { _ in ReportCardSkeleton() }
                     }
                 } else {
-                    LazyVStack(spacing: 16) {
+                    LazyVStack(spacing: 12) {
                         ForEach(reports) { report in
                             ReportCard(report: report) { router.push(.reportDetail(id: report.id)) }
                         }
@@ -30,10 +30,12 @@ struct HomeView: View {
                 }
             }
             .padding(.horizontal, Theme.screenX)
-            .padding(.top, 60)
-            .padding(.bottom, 24)
+            .padding(.top, Theme.titleTop)
+            .padding(.bottom, Theme.navBarClearance)
         }
-        .screenBackground(Theme.bg)
+        .ignoresSafeArea(.container, edges: .top)
+        .screenBackground()
+        .withGlassNavBar()
         .onAppear(perform: seed)
         .task(id: filter) { await load() }
     }

@@ -29,7 +29,7 @@ struct RegisterConfirmView: View {
             Text("Подтверждение почты").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
                 .padding(.bottom, 12)
             (Text("Мы отправили код подтверждения на ") + Text(maskedEmail).bold() + Text(". Введите его ниже."))
-                .font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
+                .font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center).lineSpacing(4)
                 .padding(.bottom, 28)
 
@@ -39,14 +39,14 @@ struct RegisterConfirmView: View {
                         code = String(newValue.filter(\.isNumber).prefix(6))
                         error = ""
                     }
-                if !error.isEmpty { Text(error).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.error) }
+                if !error.isEmpty { Text(error).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.error) }
             }
 
             Button {
                 resend()
             } label: {
                 Text(resendIn > 0 ? "Отправить код повторно (\(resendIn))" : "Отправить код повторно")
-                    .font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
+                    .font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
             }
             .disabled(resendIn > 0)
             .opacity(resendIn > 0 ? 0.5 : 1)
@@ -60,7 +60,7 @@ struct RegisterConfirmView: View {
         .padding(.horizontal, Theme.screenX)
         .padding(.top, 40)
         .padding(.bottom, 24)
-        .screenBackground(Theme.bg)
+        .screenBackground()
         .onAppear { startCooldown() }
         .onDisappear { timer?.invalidate() }
     }

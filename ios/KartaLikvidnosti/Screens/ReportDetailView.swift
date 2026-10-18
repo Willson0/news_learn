@@ -54,7 +54,7 @@ struct ReportDetailView: View {
             }
             .padding(.bottom, 32)
         }
-        .screenBackground(Theme.bg)
+        .screenBackground()
         .task { await load() }
     }
 
@@ -70,9 +70,9 @@ struct ReportDetailView: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 8) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(report.title).font(.system(size: 20, weight: .bold)).foregroundStyle(Theme.text)
+                        Text(report.title).font(Theme.sans(20, .bold)).foregroundStyle(Theme.text)
                         if let date = report.date {
-                            Text(date).font(.system(size: Theme.fontBase)).foregroundStyle(Theme.textSecondary)
+                            Text(date).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
                         }
                     }
                     Spacer(minLength: 8)
@@ -81,14 +81,14 @@ struct ReportDetailView: View {
                         .background(Color(hex: "#28282c").opacity(0.7))
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
-                Text(report.description).font(.system(size: Theme.fontBase)).foregroundStyle(Theme.text)
+                Text(report.description).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
                     .lineSpacing(3).frame(maxWidth: 300, alignment: .leading)
             }
             .padding(.horizontal, Theme.screenX)
             .padding(.bottom, 24)
 
             if let badge = report.badge, !badge.isEmpty {
-                Text(badge).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.text)
+                Text(badge).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.text)
                     .padding(.horizontal, 16).padding(.vertical, 8)
                     .background(Color(hex: "#28282c").opacity(0.7))
                     .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard))
@@ -125,7 +125,7 @@ struct ReportDetailView: View {
                     Text("В этом отчёте мы разбираем основные сценарии, факторы риска и возможные уровни цены на горизонте ближайших месяцев.")
                 }
             }
-            .font(.system(size: Theme.fontBase)).foregroundStyle(Theme.text).lineSpacing(4)
+            .font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text).lineSpacing(4)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
             .background(Theme.surface)

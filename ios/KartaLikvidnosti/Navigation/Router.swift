@@ -32,7 +32,11 @@ enum AuthRoute: Hashable {
 @MainActor
 final class Router: ObservableObject {
     @Published var authed: Bool
-    @Published var tab: Tab = .home
+    @Published var tab: Tab = .home {
+        didSet { if oldValue != tab { previousTab = oldValue } }
+    }
+    /// Вкладка, с которой пришли, — линза навбара переезжает с неё.
+    private(set) var previousTab: Tab?
     /// У каждой вкладки системного TabView свой стек pushed-экранов.
     @Published var paths: [Tab: [Route]] = [:]
     @Published var authPath: [AuthRoute] = []
@@ -60,6 +64,9 @@ final class Router: ObservableObject {
         paths[t] = []
         tab = t
     }
+
+    /// Переключение вкладки из навбара (стек вкладки сохраняется).
+    func selectTab(_ t: Tab) { tab = t }
 
     func enterApp() {
         authed = true

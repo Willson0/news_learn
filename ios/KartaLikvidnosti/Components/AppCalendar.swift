@@ -32,7 +32,7 @@ struct AppCalendar: View {
             HStack {
                 Button { prevMonth() } label: { Icon(AppIcons.back, size: 20, color: Theme.text) }
                 Spacer()
-                Text("\(Self.months[viewMonth]) \(String(viewYear))").font(.system(size: Theme.fontMd, weight: .bold))
+                Text("\(Self.months[viewMonth]) \(String(viewYear))").font(Theme.sans(Theme.fontMd, .bold))
                     .foregroundStyle(Theme.text)
                 Spacer()
                 Button { nextMonth() } label: { Icon(AppIcons.chevronRight, size: 20, color: Theme.text) }
@@ -43,7 +43,7 @@ struct AppCalendar: View {
 
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 7), spacing: 2) {
                 ForEach(Self.weekdays, id: \.self) { w in
-                    Text(w).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
+                    Text(w).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
                         .frame(maxWidth: .infinity).padding(.vertical, 6)
                 }
                 ForEach(cells) { cell in
@@ -73,7 +73,7 @@ struct AppCalendar: View {
                 .fill(isEdge ? Theme.green : (isToday ? Color.white : Color.clear))
                 .frame(width: 34, height: 34)
             Text("\(cell.day)")
-                .font(.system(size: Theme.fontBase))
+                .font(Theme.sans(Theme.fontBase))
                 .foregroundStyle(cell.out ? Theme.textMuted : (isToday ? Theme.green : Theme.text))
         }
         .frame(height: 40)

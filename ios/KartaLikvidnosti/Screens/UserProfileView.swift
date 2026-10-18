@@ -22,16 +22,16 @@ struct UserProfileView: View {
 
             if let u = user {
                 VStack(spacing: 6) {
-                    Text("Зарегистрирован").font(.system(size: Theme.fontTitle, weight: .bold)).foregroundStyle(Theme.text)
-                    Text(registered).font(.system(size: Theme.fontBase)).foregroundStyle(Theme.textSecondary).padding(.bottom, 20)
+                    Text("Зарегистрирован").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
+                    Text(registered).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary).padding(.bottom, 20)
                     AvatarCircle(url: fileURL(u.avatarUrl), size: 160, name: u.name ?? u.username).padding(.bottom, 14)
-                    Text(u.name ?? "").font(.system(size: Theme.fontTitle, weight: .bold)).foregroundStyle(Theme.text)
-                    if let un = u.username { Text(un).font(.system(size: Theme.fontMd)).foregroundStyle(Theme.textSecondary) }
-                    if let seen = u.seen { Text(seen).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textMuted).padding(.top, 4) }
+                    Text(u.name ?? "").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
+                    if let un = u.username { Text(un).font(Theme.sans(Theme.fontMd)).foregroundStyle(Theme.textSecondary) }
+                    if let seen = u.seen { Text(seen).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textMuted).padding(.top, 4) }
                 }
                 .padding(.horizontal, Theme.screenX)
             } else if !loading {
-                Text("Пользователь не найден").font(.system(size: Theme.fontTitle, weight: .bold)).foregroundStyle(Theme.text)
+                Text("Пользователь не найден").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
             }
         }
         .task { await load() }

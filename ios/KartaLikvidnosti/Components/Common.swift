@@ -88,7 +88,7 @@ struct FileHtmlIcon: View {
             RoundedRectangle(cornerRadius: size * 0.08)
                 .fill(Color(hex: "#7ff5ef"))
             Text("html")
-                .font(.system(size: size * 0.23, weight: .bold))
+                .font(Theme.sans(size * 0.23, .bold))
                 .foregroundStyle(.white)
                 .padding(.horizontal, size * 0.04)
                 .padding(.vertical, size * 0.06)

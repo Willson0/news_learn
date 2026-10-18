@@ -34,7 +34,7 @@ struct ChatInfoView: View {
                     HStack(spacing: 4) {
                         ForEach(tabs, id: \.0) { t in
                             Button { switchTab(t.0) } label: {
-                                Text(t.1).font(.system(size: Theme.fontBase)).foregroundStyle(Theme.text)
+                                Text(t.1).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
                                     .padding(.horizontal, 18).frame(height: 40)
                                     .background(tab == t.0 ? AnyShapeStyle(Theme.gradientAccentPurple) : AnyShapeStyle(Color.clear),
                                                 in: RoundedRectangle(cornerRadius: Theme.radiusChip, style: .continuous))
@@ -48,15 +48,15 @@ struct ChatInfoView: View {
                 content.padding(.horizontal, Theme.screenX).padding(.bottom, 24)
             }
         }
-        .screenBackground(Theme.bg)
+        .screenBackground()
         .task { await load() }
     }
 
     private var hero: some View {
         VStack(spacing: 4) {
             AvatarCircle(url: avatar, size: 150, name: title).padding(.top, 8)
-            Text(title).font(.system(size: Theme.fontTitle, weight: .bold)).foregroundStyle(Theme.text).padding(.top, 10)
-            Text(members).font(.system(size: Theme.fontBase)).foregroundStyle(Theme.textSecondary)
+            Text(title).font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text).padding(.top, 10)
+            Text(members).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 16).padding(.bottom, 20).padding(.horizontal, Theme.screenX)
@@ -96,11 +96,11 @@ struct ChatInfoView: View {
                     HStack(spacing: 12) {
                         AvatarCircle(url: fileURL(m.avatarUrl), size: 44, name: m.name ?? m.username)
                         VStack(alignment: .leading) {
-                            Text(m.name ?? "").font(.system(size: Theme.fontMd, weight: .bold))
-                            Text(m.seen ?? "").font(.system(size: Theme.fontBase)).foregroundStyle(Theme.textSecondary)
+                            Text(m.name ?? "").font(Theme.sans(Theme.fontMd, .bold))
+                            Text(m.seen ?? "").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
                         }
                         Spacer()
-                        Text(m.role ?? "").font(.system(size: Theme.fontBase)).foregroundStyle(Theme.textSecondary)
+                        Text(m.role ?? "").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
                     }
                     .foregroundStyle(Theme.text).padding(.vertical, 12)
                     .overlay(Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1), alignment: .bottom)
@@ -140,12 +140,12 @@ struct ChatInfoView: View {
                         ZStack {
                             Circle().fill(Color(hex: "#4e8f10")).frame(width: 44, height: 44)
                             Image(systemName: audio.playingId == a.id ? "pause.fill" : "play.fill")
-                                .font(.system(size: 16, weight: .bold)).foregroundStyle(.white)
+                                .font(Theme.sans(16, .bold)).foregroundStyle(.white)
                         }
                     }.buttonStyle(.plain)
                     VStack(alignment: .leading) {
-                        Text(a.author ?? "Участник").font(.system(size: Theme.fontMd, weight: .bold))
-                        Text(a.meta ?? "").font(.system(size: Theme.fontBase)).foregroundStyle(Theme.textSecondary)
+                        Text(a.author ?? "Участник").font(Theme.sans(Theme.fontMd, .bold))
+                        Text(a.meta ?? "").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
                     }
                     Spacer()
                 }
@@ -161,11 +161,11 @@ struct ChatInfoView: View {
             ForEach(files) { f in
                 Button { open(f.url) } label: {
                     HStack(spacing: 12) {
-                        Text((f.ext ?? "").isEmpty ? "file" : (f.ext ?? "")).font(.system(size: Theme.fontSm, weight: .bold)).foregroundStyle(.white)
+                        Text((f.ext ?? "").isEmpty ? "file" : (f.ext ?? "")).font(Theme.sans(Theme.fontSm, .bold)).foregroundStyle(.white)
                             .frame(width: 44, height: 44).background(colorFor(f.ext)).clipShape(RoundedRectangle(cornerRadius: 10))
                         VStack(alignment: .leading) {
-                            Text(f.name ?? "Файл").font(.system(size: Theme.fontMd, weight: .bold)).lineLimit(1)
-                            Text(f.meta ?? "").font(.system(size: Theme.fontBase)).foregroundStyle(Theme.textSecondary)
+                            Text(f.name ?? "Файл").font(Theme.sans(Theme.fontMd, .bold)).lineLimit(1)
+                            Text(f.meta ?? "").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
                         }
                         Spacer()
                         Icon(AppIcons.downloadCloud, size: 24, color: Theme.textSecondary)
@@ -186,9 +186,9 @@ struct ChatInfoView: View {
                         RoundedRectangle(cornerRadius: 10).fill(Color(hex: "#3a7be8")).frame(width: 44, height: 44)
                             .overlay(Icon(AppIcons.link, size: 22, color: .white))
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(l.title ?? l.url).font(.system(size: Theme.fontMd, weight: .bold)).lineLimit(1)
-                            if let t = l.text { Text(t).font(.system(size: Theme.fontBase)).foregroundStyle(Theme.textSecondary).lineLimit(2) }
-                            Text(l.url).font(.system(size: Theme.fontBase)).foregroundStyle(Color(hex: "#6ea8e0")).lineLimit(1)
+                            Text(l.title ?? l.url).font(Theme.sans(Theme.fontMd, .bold)).lineLimit(1)
+                            if let t = l.text { Text(t).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary).lineLimit(2) }
+                            Text(l.url).font(Theme.sans(Theme.fontBase)).foregroundStyle(Color(hex: "#6ea8e0")).lineLimit(1)
                         }
                         Spacer()
                     }
@@ -199,7 +199,7 @@ struct ChatInfoView: View {
     }
 
     private func emptyRow(_ text: String) -> some View {
-        Text(text).font(.system(size: Theme.fontBase)).foregroundStyle(Theme.textMuted)
+        Text(text).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textMuted)
             .frame(maxWidth: .infinity).padding(.vertical, 28)
     }
 

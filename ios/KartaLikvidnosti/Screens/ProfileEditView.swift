@@ -23,7 +23,7 @@ struct ProfileEditView: View {
             HStack {
                 Spacer()
                 Button { save() } label: {
-                    Text(saving ? "Сохранение…" : "Готово").font(.system(size: Theme.fontBase)).foregroundStyle(Theme.text)
+                    Text(saving ? "Сохранение…" : "Готово").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
                         .padding(.horizontal, 22).padding(.vertical, 11)
                         .background(Theme.surfaceMuted).overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 1)).clipShape(Capsule())
                 }.buttonStyle(.plain).opacity(saving ? 0.6 : 1).disabled(saving)
@@ -40,11 +40,11 @@ struct ProfileEditView: View {
                 }
                 PhotosPicker(selection: $photoItem, matching: .images) {
                     Text(uploading ? "Загрузка…" : "Изменить фотографию")
-                        .font(.system(size: Theme.fontMd)).foregroundStyle(Theme.text)
+                        .font(Theme.sans(Theme.fontMd)).foregroundStyle(Theme.text)
                 }.disabled(uploading)
                 if avatarUrl != nil {
                     Button { removePhoto() } label: {
-                        Text("Удалить фото").font(.system(size: Theme.fontSm)).foregroundStyle(Theme.error)
+                        Text("Удалить фото").font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.error)
                     }.buttonStyle(.plain).disabled(uploading)
                 }
             }.padding(.vertical, 8)
@@ -56,14 +56,14 @@ struct ProfileEditView: View {
             Spacer()
         }
         .padding(.horizontal, Theme.screenX).padding(.top, 16).padding(.bottom, 40)
-        .screenBackground(Theme.bg)
+        .screenBackground()
         .onChange(of: photoItem) { _ in loadPicked() }
         .task { await load() }
     }
 
     private func labeledField(_ label: String, _ text: Binding<String>) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(label).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
+            Text(label).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
             TextField("", text: text).foregroundStyle(Theme.text).tint(Theme.green)
                 .autocorrectionDisabled()
         }

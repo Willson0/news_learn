@@ -8,8 +8,8 @@ struct MaterialChips: View {
     private let items: [Item] = [
         .init(key: "all", label: "Все", icon: nil),
         .init(key: "gold", label: "Золото", icon: AppIcons.matGold),
-        .init(key: "silver", label: "Серебро", icon: AppIcons.matGold),
-        .init(key: "platinum", label: "Платина", icon: AppIcons.matGold),
+        .init(key: "silver", label: "Серебро", icon: AppIcons.matSilver),
+        .init(key: "platinum", label: "Платина", icon: AppIcons.matPlat),
         .init(key: "wti", label: "Нефть WTI", icon: AppIcons.matOil),
         .init(key: "brent", label: "Нефть Brent", icon: AppIcons.matOil),
         .init(key: "usd", label: "USD", icon: AppIcons.matUsd),
@@ -34,19 +34,20 @@ struct MaterialChips: View {
                             }
                         } label: {
                             HStack(spacing: 4) {
-                                Text(item.label).font(.system(size: Theme.fontBase))
+                                Text(item.label).font(Theme.sans(Theme.fontBase))
                                 if let icon = item.icon {
                                     Icon(icon, size: 16, color: Theme.text)
                                 }
                             }
                             .foregroundStyle(Theme.text)
                             .padding(.horizontal, 12)
+                            .frame(minWidth: 48)
                             .frame(height: 48)
                             .background {
                                 // Подсветка выбранного — одна на весь селектор и «переезжает»
                                 // между пунктами с пружинной анимацией, как капсула системного таб-бара.
                                 if selected == item.key {
-                                    SelectionLens()
+                                    SelectionLens(radius: Theme.radiusChip)
                                         .matchedGeometryEffect(id: "lens", in: indicator)
                                 }
                             }
@@ -61,24 +62,5 @@ struct MaterialChips: View {
         }
         .frame(height: 56)
         .liquidGlass(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
-    }
-}
-
-/// Пурпурная подсветка выбранного пункта. На iOS 26+ — тонированное Liquid Glass
-/// (интерактивное: реагирует на касание), иначе — пурпурный градиент макета.
-private struct SelectionLens: View {
-    private let shape = RoundedRectangle(cornerRadius: Theme.radiusChip, style: .continuous)
-
-    var body: some View {
-        #if compiler(>=6.2)
-        if #available(iOS 26.0, *) {
-            shape.fill(Theme.gradientAccentPurple)
-                .glassEffect(.regular.tint(Color(hex: "#bd5197").opacity(0.45)).interactive(), in: shape)
-        } else {
-            shape.fill(Theme.gradientAccentPurple)
-        }
-        #else
-        shape.fill(Theme.gradientAccentPurple)
-        #endif
     }
 }

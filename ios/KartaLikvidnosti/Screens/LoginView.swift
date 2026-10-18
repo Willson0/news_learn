@@ -75,10 +75,10 @@ struct LoginView: View {
                 AppInput(text: $password, placeholder: "Пароль", isSecure: true,
                          error: errors["password"] != nil, textContentType: .password)
                 HStack {
-                    if let e = errors["password"] { Text(e).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.error) }
+                    if let e = errors["password"] { Text(e).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.error) }
                     Spacer()
                     Button("Забыли пароль?") { router.authPath.append(.passwordRecovery) }
-                        .font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
+                        .font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
                 }
             }
         }
@@ -97,7 +97,7 @@ struct LoginView: View {
             VStack(alignment: .leading, spacing: 6) {
                 AppInput(text: $password, placeholder: "Пароль", isSecure: true, error: errors["password"] != nil)
                 Text("Пароль должен содержать от 8 символов")
-                    .font(.system(size: Theme.fontSm))
+                    .font(Theme.sans(Theme.fontSm))
                     .foregroundStyle(errors["password"] != nil ? Theme.error : Theme.textSecondary)
             }
             field(error: errors["passwordConfirm"]) {
@@ -110,7 +110,7 @@ struct LoginView: View {
     @ViewBuilder private func field<Content: View>(error: String?, @ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             content()
-            if let error = error { Text(error).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.error) }
+            if let error = error { Text(error).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.error) }
         }
     }
 

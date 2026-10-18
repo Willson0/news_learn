@@ -52,7 +52,7 @@ struct AnalyticsView: View {
             .padding(.top, 60)
             .padding(.bottom, 24)
         }
-        .screenBackground(Theme.bg)
+        .screenBackground()
         .overlay(alignment: .bottomTrailing) {
             if session.isAdmin {
                 Button {

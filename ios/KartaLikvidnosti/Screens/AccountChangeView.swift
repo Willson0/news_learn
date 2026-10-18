@@ -34,19 +34,19 @@ struct AccountChangeView: View {
         VStack(spacing: 0) {
             Spacer().frame(height: 100)
             VStack(spacing: 16) {
-                Text(config.title).font(.system(size: Theme.fontTitle, weight: .bold)).foregroundStyle(Theme.text)
+                Text(config.title).font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
                 VStack(spacing: 12) {
                     ForEach(config.fields, id: \.key) { f in
                         AppInput(text: binding(f.key), placeholder: f.placeholder, isSecure: f.secure, keyboard: f.keyboard)
                     }
                 }
-                if !error.isEmpty { Text(error).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.error) }
+                if !error.isEmpty { Text(error).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.error) }
             }
             Spacer()
             AppButton(title: config.button, variant: .accent) { submit() }
         }
         .padding(.horizontal, Theme.screenX).padding(.top, 16).padding(.bottom, 24)
-        .screenBackground(Theme.bg)
+        .screenBackground()
     }
 
     private func binding(_ key: String) -> Binding<String> {

@@ -27,7 +27,7 @@ struct PasswordRecoveryView: View {
             Text("Восстановление пароля").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
                 .padding(.bottom, 12)
             Text("Отправим код на указанную почту. Введите его вместе с новым паролем — позднее пароль можно сменить в профиле.")
-                .font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
+                .font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center).lineSpacing(3).frame(maxWidth: 300)
                 .padding(.bottom, 28)
 
@@ -71,7 +71,7 @@ struct PasswordRecoveryView: View {
     private func field<Content: View>(error: String?, @ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             content()
-            if let e = error { Text(e).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.error) }
+            if let e = error { Text(e).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.error) }
         }
     }
 

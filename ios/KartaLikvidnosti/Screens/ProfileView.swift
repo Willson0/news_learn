@@ -53,7 +53,7 @@ struct ProfileView: View {
             }
             .padding(.bottom, 24)
         }
-        .screenBackground(Theme.bg)
+        .screenBackground()
         .onAppear(perform: seed)
         .task { await load() }
     }
@@ -62,7 +62,7 @@ struct ProfileView: View {
         VStack(spacing: 12) {
             AvatarCircle(url: avatar, size: 104, initial: avatarInitial)
                 .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 3))
-            Text(tag).font(.system(size: Theme.fontLg, weight: .bold)).foregroundStyle(Theme.text)
+            Text(tag).font(Theme.sans(Theme.fontLg, .bold)).foregroundStyle(Theme.text)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 56).padding(.bottom, 20).padding(.horizontal, Theme.screenX)
@@ -80,17 +80,17 @@ struct ProfileView: View {
     private var subscriptionCard: some View {
         VStack(spacing: 14) {
             HStack {
-                Text("Подписка").font(.system(size: Theme.fontMd, weight: .semibold)).foregroundStyle(Theme.text)
+                Text("Подписка").font(Theme.sans(Theme.fontMd, .semibold)).foregroundStyle(Theme.text)
                 Spacer()
                 HStack(spacing: 8) {
-                    Text(subActive ? "Активна" : "Неактивна").foregroundStyle(Color(hex: "#7bc043")).font(.system(size: Theme.fontBase, weight: .semibold))
-                    Text("до \(subUntil)").foregroundStyle(Theme.textSecondary).font(.system(size: Theme.fontBase))
+                    Text(subActive ? "Активна" : "Неактивна").foregroundStyle(Color(hex: "#7bc043")).font(Theme.sans(Theme.fontBase, .semibold))
+                    Text("до \(subUntil)").foregroundStyle(Theme.textSecondary).font(Theme.sans(Theme.fontBase))
                 }
             }
             HStack {
-                Text("Тарифный план").font(.system(size: Theme.fontMd, weight: .semibold)).foregroundStyle(Theme.text)
+                Text("Тарифный план").font(Theme.sans(Theme.fontMd, .semibold)).foregroundStyle(Theme.text)
                 Spacer()
-                Text(subPlan).font(.system(size: Theme.fontBase)).foregroundStyle(Theme.textSecondary)
+                Text(subPlan).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
             }
             AppButton(title: "Управление подпиской", variant: .accent) { router.push(.subscription) }
         }
@@ -111,7 +111,7 @@ struct ProfileView: View {
     private func settingRow(_ label: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack {
-                Text(label).font(.system(size: Theme.fontMd)).foregroundStyle(Theme.text)
+                Text(label).font(Theme.sans(Theme.fontMd)).foregroundStyle(Theme.text)
                 Spacer()
                 Icon(AppIcons.chevronRight, size: 18, color: Theme.textSecondary)
             }

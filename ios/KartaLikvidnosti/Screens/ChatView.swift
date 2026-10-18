@@ -67,7 +67,7 @@ struct ChatView: View {
                 } else {
                 LazyVStack(spacing: 10) {
                         HStack { Spacer()
-                            Text("Сегодня").font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
+                            Text("Сегодня").font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
                                 .padding(.horizontal, 14).padding(.vertical, 4)
                                 .liquidGlass()
                             Spacer() }
@@ -115,9 +115,9 @@ struct ChatView: View {
             ToolbarItem(placement: .principal) {
                 Button { router.push(.chatInfo(id: chatId)) } label: {
                     VStack(spacing: 0) {
-                        Text(chatTitle.title).font(.system(size: Theme.fontMd, weight: .bold)).lineLimit(1)
+                        Text(chatTitle.title).font(Theme.sans(Theme.fontMd, .bold)).lineLimit(1)
                         if !chatTitle.subtitle.isEmpty {
-                            Text(chatTitle.subtitle).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
+                            Text(chatTitle.subtitle).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
                         }
                     }
                     .foregroundStyle(Theme.text)
@@ -135,8 +135,8 @@ struct ChatView: View {
     private func pinnedBar(_ p: MessageQuoteDto) -> some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 0) {
-                Text(p.author ?? "Закреплённое сообщение").font(.system(size: Theme.fontSm, weight: .bold)).foregroundStyle(Color(hex: "#9ed06b"))
-                Text(p.text ?? "").font(.system(size: Theme.fontBase)).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                Text(p.author ?? "Закреплённое сообщение").font(Theme.sans(Theme.fontSm, .bold)).foregroundStyle(Color(hex: "#9ed06b"))
+                Text(p.text ?? "").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary).lineLimit(1)
             }
             Spacer()
             Button { unpin(p.id) } label: { Icon(AppIcons.close, size: 20, color: Theme.textSecondary) }.buttonStyle(.plain)
@@ -157,7 +157,7 @@ struct ChatView: View {
                     .fill(selected.contains(m.id) ? Theme.green : Color.clear)
                     .overlay(Circle().stroke(selected.contains(m.id) ? Theme.green : Color.white.opacity(0.4), lineWidth: 2))
                     .frame(width: 24, height: 24)
-                    .overlay { if selected.contains(m.id) { Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)).foregroundStyle(.white) } }
+                    .overlay { if selected.contains(m.id) { Image(systemName: "checkmark").font(Theme.sans(10, .bold)).foregroundStyle(.white) } }
             }
             if !m.mine && !selectMode && !isDirect {
                 Button { openUser(m) } label: {
@@ -215,14 +215,14 @@ struct ChatView: View {
                 roundButton(AppIcons.trash, danger: true) { audio.cancelRecording() }
                 HStack {
                     Circle().fill(Color(hex: "#e23b3b")).frame(width: 9, height: 9)
-                    Text(recordClock).font(.system(size: Theme.fontBase)).foregroundStyle(Theme.text)
+                    Text(recordClock).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
                     Spacer()
-                    Text("Идёт запись…").font(.system(size: Theme.fontBase)).foregroundStyle(Theme.textSecondary)
+                    Text("Идёт запись…").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
                 }
                 .padding(.horizontal, 16).frame(height: 48)
                 .liquidGlass()
                 Button { stopAndSendVoice() } label: {
-                    Image(systemName: "arrow.up").font(.system(size: 18, weight: .semibold)).foregroundStyle(.white)
+                    Image(systemName: "arrow.up").font(Theme.sans(18, .semibold)).foregroundStyle(.white)
                         .frame(width: 48, height: 48).background(Theme.greenSend).clipShape(Circle())
                 }.buttonStyle(.plain)
             }
@@ -246,7 +246,7 @@ struct ChatView: View {
                     .liquidGlass()
                     if showSend {
                         Button { send() } label: {
-                            Image(systemName: "arrow.right").font(.system(size: 18, weight: .semibold)).foregroundStyle(.white)
+                            Image(systemName: "arrow.right").font(Theme.sans(18, .semibold)).foregroundStyle(.white)
                                 .frame(width: 48, height: 48).background(Theme.greenSend).clipShape(Circle())
                         }.buttonStyle(.plain)
                     } else {
@@ -277,7 +277,7 @@ struct ChatView: View {
     private func attachLabel(_ title: String, system: String) -> some View {
         HStack(spacing: 10) {
             Image(systemName: system).frame(width: 22, height: 22)
-            Text(title).font(.system(size: Theme.fontMd))
+            Text(title).font(Theme.sans(Theme.fontMd))
         }.foregroundStyle(Theme.text).padding(10)
     }
 
@@ -287,8 +287,8 @@ struct ChatView: View {
                 Button { applyMention(u) } label: {
                     HStack(spacing: 10) {
                         AvatarCircle(url: fileURL(u.avatarUrl), size: 28, name: u.name ?? u.username)
-                        Text(u.name ?? "").font(.system(size: Theme.fontBase, weight: .bold))
-                        if let un = u.username { Text(un).font(.system(size: Theme.fontBase)).foregroundStyle(Theme.textSecondary) }
+                        Text(u.name ?? "").font(Theme.sans(Theme.fontBase, .bold))
+                        if let un = u.username { Text(un).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary) }
                         Spacer()
                     }.foregroundStyle(Theme.text).padding(.horizontal, 14).padding(.vertical, 10)
                 }.buttonStyle(.plain)
@@ -301,8 +301,8 @@ struct ChatView: View {
         HStack(spacing: 10) {
             Icon(AppIcons.reply, size: 18, color: Theme.textSecondary)
             VStack(alignment: .leading) {
-                Text(reply.author ?? "Вы").font(.system(size: Theme.fontSm, weight: .bold))
-                Text(reply.text ?? replyPreview(reply)).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                Text(reply.author ?? "Вы").font(Theme.sans(Theme.fontSm, .bold))
+                Text(reply.text ?? replyPreview(reply)).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary).lineLimit(1)
             }
             Spacer()
             Button { replyTo = nil } label: { Icon(AppIcons.close, size: 18, color: Theme.textSecondary) }.buttonStyle(.plain)
@@ -380,7 +380,7 @@ struct ChatView: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Icon(icon, size: 20, color: danger ? Theme.error : Theme.text)
-                Text(title).font(.system(size: Theme.fontMd)).foregroundStyle(danger ? Theme.error : Theme.text)
+                Text(title).font(Theme.sans(Theme.fontMd)).foregroundStyle(danger ? Theme.error : Theme.text)
                 Spacer()
             }.padding(12)
         }.buttonStyle(.plain)
@@ -550,7 +550,7 @@ struct ChatView: View {
 
 private extension View {
     func pill() -> some View {
-        self.font(.system(size: Theme.fontBase)).foregroundStyle(Theme.text)
+        self.font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
             .padding(.horizontal, 18).padding(.vertical, 10)
             .liquidGlass()
     }

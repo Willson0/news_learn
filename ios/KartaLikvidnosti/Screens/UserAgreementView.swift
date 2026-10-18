@@ -30,14 +30,14 @@ struct UserAgreementView: View {
                     .font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
 
                 Text("Последнее обновление: 17.10.2026")
-                    .font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textMuted)
+                    .font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textMuted)
 
                 ForEach(sections.indices, id: \.self) { i in
                     VStack(alignment: .leading, spacing: 6) {
                         Text(sections[i].title)
-                            .font(.system(size: Theme.fontMd, weight: .bold)).foregroundStyle(Theme.text)
+                            .font(Theme.sans(Theme.fontMd, .bold)).foregroundStyle(Theme.text)
                         Text(sections[i].body)
-                            .font(.system(size: Theme.fontBase)).foregroundStyle(Theme.textSecondary)
+                            .font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
                             .lineSpacing(3)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -46,6 +46,6 @@ struct UserAgreementView: View {
             }
             .padding(.horizontal, Theme.screenX).padding(.top, 16).padding(.bottom, 40)
         }
-        .screenBackground(Theme.bg)
+        .screenBackground()
     }
 }

@@ -74,16 +74,16 @@ struct MessageBubble: View {
         VStack(alignment: .leading, spacing: 4) {
             if !message.mine, let author = message.author {
                 HStack(spacing: 16) {
-                    Text(author).font(.system(size: Theme.fontBase, weight: .bold))
+                    Text(author).font(Theme.sans(Theme.fontBase, .bold))
                     if let role = message.role {
-                        Text(role).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
+                        Text(role).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
                     }
                 }
             }
             if let reply = message.reply {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(reply.author).font(.system(size: Theme.fontSm, weight: .bold))
-                    Text(reply.text).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
+                    Text(reply.author).font(Theme.sans(Theme.fontSm, .bold))
+                    Text(reply.text).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
                 }
                 .padding(.vertical, 6).padding(.horizontal, 10)
@@ -107,12 +107,12 @@ struct MessageBubble: View {
                 Button { onOpenFile?() } label: {
                     HStack(spacing: 10) {
                         Text(file.ext.isEmpty ? "file" : file.ext)
-                            .font(.system(size: Theme.fontSm, weight: .bold)).foregroundStyle(Color(hex: "#1a1b1d"))
+                            .font(Theme.sans(Theme.fontSm, .bold)).foregroundStyle(Color(hex: "#1a1b1d"))
                             .frame(width: 38, height: 44).background(Color.white)
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                         VStack(alignment: .leading) {
-                            Text(file.name).font(.system(size: Theme.fontBase)).lineLimit(1)
-                            Text(file.size).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
+                            Text(file.name).font(Theme.sans(Theme.fontBase)).lineLimit(1)
+                            Text(file.size).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
                         }
                         Icon(AppIcons.downloadCloud, size: 22, color: Theme.text)
                     }
@@ -127,7 +127,7 @@ struct MessageBubble: View {
                         ZStack {
                             Circle().fill(Color(hex: "#4e8f10")).frame(width: 40, height: 40)
                             Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                                .font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
+                                .font(Theme.sans(15, .bold)).foregroundStyle(.white)
                         }
                     }.buttonStyle(.plain)
                     HStack(alignment: .center, spacing: 2) {
@@ -141,19 +141,19 @@ struct MessageBubble: View {
                     }
                     .frame(height: 24)
                     .animation(.linear(duration: 0.08), value: voiceProgress)
-                    Text(voice.duration).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
+                    Text(voice.duration).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
                 }
                 .padding(.vertical, 2)
             }
             if let text = message.text, !text.isEmpty {
-                Text(text).font(.system(size: Theme.fontBase)).foregroundStyle(Theme.text)
+                Text(text).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
             }
             if !message.reactions.isEmpty {
                 HStack(spacing: 6) {
                     ForEach(message.reactions) { r in
                         HStack(spacing: 3) {
                             Text(r.emoji)
-                            Text("\(r.count)").font(.system(size: Theme.fontSm))
+                            Text("\(r.count)").font(Theme.sans(Theme.fontSm))
                         }
                         .padding(.vertical, 2).padding(.horizontal, 8)
                         .background(r.mine ? AnyShapeStyle(Theme.green.opacity(0.35)) : AnyShapeStyle(Color.black.opacity(0.25)))
@@ -169,7 +169,7 @@ struct MessageBubble: View {
                     if message.pinned {
                         Icon(AppIcons.pin, size: 12, color: Theme.textSecondary)
                     }
-                    Text(time).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
+                    Text(time).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
                     if message.mine { readMark }
                 }
             }
@@ -189,7 +189,7 @@ struct MessageBubble: View {
     /// Отметка о прочтении: две галочки (прочитано) / одна (доставлено).
     private var readMark: some View {
         Image(systemName: message.read ? "checkmark.circle.fill" : "checkmark.circle")
-            .font(.system(size: 12, weight: .bold))
+            .font(Theme.sans(12, .bold))
             .foregroundStyle(message.read ? Color.white : Color.white.opacity(0.5))
     }
 
