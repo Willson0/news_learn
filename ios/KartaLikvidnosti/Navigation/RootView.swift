@@ -73,8 +73,9 @@ private struct MainFlow: View {
             root()
                 .toolbar(.hidden, for: .navigationBar)
                 .navigationDestination(for: Route.self) { route in
+                    // Таб-бар не прячем на внутренних экранах: он всегда на месте,
+                    // поэтому при возврате (в т.ч. свайпом) не «выпрыгивает» рывком.
                     destination(route)
-                        .toolbar(.hidden, for: .tabBar)
                         // Без тёмной подложки навбара: кнопка «назад» парит над экраном.
                         .toolbarBackground(.hidden, for: .navigationBar)
                 }
