@@ -75,6 +75,8 @@ private struct MainFlow: View {
                 .navigationDestination(for: Route.self) { route in
                     destination(route)
                         .toolbar(.hidden, for: .tabBar)
+                        // Без тёмной подложки навбара: кнопка «назад» парит над экраном.
+                        .toolbarBackground(.hidden, for: .navigationBar)
                 }
         }
     }

@@ -53,7 +53,7 @@ struct ChatView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header
+            if selectMode { header }
             if let pinned = pinned, !selectMode { pinnedBar(pinned) }
 
             ScrollView(showsIndicators: false) {
@@ -85,6 +85,9 @@ struct ChatView: View {
             ZStack { Color(hex: "#1a1b1d")
                 RadialGradient(colors: [Color(hex: "#463746").opacity(0.4), .clear], center: .top, startRadius: 0, endRadius: 300) }
         }
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { titleToolbar }
+        .navigationBarBackButtonHidden(selectMode)
         .overlay { if photoViewerURL != nil { photoViewerOverlay } }
         .overlay { if menuFor != nil { contextMenuOverlay.transition(.opacity) } }
         .fileImporter(isPresented: $fileImporterOpen, allowedContentTypes: [.item], allowsMultipleSelection: false) { result in
@@ -96,35 +99,37 @@ struct ChatView: View {
 
     // MARK: - Header
 
+    /// Шапка режима выбора сообщений (в обычном режиме название и аватар
+    /// живут в системной навигационной панели — в одну строку с «назад»).
     private var header: some View {
-        Group {
-            if selectMode {
-                HStack {
-                    Text("Выбрано \(selected.count)").pill()
-                    Spacer()
-                    Button { exitSelect() } label: { Text("Отмена").pill() }.buttonStyle(.plain)
-                }
-            } else {
-                HStack(spacing: 10) {
-                    Button { router.push(.chatInfo(id: chatId)) } label: {
-                        VStack(spacing: 2) {
-                            Text(chatTitle.title).font(.system(size: Theme.fontMd, weight: .bold))
-                            if !chatTitle.subtitle.isEmpty {
-                                Text(chatTitle.subtitle).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
-                            }
-                        }
-                        .foregroundStyle(Theme.text)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8).padding(.horizontal, 16)
-                        .liquidGlass()
-                    }.buttonStyle(.plain)
-                    Button { router.push(.chatInfo(id: chatId)) } label: {
-                        AvatarCircle(url: fileURL(serverChat?.avatarUrl), size: 48, name: serverChat?.title)
-                    }.buttonStyle(.plain)
-                }
-            }
+        HStack {
+            Text("Выбрано \(selected.count)").pill()
+            Spacer()
+            Button { exitSelect() } label: { Text("Отмена").pill() }.buttonStyle(.plain)
         }
         .padding(.horizontal, Theme.screenX).padding(.top, 12).padding(.bottom, 12)
+    }
+
+    @ToolbarContentBuilder private var titleToolbar: some ToolbarContent {
+        if !selectMode {
+            ToolbarItem(placement: .principal) {
+                Button { router.push(.chatInfo(id: chatId)) } label: {
+                    VStack(spacing: 0) {
+                        Text(chatTitle.title).font(.system(size: Theme.fontMd, weight: .bold)).lineLimit(1)
+                        if !chatTitle.subtitle.isEmpty {
+                            Text(chatTitle.subtitle).font(.system(size: Theme.fontSm)).foregroundStyle(Theme.textSecondary)
+                        }
+                    }
+                    .foregroundStyle(Theme.text)
+                    .padding(.horizontal, 16)
+                }.buttonStyle(.plain)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { router.push(.chatInfo(id: chatId)) } label: {
+                    AvatarCircle(url: fileURL(serverChat?.avatarUrl), size: 36, name: serverChat?.title)
+                }.buttonStyle(.plain)
+            }
+        }
     }
 
     private func pinnedBar(_ p: MessageQuoteDto) -> some View {
