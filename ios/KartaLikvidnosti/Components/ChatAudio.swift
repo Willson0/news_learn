@@ -6,6 +6,8 @@ import SwiftUI
 @MainActor
 final class ChatAudio: NSObject, ObservableObject {
     @Published var recording = false
+    /// Запись на паузе (режим «замок» → пауза в макете).
+    @Published var paused = false
     @Published var elapsed = 0
     @Published var playingId: Int? = nil
     /// Прогресс воспроизведения текущего голосового, 0…1 (для заполнения волны).
@@ -60,10 +62,27 @@ final class ChatAudio: NSObject, ObservableObject {
         }
     }
 
+    func pauseRecording() {
+        guard recording, !paused else { return }
+        recorder?.pause()
+        timer?.invalidate(); timer = nil
+        paused = true
+    }
+
+    func resumeRecording() {
+        guard recording, paused else { return }
+        recorder?.record()
+        paused = false
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.elapsed += 1 }
+        }
+    }
+
     /// Останавливает запись и возвращает данные и длительность (сек), либо nil.
     func stopRecording() -> (data: Data, duration: Int)? {
         timer?.invalidate(); timer = nil
         recording = false
+        paused = false
         guard let r = recorder, let url = recordURL else { return nil }
         let dur = Int(r.currentTime.rounded())
         r.stop()
@@ -79,6 +98,7 @@ final class ChatAudio: NSObject, ObservableObject {
     func cancelRecording() {
         timer?.invalidate(); timer = nil
         recording = false
+        paused = false
         recorder?.stop()
         recorder = nil
         if let url = recordURL { try? FileManager.default.removeItem(at: url) }

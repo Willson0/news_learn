@@ -114,8 +114,9 @@ struct CommunityView: View {
     /// превью 14 белый 60 %; справа время 14 (и скрепка 12 у закреплённого) и
     /// стеклянный счётчик непрочитанных (Regular 10).
     private func chatRow(_ item: ChatItemDto) -> some View {
-        Button { router.push(.chat(id: item.id)) } label: {
-            HStack(alignment: .top, spacing: 14) {
+        let hasDetails = !(item.sender ?? "").isEmpty || !(item.preview ?? "").isEmpty
+        return Button { router.push(.chat(id: item.id)) } label: {
+            HStack(alignment: hasDetails ? .top : .center, spacing: 14) {
                 HStack(spacing: 12) {
                     chatAvatar(item)
                     VStack(alignment: .leading, spacing: 4) {
@@ -146,7 +147,7 @@ struct CommunityView: View {
                             .padding(.top, 19)
                     }
                 }
-                .padding(.top, 3)
+                .padding(.top, hasDetails ? 3 : 0)
             }
             .frame(minHeight: 65, alignment: .center)
             .contentShape(Rectangle())

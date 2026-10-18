@@ -98,6 +98,8 @@ struct GlassBackButton: View {
     var action: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
 
+    init(action: (() -> Void)? = nil) { self.action = action }
+
     var body: some View {
         GlassCircleButton(icon: AppIcons.back, iconSize: 22) {
             Haptics.light()

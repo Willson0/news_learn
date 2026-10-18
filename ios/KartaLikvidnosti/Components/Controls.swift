@@ -147,8 +147,9 @@ struct InstrumentChip: View {
     let label: String
     @Binding var on: Bool
     /// Боковые отступы: в макете ширины чипов фиксированные, содержимое по
-    /// центру — у инструментов это ~15.5 с каждой стороны, у статусов ~24.
-    var hPadding: CGFloat = 15.5
+    /// центру — у инструментов это ~15 с каждой стороны (берём 14, чтобы
+    /// ряды переносились как в макете при чуть более широком рендере шрифта), у статусов ~24.
+    var hPadding: CGFloat = 14
 
     private let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
 

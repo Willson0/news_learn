@@ -150,7 +150,7 @@ struct FiltersSheet: View {
         )
     }
 
-    @ViewBuilder private func chipCard(_ items: Binding<[InstrumentDto]>, hPadding: CGFloat = 15.5) -> some View {
+    @ViewBuilder private func chipCard(_ items: Binding<[InstrumentDto]>, hPadding: CGFloat = 14) -> some View {
         FlowLayout(spacing: 4, lineSpacing: 4) {
             ForEach(items.wrappedValue.indices, id: \.self) { i in
                 InstrumentChip(label: items.wrappedValue[i].label, on: items[i].on, hPadding: hPadding)

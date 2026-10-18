@@ -79,7 +79,7 @@ private struct MainFlow: View {
         switch route {
         case .chat(let id):
             ChatView(chatId: id)
-                .toolbarBackground(.hidden, for: .navigationBar)
+                .toolbar(.hidden, for: .navigationBar)
         case .reportDetail:
             screen(route)
                 .toolbar(.hidden, for: .navigationBar)
