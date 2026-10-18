@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 struct ProfileEditView: View {
     @EnvironmentObject var router: Router
@@ -6,7 +7,9 @@ struct ProfileEditView: View {
 
     @State private var name = ""
     @State private var tag = ""
-    @State private var avatar: URL? = nil
+    @State private var avatarUrl: String? = nil
+    @State private var photoItem: PhotosPickerItem? = nil
+    @State private var uploading = false
     @State private var saving = false
 
     private var avatarInitial: String {
@@ -20,17 +23,30 @@ struct ProfileEditView: View {
             HStack {
                 Spacer()
                 Button { save() } label: {
-                    Text("Готово").font(.system(size: Theme.fontBase)).foregroundStyle(Theme.text)
+                    Text(saving ? "Сохранение…" : "Готово").font(.system(size: Theme.fontBase)).foregroundStyle(Theme.text)
                         .padding(.horizontal, 22).padding(.vertical, 11)
                         .background(Theme.surfaceMuted).overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 1)).clipShape(Capsule())
                 }.buttonStyle(.plain).opacity(saving ? 0.6 : 1).disabled(saving)
             }
 
             VStack(spacing: 14) {
-                AvatarCircle(url: avatar, size: 148, initial: avatarInitial)
-                    .overlay(Circle().stroke(Color.white.opacity(0.08), lineWidth: 1))
-                Button("Изменить фотографию") {}
-                    .font(.system(size: Theme.fontMd)).foregroundStyle(Theme.text)
+                ZStack {
+                    AvatarCircle(url: fileURL(avatarUrl), size: 148, initial: avatarInitial)
+                        .overlay(Circle().stroke(Color.white.opacity(0.08), lineWidth: 1))
+                    if uploading {
+                        Circle().fill(Color.black.opacity(0.35)).frame(width: 148, height: 148)
+                        ProgressView().tint(.white)
+                    }
+                }
+                PhotosPicker(selection: $photoItem, matching: .images) {
+                    Text(uploading ? "Загрузка…" : "Изменить фотографию")
+                        .font(.system(size: Theme.fontMd)).foregroundStyle(Theme.text)
+                }.disabled(uploading)
+                if avatarUrl != nil {
+                    Button { removePhoto() } label: {
+                        Text("Удалить фото").font(.system(size: Theme.fontSm)).foregroundStyle(Theme.error)
+                    }.buttonStyle(.plain).disabled(uploading)
+                }
             }.padding(.vertical, 8)
 
             VStack(spacing: 12) {
@@ -41,6 +57,7 @@ struct ProfileEditView: View {
         }
         .padding(.horizontal, Theme.screenX).padding(.top, 16).padding(.bottom, 40)
         .screenBackground(Theme.bg)
+        .onChange(of: photoItem) { _ in loadPicked() }
         .task { await load() }
     }
 
@@ -58,11 +75,36 @@ struct ProfileEditView: View {
     private func load() async {
         name = session.user?.name ?? ""
         tag = session.user?.username ?? ""
-        avatar = fileURL(session.user?.avatarUrl)
+        avatarUrl = session.user?.avatarUrl
         if let p = try? await Api.fetchProfile(), let u = p.user {
             name = u.name ?? name
             tag = u.username ?? tag
-            if let a = u.avatarUrl { avatar = fileURL(a) }
+            avatarUrl = u.avatarUrl
+        }
+    }
+
+    private func loadPicked() {
+        guard let item = photoItem else { return }
+        uploading = true
+        Task { @MainActor in
+            defer { photoItem = nil; uploading = false }
+            if let data = try? await item.loadTransferable(type: Data.self) {
+                if let user = try? await Api.uploadAvatar(data: data, filename: "avatar.jpg", mime: "image/jpeg") {
+                    avatarUrl = user.avatarUrl
+                }
+                await session.load(force: true)
+            }
+        }
+    }
+
+    private func removePhoto() {
+        guard !uploading else { return }
+        uploading = true
+        Task { @MainActor in
+            defer { uploading = false }
+            _ = try? await Api.removeAvatar()
+            avatarUrl = nil
+            await session.load(force: true)
         }
     }
 

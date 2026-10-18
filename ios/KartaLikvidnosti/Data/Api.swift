@@ -85,6 +85,17 @@ enum Api {
         _ = try await ApiClient.put("profile", body: ["name": name, "username": username], as: StatusResponse.self)
     }
 
+    /// Загрузка/смена фото профиля — возвращает обновлённого пользователя.
+    static func uploadAvatar(data: Data, filename: String, mime: String) async throws -> UserDto? {
+        try await ApiClient.multipart("profile/avatar",
+            parts: [.file("avatar", filename: filename, mime: mime, data: data)],
+            as: DataWrapper<UserDto>.self).data
+    }
+
+    static func removeAvatar() async throws -> UserDto? {
+        try await ApiClient.delete("profile/avatar", as: DataWrapper<UserDto>.self).data
+    }
+
     static func syncInstruments(_ keys: [String]) async throws {
         _ = try await ApiClient.put("profile/instruments", body: ["instruments": keys], as: InstrumentsResponse.self)
     }
