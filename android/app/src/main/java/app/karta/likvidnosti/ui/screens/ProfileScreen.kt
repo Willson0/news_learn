@@ -63,6 +63,7 @@ fun ProfileScreen(
     onNotifications: () -> Unit,
     onAccountData: () -> Unit,
     onAdmins: () -> Unit,
+    onAgreement: () -> Unit,
     onOpenReport: (Long) -> Unit,
 ) {
     var tag by remember { mutableStateOf(Session.user?.username ?: "") }
@@ -185,7 +186,7 @@ fun ProfileScreen(
                     if (isAdmin) add("Администраторы" to onAdmins)
                     add("Push-уведомления" to onNotifications)
                     add("Данные аккаунта" to onAccountData)
-                    add("Пользовательское соглашение" to {})
+                    add("Пользовательское соглашение" to onAgreement)
                 }
                 items.forEachIndexed { i, (label, action) ->
                     Row(

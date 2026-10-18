@@ -56,6 +56,9 @@ interface ApiService {
     @GET("profile")
     suspend fun profile(): ProfileResponse
 
+    @PUT("profile")
+    suspend fun updateProfile(@Body body: ProfileBody): StatusResponse
+
     @PUT("profile/instruments")
     suspend fun syncInstruments(@Body body: InstrumentsBody): InstrumentsResponse
 

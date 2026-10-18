@@ -38,6 +38,8 @@ data class FilterResult(
     val instruments: List<String>,
     val statuses: List<String>,
     val dateMode: String,
+    val dateStart: LocalDate? = null,
+    val dateEnd: LocalDate? = null,
 )
 
 private data class Toggleable(val key: String, val label: String, var on: Boolean)
@@ -73,8 +75,20 @@ fun FiltersSheet(
         )
     }
     var dateMode by remember { mutableStateOf("week") }
-    var selectedDate by remember { mutableStateOf<LocalDate?>(LocalDate.of(2026, 3, 17)) }
+    var startDate by remember { mutableStateOf<LocalDate?>(LocalDate.of(2026, 3, 17)) }
+    var endDate by remember { mutableStateOf<LocalDate?>(null) }
     var calendarOpen by remember { mutableStateOf(true) }
+
+    // Диапазон: первый тап задаёт начало, второй — конец; третий начинает заново.
+    fun pickDate(d: LocalDate) {
+        val s = startDate
+        when {
+            s == null || endDate != null -> { startDate = d; endDate = null }
+            d.isBefore(s) -> { endDate = s; startDate = d }
+            d == s -> { /* повтор — оставляем как есть */ }
+            else -> endDate = d
+        }
+    }
 
     fun apply() {
         onApply(
@@ -82,6 +96,8 @@ fun FiltersSheet(
                 instruments = instruments.filter { it.on }.map { it.key },
                 statuses = statuses.filter { it.on }.map { it.key },
                 dateMode = dateMode,
+                dateStart = startDate,
+                dateEnd = endDate,
             ),
         )
         onClose()
@@ -165,7 +181,26 @@ fun FiltersSheet(
                 }
 
                 if (calendarOpen) {
-                    AppCalendar(selected = selectedDate, onSelect = { selectedDate = it })
+                    AppCalendar(start = startDate, end = endDate, onSelect = { pickDate(it) })
+                }
+
+                // Подпись выбранного диапазона дат.
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    DateField("С", startDate)
+                    DateField("По", endDate)
+                    if (startDate != null) {
+                        Box(
+                            modifier = Modifier
+                                .clip(T.ShapePill)
+                                .background(T.SurfaceMuted)
+                                .clickable { startDate = null; endDate = null }
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                        ) { Text("Сброс", color = T.TextSecondary, fontSize = T.FsSm) }
+                    }
                 }
 
                 SegmentedControl(
@@ -175,6 +210,24 @@ fun FiltersSheet(
                 )
             }
         }
+    }
+}
+
+private val DATE_FMT = java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy")
+
+/** Плашка одной границы диапазона дат. */
+@Composable
+private fun DateField(label: String, date: LocalDate?) {
+    Row(
+        modifier = Modifier
+            .clip(T.ShapePill)
+            .background(T.Surface)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, color = T.TextMuted, fontSize = T.FsSm)
+        Text(date?.format(DATE_FMT) ?: "—", color = T.Text, fontSize = T.FsSm)
     }
 }
 

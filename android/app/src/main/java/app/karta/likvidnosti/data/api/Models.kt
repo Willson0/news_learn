@@ -228,6 +228,9 @@ class MessageBody(val body: String, @SerialName("reply_to") val replyTo: Long? =
 class ReactBody(val emoji: String)
 
 @Serializable
+class ProfileBody(val name: String? = null, val username: String? = null)
+
+@Serializable
 class InstrumentsBody(val instruments: List<String>)
 
 @Serializable

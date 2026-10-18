@@ -70,6 +70,7 @@ fun MessageBubble(
     message: ChatMessage,
     modifier: Modifier = Modifier,
     playingVoiceId: Long? = null,
+    voiceProgress: Float = 0f,
     onPlayVoice: ((ChatMessage) -> Unit)? = null,
     onOpenFile: ((String) -> Unit)? = null,
 ) {
@@ -169,6 +170,7 @@ fun MessageBubble(
                 seed = message.id,
                 duration = message.voiceDuration ?: "",
                 playing = playingVoiceId == message.id,
+                progress = if (playingVoiceId == message.id) voiceProgress else 0f,
                 onPlay = { onPlayVoice?.invoke(message) },
             )
         }
@@ -220,11 +222,13 @@ fun MessageBubble(
 }
 
 @Composable
-private fun VoiceRow(seed: Long, duration: String, playing: Boolean, onPlay: () -> Unit) {
+private fun VoiceRow(seed: Long, duration: String, playing: Boolean, progress: Float, onPlay: () -> Unit) {
     val bars = (0 until 26).map { i ->
         val v = abs(sin(seed * 7.3 + i * 1.7))
         (4 + (v * 14).roundToInt())
     }
+    val playedColor = Color.White
+    val restColor = Color(0x59FFFFFF)
     Row(
         modifier = Modifier.padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -245,13 +249,15 @@ private fun VoiceRow(seed: Long, duration: String, playing: Boolean, onPlay: () 
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            bars.forEach { h ->
+            bars.forEachIndexed { i, h ->
+                // Прогресс воспроизведения: столбики слева направо «заполняются».
+                val filled = progress >= (i + 0.5f) / bars.size
                 Box(
                     modifier = Modifier
                         .width(2.dp)
                         .height(h.dp)
                         .clip(RoundedCornerShape(2.dp))
-                        .background(Color(0x8CFFFFFF)),
+                        .background(if (filled) playedColor else restColor),
                 )
             }
         }

@@ -21,6 +21,7 @@ import app.karta.likvidnosti.data.api.MessageQuoteDto
 import app.karta.likvidnosti.data.api.Network
 import app.karta.likvidnosti.data.api.NotificationsBody
 import app.karta.likvidnosti.data.api.ParticipantDto
+import app.karta.likvidnosti.data.api.ProfileBody
 import app.karta.likvidnosti.data.api.ProfileResponse
 import app.karta.likvidnosti.data.api.ReactBody
 import app.karta.likvidnosti.data.api.RegisterBody
@@ -96,6 +97,9 @@ object Repository {
 
     // --- Профиль ---
     suspend fun profile(): ProfileResponse = apiCall { api.profile() }
+
+    suspend fun updateProfile(name: String, username: String?) =
+        apiCall { api.updateProfile(ProfileBody(name = name, username = username)) }
 
     suspend fun syncInstruments(keys: List<String>): List<InstrumentDto> =
         apiCall { api.syncInstruments(InstrumentsBody(keys)).instruments }

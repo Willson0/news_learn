@@ -27,6 +27,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import app.karta.likvidnosti.data.AppData
 import app.karta.likvidnosti.data.Session
 import app.karta.likvidnosti.data.TokenStore
 import app.karta.likvidnosti.ui.components.BottomNav
@@ -51,6 +52,7 @@ import app.karta.likvidnosti.ui.screens.RegisterConfirmScreen
 import app.karta.likvidnosti.ui.screens.ReportDetailScreen
 import app.karta.likvidnosti.ui.screens.ReportFormScreen
 import app.karta.likvidnosti.ui.screens.SubscriptionScreen
+import app.karta.likvidnosti.ui.screens.UserAgreementScreen
 import app.karta.likvidnosti.ui.screens.UserProfileScreen
 import app.karta.likvidnosti.ui.theme.T
 import kotlinx.coroutines.launch
@@ -65,6 +67,7 @@ fun AppRoot() {
         if (TokenStore.isAuthenticated) {
             runCatching { Session.load() }
             authed = Session.user != null
+            if (authed) scope.launch { AppData.preload() }
         }
         ready = true
     }
@@ -93,6 +96,7 @@ fun AppRoot() {
                     onAuthed = {
                         scope.launch {
                             runCatching { Session.load(force = true) }
+                            scope.launch { AppData.preload() }
                             nav.navigate(Routes.HOME) { popUpTo(Routes.LOGIN) { inclusive = true } }
                         }
                     },
@@ -126,6 +130,7 @@ fun AppRoot() {
                     onNotifications = { actions.toNotifications() },
                     onAccountData = { actions.toAccountData() },
                     onAdmins = { actions.toAdmins() },
+                    onAgreement = { actions.toUserAgreement() },
                     onOpenReport = { actions.toReportDetail(it) },
                 )
             }
@@ -241,6 +246,7 @@ fun AppRoot() {
                 }
             }
             composable(Routes.SUBSCRIPTION) { SubscriptionScreen(onBack = { actions.back() }) }
+            composable(Routes.USER_AGREEMENT) { UserAgreementScreen(onBack = { actions.back() }) }
         }
 
         // Плавающая нижняя навигация поверх корневых вкладок.

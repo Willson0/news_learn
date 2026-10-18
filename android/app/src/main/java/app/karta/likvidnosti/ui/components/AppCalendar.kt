@@ -21,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.karta.likvidnosti.ui.icons.AppIcon
@@ -34,15 +35,21 @@ private val MONTHS = listOf(
 )
 private val WEEKDAYS = listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
 
-/** Месячный календарь (аналог AppCalendar.vue). */
+/**
+ * Месячный календарь с выбором диапазона (аналог AppCalendar.vue).
+ * [start]/[end] — начало и конец диапазона; если [end] == null, выбрана
+ * только начальная дата. Нажатие на день сообщается через [onSelect] —
+ * логику диапазона ведёт вызывающий экран.
+ */
 @Composable
 fun AppCalendar(
-    selected: LocalDate?,
+    start: LocalDate?,
+    end: LocalDate?,
     onSelect: (LocalDate) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val today = remember { LocalDate.now() }
-    var cursor by remember { mutableStateOf((selected ?: today).withDayOfMonth(1)) }
+    var cursor by remember { mutableStateOf((start ?: today).withDayOfMonth(1)) }
 
     Column(modifier = modifier) {
         Row(
@@ -92,20 +99,28 @@ fun AppCalendar(
                     ) {
                         if (dayNum in 1..daysInMonth) {
                             val date = cursor.withDayOfMonth(dayNum)
-                            val isSel = date == selected
+                            val isStart = date == start
+                            val isEnd = date == end
+                            val isEdge = isStart || isEnd
+                            val inRange = start != null && end != null &&
+                                date.isAfter(start) && date.isBefore(end)
                             val isToday = date == today
                             val cell = Modifier.size(36.dp).clip(CircleShape)
+                            val styled = when {
+                                isEdge -> cell.background(T.GradientAccent)
+                                inRange -> cell.background(Color(0x332E7D32))
+                                else -> cell
+                            }
                             Box(
-                                modifier = (if (isSel) cell.background(T.GradientAccent) else cell)
-                                    .clickable { onSelect(date) },
+                                modifier = styled.clickable { onSelect(date) },
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
                                     dayNum.toString(),
-                                    color = if (isToday && !isSel) T.Green else T.Text,
+                                    color = if (isToday && !isEdge) T.Green else T.Text,
                                     fontSize = T.FsBase,
-                                    fontWeight = if (isSel || isToday) FontWeight.Bold else FontWeight.Normal,
-                                    modifier = if (isSel) Modifier else Modifier.alpha(0.9f),
+                                    fontWeight = if (isEdge || isToday) FontWeight.Bold else FontWeight.Normal,
+                                    modifier = if (isEdge) Modifier else Modifier.alpha(0.9f),
                                 )
                             }
                         }

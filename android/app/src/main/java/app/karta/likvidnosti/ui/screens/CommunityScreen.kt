@@ -29,12 +29,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.karta.likvidnosti.data.AppData
 import app.karta.likvidnosti.data.Repository
 import app.karta.likvidnosti.data.Session
 import app.karta.likvidnosti.data.api.ChatItemDto
 import app.karta.likvidnosti.data.api.ChatSectionDto
 import app.karta.likvidnosti.data.fileUrl
 import app.karta.likvidnosti.ui.components.AppInput
+import app.karta.likvidnosti.ui.components.ChatListSkeleton
 import app.karta.likvidnosti.ui.components.NavBarInset
 import app.karta.likvidnosti.ui.components.Screen
 import app.karta.likvidnosti.ui.components.ScreenTitle
@@ -69,11 +71,25 @@ private val DEMO_SECTIONS = listOf(
 fun CommunityScreen(onOpenChat: (String) -> Unit) {
     var query by remember { mutableStateOf("") }
     var tab by remember { mutableStateOf("all") }
-    var sections by remember { mutableStateOf(DEMO_SECTIONS) }
+    // Предзагруженные чаты показываем сразу; пока их нет — скелетоны вместо скачка вёрстки.
+    var sections by remember { mutableStateOf(AppData.chats ?: emptyList()) }
+    var loaded by remember { mutableStateOf(AppData.chats != null) }
     val isAdmin = Session.isAdmin
 
-    LaunchedEffect(Unit) {
-        runCatching { Repository.chats() }.getOrNull()?.takeIf { it.isNotEmpty() }?.let { sections = it }
+    LaunchedEffect(AppData.chats) {
+        if (AppData.chats != null) {
+            sections = AppData.chats!!
+            loaded = true
+            return@LaunchedEffect
+        }
+        val fetched = runCatching { Repository.chats() }.getOrNull()
+        sections = if (!fetched.isNullOrEmpty()) {
+            AppData.setChats(fetched)
+            fetched
+        } else {
+            DEMO_SECTIONS
+        }
+        loaded = true
     }
 
     val visible = remember(query, tab, sections, isAdmin) {
@@ -103,23 +119,28 @@ fun CommunityScreen(onOpenChat: (String) -> Unit) {
             )
         }
 
-        visible.forEach { section ->
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                ScreenTitle(section.title)
-                Column {
-                    section.items.forEachIndexed { i, item ->
-                        ChatRow(item, last = i == section.items.lastIndex) { onOpenChat(item.id) }
+        if (!loaded && sections.isEmpty()) {
+            ChatListSkeleton(rows = 2)
+            ChatListSkeleton(rows = 5)
+        } else {
+            visible.forEach { section ->
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ScreenTitle(section.title)
+                    Column {
+                        section.items.forEachIndexed { i, item ->
+                            ChatRow(item, last = i == section.items.lastIndex) { onOpenChat(item.id) }
+                        }
                     }
                 }
             }
-        }
 
-        if (visible.isEmpty()) {
-            Text(
-                if (isAdmin && tab == "direct") "Личных сообщений пока нет" else "Ничего не найдено",
-                color = T.TextSecondary, textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
-            )
+            if (visible.isEmpty()) {
+                Text(
+                    if (isAdmin && tab == "direct") "Личных сообщений пока нет" else "Ничего не найдено",
+                    color = T.TextSecondary, textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
+                )
+            }
         }
     }
 }

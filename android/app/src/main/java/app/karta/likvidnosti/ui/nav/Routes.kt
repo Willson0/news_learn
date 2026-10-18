@@ -32,6 +32,7 @@ object Routes {
     const val ACCOUNT_SUCCESS = "account-success/{field}"
     const val ADMINS = "admins"
     const val SUBSCRIPTION = "subscription"
+    const val USER_AGREEMENT = "user-agreement"
 
     /** Корневые вкладки — без кнопки «назад». */
     val ROOT = setOf(HOME, ANALYTICS, COMMUNITY, PROFILE)
@@ -94,6 +95,7 @@ class NavActions(private val nav: NavHostController) {
     }
     fun toAdmins() = nav.navigate(Routes.ADMINS)
     fun toSubscription() = nav.navigate(Routes.SUBSCRIPTION)
+    fun toUserAgreement() = nav.navigate(Routes.USER_AGREEMENT)
 
     private fun enc(s: String): String = java.net.URLEncoder.encode(s, "UTF-8")
 }

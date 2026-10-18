@@ -12,9 +12,14 @@ import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -50,8 +55,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -103,6 +112,7 @@ private fun MessageDto.toUi() = ChatMessage(
     pinned = pinned,
 )
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ChatScreen(
     slug: String,
@@ -111,6 +121,7 @@ fun ChatScreen(
     onUser: (Long) -> Unit,
 ) {
     val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
     val isDirect = slug == "admin" || slug.startsWith("dm-")
     val messages = remember { mutableStateListOf<ChatMessage>() }
     var chatTitle by remember { mutableStateOf("") }
@@ -135,6 +146,7 @@ fun ChatScreen(
     // Воспроизведение голосового
     var player by remember { mutableStateOf<MediaPlayer?>(null) }
     var playingId by remember { mutableStateOf<Long?>(null) }
+    var voiceProgress by remember { mutableStateOf(0f) }
 
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
@@ -158,7 +170,7 @@ fun ChatScreen(
 
     fun stopPlayer() {
         player?.runCatching { stop() }
-        player?.release(); player = null; playingId = null
+        player?.release(); player = null; playingId = null; voiceProgress = 0f
     }
 
     fun playVoice(m: ChatMessage) {
@@ -184,6 +196,20 @@ fun ChatScreen(
         onDispose {
             player?.release()
             recorder?.runCatching { release() }
+        }
+    }
+
+    // Пока голосовое играет — постепенно заполняем прогресс-бар по позиции плеера.
+    LaunchedEffect(playingId) {
+        voiceProgress = 0f
+        val p = player
+        if (playingId != null && p != null) {
+            while (playingId != null) {
+                val dur = runCatching { p.duration }.getOrDefault(0)
+                val pos = runCatching { p.currentPosition }.getOrDefault(0)
+                if (dur > 0) voiceProgress = (pos.toFloat() / dur).coerceIn(0f, 1f)
+                delay(60)
+            }
         }
     }
 
@@ -438,8 +464,13 @@ fun ChatScreen(
                     }
                 }
                 items(messages, key = { it.id }) { m ->
+                    // Плавное появление: сообщение «всплывает» снизу с лёгким масштабом.
+                    val appear = remember(m.id) { Animatable(0f) }
+                    LaunchedEffect(m.id) {
+                        appear.animateTo(1f, tween(durationMillis = 300, easing = FastOutSlowInEasing))
+                    }
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().animateItem(),
                         horizontalArrangement = if (m.mine) Arrangement.End else Arrangement.Start,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -468,14 +499,31 @@ fun ChatScreen(
                         }
                         MessageBubble(
                             m,
-                            modifier = Modifier.clickable {
-                                when {
-                                    selectMode -> if (selected.contains(m.id)) selected.remove(m.id) else selected.add(m.id)
-                                    m.imageUrl != null -> viewerMsg = m
-                                    else -> menuFor = m
+                            modifier = Modifier
+                                .graphicsLayer {
+                                    alpha = appear.value
+                                    translationY = (1f - appear.value) * 16.dp.toPx()
+                                    val s = 0.92f + 0.08f * appear.value
+                                    scaleX = s
+                                    scaleY = s
+                                    transformOrigin = TransformOrigin(if (m.mine) 1f else 0f, 1f)
                                 }
-                            },
+                                .combinedClickable(
+                                    onClick = {
+                                        when {
+                                            selectMode -> if (selected.contains(m.id)) selected.remove(m.id) else selected.add(m.id)
+                                            m.imageUrl != null -> viewerMsg = m
+                                        }
+                                    },
+                                    onLongClick = {
+                                        if (!selectMode) {
+                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            menuFor = m
+                                        }
+                                    },
+                                ),
                             playingVoiceId = playingId,
+                            voiceProgress = voiceProgress,
                             onPlayVoice = { playVoice(it) },
                             onOpenFile = { openFile(it) },
                         )
@@ -691,12 +739,27 @@ private fun MessageMenu(
     onDelete: () -> Unit,
     onSelect: () -> Unit,
 ) {
+    // Появление меню: фон затемняется, выделенное сообщение «приподнимается»
+    // с лёгким масштабом (как в Telegram/SMS).
+    val anim = remember { Animatable(0f) }
+    LaunchedEffect(Unit) { anim.animateTo(1f, tween(durationMillis = 220, easing = FastOutSlowInEasing)) }
     Box(
-        modifier = Modifier.fillMaxSize().background(Color(0x99000000)).clickable(onClick = onClose),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0x99000000).copy(alpha = 0.6f * anim.value))
+            .clickable(onClick = onClose),
         contentAlignment = Alignment.Center,
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = T.ScreenX),
+            modifier = Modifier
+                .graphicsLayer {
+                    alpha = anim.value
+                    val s = 0.9f + 0.1f * anim.value
+                    scaleX = s
+                    scaleY = s
+                    transformOrigin = TransformOrigin(0.5f, 0.5f)
+                }
+                .padding(horizontal = T.ScreenX),
             verticalArrangement = Arrangement.spacedBy(10.dp),
             horizontalAlignment = Alignment.Start,
         ) {

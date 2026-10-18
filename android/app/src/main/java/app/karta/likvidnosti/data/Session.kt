@@ -25,6 +25,7 @@ object Session {
 
     fun clear() {
         user = null
+        AppData.reset()
     }
 
     /** Подгружает пользователя, если есть токен. Тихо гасит ошибки. */

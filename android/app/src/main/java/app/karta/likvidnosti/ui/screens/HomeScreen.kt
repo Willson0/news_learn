@@ -15,11 +15,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import app.karta.likvidnosti.data.AppData
 import app.karta.likvidnosti.data.Repository
 import app.karta.likvidnosti.data.api.ReportDto
 import app.karta.likvidnosti.ui.components.MaterialChips
 import app.karta.likvidnosti.ui.components.NavBarInset
 import app.karta.likvidnosti.ui.components.ReportCard
+import app.karta.likvidnosti.ui.components.ReportListSkeleton
 import app.karta.likvidnosti.ui.components.Screen
 import app.karta.likvidnosti.ui.components.ScreenTitle
 import app.karta.likvidnosti.ui.theme.T
@@ -27,14 +29,21 @@ import app.karta.likvidnosti.ui.theme.T
 @Composable
 fun HomeScreen(onOpenReport: (Long) -> Unit) {
     var filter by remember { mutableStateOf("all") }
-    var reports by remember { mutableStateOf<List<ReportDto>>(emptyList()) }
-    var loaded by remember { mutableStateOf(false) }
+    // Для фильтра «все» берём предзагруженные данные — экран открывается без прогрузки.
+    var reports by remember { mutableStateOf(if (AppData.reports != null) AppData.reports!! else emptyList()) }
+    var loaded by remember { mutableStateOf(AppData.reports != null) }
 
-    LaunchedEffect(filter) {
+    LaunchedEffect(filter, AppData.reports) {
+        if (filter == "all" && AppData.reports != null) {
+            reports = AppData.reports!!
+            loaded = true
+            return@LaunchedEffect
+        }
         loaded = false
         reports = runCatching {
             Repository.reports(instrument = if (filter == "all") null else filter)
         }.getOrDefault(emptyList())
+        if (filter == "all") AppData.setReports(reports)
         loaded = true
     }
 
@@ -43,16 +52,20 @@ fun HomeScreen(onOpenReport: (Long) -> Unit) {
         ScreenTitle("Лента материалов")
         MaterialChips(value = filter, onSelect = { filter = it }, modifier = Modifier.fillMaxWidth())
         androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            reports.forEach { report ->
-                ReportCard(report = report, onOpen = { onOpenReport(report.id) })
-            }
-            if (loaded && reports.isEmpty()) {
-                Text(
-                    "По этому фильтру материалов пока нет",
-                    color = T.TextSecondary,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
-                )
+            if (!loaded && reports.isEmpty()) {
+                ReportListSkeleton()
+            } else {
+                reports.forEach { report ->
+                    ReportCard(report = report, onOpen = { onOpenReport(report.id) })
+                }
+                if (loaded && reports.isEmpty()) {
+                    Text(
+                        "По этому фильтру материалов пока нет",
+                        color = T.TextSecondary,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
+                    )
+                }
             }
         }
     }
