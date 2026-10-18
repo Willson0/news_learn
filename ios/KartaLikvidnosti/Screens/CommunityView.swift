@@ -41,48 +41,64 @@ struct CommunityView: View {
         session.isAdmin && tab == "direct" ? "Нужный чат" : "Нужный отчет или материал"
     }
 
+    // «Сообщество» (Figma 337:27149, админ — 349:12176): поиск-стекло на y=78,
+    // у админа под ним стеклянные сегменты «Все чаты / Личные чаты»; секции —
+    // заголовок Kreadon 20, строки Block/Чат 65 pt с разделителями во всю
+    // ширину экрана (белый 10 %).
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 0) {
                 AppInput(text: $query, placeholder: placeholder)
+                    .padding(.horizontal, Theme.screenX)
 
                 if session.isAdmin {
-                    SegmentedControl(selection: $tab, options: [("all", "Все чаты"), ("direct", "Личные чаты")])
-                        .padding(4)
-                        .overlay(RoundedRectangle(cornerRadius: Theme.radiusPill).stroke(Color.white.opacity(0.14), lineWidth: 1))
+                    SegmentedControl(selection: $tab, options: [("all", "Все чаты"), ("direct", "Личные чаты")], glass: true)
+                        .padding(.horizontal, Theme.screenX)
+                        .padding(.top, 12)
                 }
 
                 if !loaded {
                     VStack(spacing: 0) {
                         ForEach(0..<6, id: \.self) { _ in ChatRowSkeleton() }
                     }
+                    .padding(.horizontal, Theme.screenX)
+                    .padding(.top, 24)
                 } else {
-                    ForEach(visibleSections) { section in
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(section.title).font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
-                            VStack(spacing: 0) {
-                                ForEach(section.items) { item in
-                                    chatRow(item)
-                                    if item.id != section.items.last?.id {
-                                        Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
+                    VStack(alignment: .leading, spacing: 40) {
+                        ForEach(visibleSections) { section in
+                            VStack(alignment: .leading, spacing: 24) {
+                                Text(section.title)
+                                    .font(Theme.heading(20))
+                                    .foregroundStyle(Theme.text)
+                                    .padding(.horizontal, Theme.screenX)
+                                VStack(spacing: 0) {
+                                    ForEach(Array(section.items.enumerated()), id: \.element.id) { idx, item in
+                                        if idx > 0 {
+                                            Rectangle().fill(Color.white.opacity(0.1)).frame(height: 1)
+                                                .padding(.vertical, 12)
+                                        }
+                                        chatRow(item).padding(.horizontal, Theme.screenX)
                                     }
                                 }
                             }
                         }
                     }
+                    .padding(.top, 24)
 
                     if visibleSections.isEmpty {
                         Text(session.isAdmin && tab == "direct" ? "Личных сообщений пока нет" : "Ничего не найдено")
+                            .font(Theme.sans(Theme.fontBase))
                             .foregroundStyle(Theme.textSecondary)
                             .frame(maxWidth: .infinity).padding(.vertical, 40)
                     }
                 }
             }
-            .padding(.horizontal, Theme.screenX)
-            .padding(.top, 56)
-            .padding(.bottom, 24)
+            .padding(.top, Theme.topBarY)
+            .padding(.bottom, Theme.navBarClearance)
         }
+        .ignoresSafeArea(.container, edges: .top)
         .screenBackground()
+        .withGlassNavBar()
         .onAppear(perform: seed)
         .task { await load() }
     }
@@ -94,37 +110,59 @@ struct CommunityView: View {
         loaded = true
     }
 
+    /// Block/Чат: аватар 64, отступ 12; название SemiBold 14, отправитель 14,
+    /// превью 14 белый 60 %; справа время 14 (и скрепка 12 у закреплённого) и
+    /// стеклянный счётчик непрочитанных (Regular 10).
     private func chatRow(_ item: ChatItemDto) -> some View {
         Button { router.push(.chat(id: item.id)) } label: {
-            HStack(spacing: 12) {
-                AvatarCircle(url: fileURL(item.avatarUrl), size: 56, name: item.title)
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack {
-                        Text(item.title).font(Theme.sans(Theme.fontMd, .bold)).foregroundStyle(Theme.text)
-                        Spacer()
-                        HStack(spacing: 4) {
-                            if item.pinned { Icon(AppIcons.pin, size: 14, color: Theme.textSecondary) }
-                            Text(item.time ?? "").font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
+            HStack(alignment: .top, spacing: 14) {
+                HStack(spacing: 12) {
+                    chatAvatar(item)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(item.title).font(Theme.sans(Theme.fontBase, .semibold)).foregroundStyle(Theme.text)
+                            .lineLimit(1)
+                        if let sender = item.sender, !sender.isEmpty {
+                            Text(sender).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text).lineLimit(1)
+                        }
+                        if let preview = item.preview, !preview.isEmpty {
+                            Text(preview).font(Theme.sans(Theme.fontBase)).foregroundStyle(Color.white.opacity(0.6))
+                                .lineLimit(1)
                         }
                     }
-                    if let sender = item.sender {
-                        Text(sender).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                VStack(alignment: .trailing, spacing: 0) {
+                    HStack(spacing: 4) {
+                        Text(item.time ?? "").font(Theme.sans(Theme.fontBase)).foregroundStyle(Color.white.opacity(0.6))
+                        if item.pinned { Icon(AppIcons.pinSmall, size: 12, color: Theme.text) }
                     }
-                    HStack {
-                        Text(item.preview ?? "").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary).lineLimit(1)
-                        Spacer()
-                        if item.unread > 0 {
-                            Text("\(item.unread)")
-                                .font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
-                                .padding(.horizontal, 8).frame(minWidth: 34, minHeight: 20)
-                                .overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 1))
-                        }
+                    .frame(height: 19)
+                    if item.unread > 0 {
+                        Text("\(item.unread)")
+                            .font(Theme.sans(10)).foregroundStyle(Color.white.opacity(0.6))
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .frame(minWidth: 28)
+                            .liquidGlass(Capsule())
+                            .padding(.top, 19)
                     }
                 }
+                .padding(.top, 3)
             }
-            .padding(.vertical, 12)
+            .frame(minHeight: 65, alignment: .center)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    @ViewBuilder private func chatAvatar(_ item: ChatItemDto) -> some View {
+        if let url = fileURL(item.avatarUrl) {
+            RemoteImage(url: url)
+                .frame(width: 64, height: 64)
+                .background(Color(hex: "#797979"))
+                .clipShape(Circle())
+        } else {
+            Circle().fill(Color(hex: "#797979")).frame(width: 64, height: 64)
+        }
     }
 
     private func load() async {
