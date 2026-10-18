@@ -98,9 +98,8 @@ extension View {
         self.background(Theme.surface, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
     }
 
-    /// Нативное «жидкое стекло» (iOS-навигация) в форме капсулы: размытый
-    /// системный материал, тонкая светлая кромка-блик сверху и мягкая тень.
-    /// На iOS 16 имитируется родными материалами SwiftUI — близко к Liquid Glass iOS 26.
+    /// «Жидкое стекло» в форме капсулы. На iOS 26+ — настоящее Liquid Glass
+    /// (.glassEffect); на более старых iOS — имитация родными материалами.
     func liquidGlass(strong: Bool = false) -> some View {
         modifier(LiquidGlass(shape: Capsule(), strong: strong))
     }
@@ -111,12 +110,29 @@ extension View {
     }
 }
 
-/// Модификатор «жидкого стекла» для навигационного chrome.
+/// Модификатор «жидкого стекла» для навигационного chrome и селекторов.
+/// На iOS 26 (сборка Xcode 26 / SDK iOS 26) — системный Liquid Glass
+/// `.glassEffect`; иначе — запасной вид на материалах SwiftUI, визуально близкий.
 struct LiquidGlass<S: Shape>: ViewModifier {
     let shape: S
     var strong: Bool = false
 
+    @ViewBuilder
     func body(content: Content) -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular, in: shape)
+        } else {
+            legacy(content)
+        }
+        #else
+        legacy(content)
+        #endif
+    }
+
+    /// Запасной вид для iOS < 26 (и сборок без SDK iOS 26): размытый системный
+    /// материал, светлая кромка-блик сверху и мягкая тень.
+    private func legacy(_ content: Content) -> some View {
         content
             .background(strong ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(.ultraThinMaterial), in: shape)
             .overlay(

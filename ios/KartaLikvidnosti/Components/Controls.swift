@@ -168,8 +168,7 @@ struct SegmentedControl: View {
             }
         }
         .padding(6)
-        .background(Theme.surfaceMuted)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+        .liquidGlass(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
     }
 }
 
