@@ -161,12 +161,18 @@ struct SkeletonBlock: View {
 /// Заглушка карточки отчёта (лента/аналитика/история).
 struct ReportCardSkeleton: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SkeletonBlock(height: 150, radius: Theme.radiusCard)
-            SkeletonBlock(width: 180, height: 16)
-            SkeletonBlock(width: 240, height: 12)
+        VStack(alignment: .leading, spacing: 16) {
+            SkeletonBlock(height: 162, radius: Theme.radiusCard)
+            VStack(alignment: .leading, spacing: 12) {
+                SkeletonBlock(width: 220, height: 16)
+                SkeletonBlock(width: 90, height: 12)
+                SkeletonBlock(width: 280, height: 12)
+                SkeletonBlock(width: 240, height: 12)
+            }
+            .padding(.horizontal, 16)
+            SkeletonBlock(height: 48, radius: Theme.radiusInput).padding(.horizontal, 16)
         }
-        .padding(16)
+        .padding(.bottom, 16)
         .background(Theme.surface)
         .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
     }

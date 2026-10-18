@@ -128,8 +128,16 @@ struct GlassLabel: View {
 /// экрана, который игнорирует верхнюю safe area (координаты как в макете).
 struct GlassTopBar<Center: View, Trailing: View>: View {
     var onBack: (() -> Void)? = nil
-    @ViewBuilder var center: () -> Center
-    @ViewBuilder var trailing: () -> Trailing
+    var center: () -> Center
+    var trailing: () -> Trailing
+
+    init(onBack: (() -> Void)? = nil,
+         @ViewBuilder center: @escaping () -> Center,
+         @ViewBuilder trailing: @escaping () -> Trailing) {
+        self.onBack = onBack
+        self.center = center
+        self.trailing = trailing
+    }
 
     var body: some View {
         ZStack {
@@ -154,10 +162,40 @@ extension GlassTopBar where Center == EmptyView, Trailing == EmptyView {
     }
 }
 
-extension GlassTopBar where Center == EmptyView {
-    init(onBack: (() -> Void)? = nil, @ViewBuilder trailing: @escaping () -> Trailing) {
+extension GlassTopBar where Trailing == EmptyView {
+    init(onBack: (() -> Void)? = nil, @ViewBuilder center: @escaping () -> Center) {
         self.onBack = onBack
-        self.center = { EmptyView() }
-        self.trailing = trailing
+        self.center = center
+        self.trailing = { EmptyView() }
+    }
+}
+
+/// Верхняя safe area окна (на iPhone с Dynamic Island ≈ 59, в макете статус-бар 54).
+enum WindowInsets {
+    static var top: CGFloat {
+        UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.keyWindow }
+            .first?.safeAreaInsets.top ?? 54
+    }
+}
+
+extension View {
+    /// Внутренний экран со стеклянной кнопкой «назад» на y=78, как в макете:
+    /// панель закреплена сверху, контент начинается под ней.
+    func glassTopBar() -> some View {
+        safeAreaInset(edge: .top, spacing: 0) {
+            GlassTopBar()
+                .padding(.top, -WindowInsets.top)
+                .padding(.bottom, 8)
+        }
+    }
+
+    func glassTopBar<C: View, T: View>(@ViewBuilder center: @escaping () -> C,
+                                        @ViewBuilder trailing: @escaping () -> T) -> some View {
+        safeAreaInset(edge: .top, spacing: 0) {
+            GlassTopBar(center: center, trailing: trailing)
+                .padding(.top, -WindowInsets.top)
+                .padding(.bottom, 8)
+        }
     }
 }

@@ -27,89 +27,101 @@ struct ReportDetailView: View {
             body: nil, material: "wti", chat: nil, chartUrl: nil, coverUrl: nil, htmlUrl: nil)
     }
 
+    // «Аналитика отчет»: размытая обложка (blur 25 + чёрный 50%) высотой 465
+    // со скруглением снизу, сверху — стеклянные «назад» и лейбл статуса; кнопки
+    // прижаты к низу. С открытым графиком обложка 302, кнопки идут сразу под
+    // ней, ниже — блок графика.
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(spacing: 16) {
-                hero
-                VStack(spacing: 12) {
-                    ReportActionButton(label: "Открыть отчёт", variant: .accent, badge: .green, icon: AppIcons.doc) {
-                        reportOpen.toggle()
+        GeometryReader { geo in
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 0) {
+                    hero
+                    if !(graphOpen || reportOpen) {
+                        Spacer(minLength: 24)
                     }
-                    ReportActionButton(label: "Обсудить", variant: .purple, badge: .pink, icon: AppIcons.chat) {
-                        discuss()
+                    actions
+                        .padding(.horizontal, Theme.screenX)
+                        .padding(.top, (graphOpen || reportOpen) ? 24 : 0)
+                    if reportOpen {
+                        reportBody.padding(.horizontal, Theme.screenX).padding(.top, 24)
                     }
-                    ReportActionButton(label: graphOpen ? "Закрыть график" : "Открыть график",
-                                       variant: .dark, badge: .green, icon: AppIcons.chartBadge) {
-                        toggleGraph()
+                    if graphOpen {
+                        CandlestickChart().padding(.top, 24)
                     }
                 }
-                .padding(.horizontal, Theme.screenX)
-
-                if reportOpen {
-                    reportBody.padding(.horizontal, Theme.screenX)
+                .padding(.bottom, 45)
+                .frame(minHeight: geo.size.height + geo.safeAreaInsets.top + geo.safeAreaInsets.bottom, alignment: .top)
+            }
+            .ignoresSafeArea(.container, edges: [.top, .bottom])
+        }
+        .background(Theme.background.ignoresSafeArea())
+        .overlay(alignment: .top) {
+            GlassTopBar {
+                if let badge = report.badge, !badge.isEmpty {
+                    GlassLabel(text: badge, height: 42)
                 }
-                if graphOpen {
-                    CandlestickChart().padding(.horizontal, Theme.screenX)
+            } trailing: {
+                if session.isAdmin, let id = reportId {
+                    GlassCircleButton(icon: AppIcons.settings) { router.push(.reportEdit(id: id)) }
                 }
             }
-            .padding(.bottom, 32)
+            .ignoresSafeArea(.container, edges: .top)
         }
-        .screenBackground()
+        .animation(.spring(response: 0.4, dampingFraction: 0.88), value: graphOpen)
+        .animation(.spring(response: 0.4, dampingFraction: 0.88), value: reportOpen)
         .task { await load() }
     }
 
-    @ViewBuilder private var hero: some View {
-        ZStack(alignment: .bottomLeading) {
-            HoloFoil()
-            if let cover = report.coverUrl {
-                RemoteImage(url: cover).blur(radius: 24).clipped()
+    private var actions: some View {
+        VStack(spacing: 12) {
+            ReportActionButton(label: "Открыть отчет", variant: .accent, icon: AppIcons.doc) {
+                reportOpen.toggle()
             }
-            LinearGradient(colors: [Color(hex: "#1a1b1d").opacity(0.35), Color(hex: "#1a1b1d").opacity(0.1), Color(hex: "#1a1b1d").opacity(0.85)],
-                           startPoint: .top, endPoint: .bottom)
+            ReportActionButton(label: "Обсудить", variant: .pink, icon: AppIcons.chat) {
+                discuss()
+            }
+            ReportActionButton(label: graphOpen ? "Закрыть график" : "Открыть график",
+                               variant: graphOpen ? .chartOn : .chartOff, icon: AppIcons.chartBadge) {
+                toggleGraph()
+            }
+        }
+    }
+
+    @ViewBuilder private var hero: some View {
+        let shape = UnevenRoundedRectangle(bottomLeadingRadius: Theme.radiusCard, bottomTrailingRadius: Theme.radiusCard, style: .continuous)
+        ZStack(alignment: .bottomLeading) {
+            Group {
+                if let cover = report.coverUrl {
+                    RemoteImage(url: cover)
+                } else {
+                    HoloFoil()
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
+            .overlay { ZStack { BackdropBlur(radius: 25); Color.black.opacity(0.5) } }
 
             VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top, spacing: 8) {
+                HStack(alignment: .top, spacing: 0) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(report.title).font(Theme.sans(20, .bold)).foregroundStyle(Theme.text)
+                        Text(report.title).font(Theme.heading(20)).foregroundStyle(Theme.text)
+                            .frame(maxWidth: 258, alignment: .leading)
                         if let date = report.date {
                             Text(date).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
                         }
                     }
                     Spacer(minLength: 8)
-                    Icon(AppIcons.material(report.material), size: 18, color: .white)
-                        .frame(width: 32, height: 32)
-                        .background(Color(hex: "#28282c").opacity(0.7))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    Icon(AppIcons.material(report.material), size: 20, color: .white)
                 }
-                Text(report.description).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
-                    .lineSpacing(3).frame(maxWidth: 300, alignment: .leading)
+                Text(report.description).font(Theme.sans(Theme.fontBase, .light)).foregroundStyle(Theme.text)
+                    .frame(maxWidth: 300, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.horizontal, Theme.screenX)
-            .padding(.bottom, 24)
-
-            if let badge = report.badge, !badge.isEmpty {
-                Text(badge).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.text)
-                    .padding(.horizontal, 16).padding(.vertical, 8)
-                    .background(Color(hex: "#28282c").opacity(0.7))
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard))
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.top, 40)
-                    .frame(maxHeight: .infinity, alignment: .top)
-            }
-
-            if session.isAdmin, reportId != nil {
-                Button { router.push(.reportEdit(id: reportId!)) } label: {
-                    Icon(AppIcons.gear, size: 24, color: .white)
-                        .frame(width: 42, height: 42)
-                        .background(Color(hex: "#28282c").opacity(0.7)).clipShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .padding(.trailing, Theme.screenX).padding(.top, 40)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-            }
+            .padding(.bottom, 16)
         }
-        .frame(minHeight: 420)
-        .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: Theme.radiusCard, bottomTrailingRadius: Theme.radiusCard, style: .continuous))
+        .frame(height: (graphOpen || reportOpen) ? 302 : 465)
+        .clipShape(shape)
     }
 
     @ViewBuilder private var reportBody: some View {

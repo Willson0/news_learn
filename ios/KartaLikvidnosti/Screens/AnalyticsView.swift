@@ -18,66 +18,55 @@ struct AnalyticsView: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 24) {
                 Text("Список материалов").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
 
                 HStack(spacing: 12) {
-                    AppInput(text: $query, placeholder: "Нужный отчёт или материал")
-                    Button { filtersOpen = true } label: {
+                    AppInput(text: $query, placeholder: "Нужный отчет или материал")
+                    Button {
+                        Haptics.light()
+                        filtersOpen = true
+                    } label: {
                         Icon(AppIcons.filter, size: 20, color: Theme.text)
                             .frame(width: 48, height: 48)
-                            .background(Theme.gradientAccentSoft)
-                            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+                            .contentShape(Circle())
+                            .liquidGlass(Circle(), fill: ActiveFill(), interactive: true)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressableStyle())
                 }
 
                 if !loaded {
-                    VStack(spacing: 16) {
+                    VStack(spacing: 12) {
                         ForEach(0..<4, id: \.self) { _ in ReportCardSkeleton() }
                     }
                 } else {
-                    LazyVStack(spacing: 16) {
+                    LazyVStack(spacing: 12) {
                         ForEach(visible) { report in
                             ReportCard(report: report) { router.push(.reportDetail(id: report.id)) }
                         }
                         if visible.isEmpty {
-                            Text("Ничего не найдено").foregroundStyle(Theme.textSecondary)
+                            Text("Ничего не найдено").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
                                 .frame(maxWidth: .infinity).padding(.vertical, 40)
                         }
                     }
                 }
             }
             .padding(.horizontal, Theme.screenX)
-            .padding(.top, 60)
-            .padding(.bottom, 24)
+            .padding(.top, Theme.titleTop)
+            .padding(.bottom, Theme.navBarClearance)
         }
+        .ignoresSafeArea(.container, edges: .top)
         .screenBackground()
-        .overlay(alignment: .bottomTrailing) {
-            if session.isAdmin {
-                Button {
-                    Haptics.light()
-                    router.push(.reportCreate)
-                } label: {
-                    Icon(AppIcons.plus, size: 30, color: Theme.text)
-                        .frame(width: 62, height: 62)
-                        .background(Theme.gradientAccent, in: Circle())
-                        .shadow(color: .black.opacity(0.35), radius: 10, y: 6)
-                }
-                .buttonStyle(.plain)
-                .padding(.trailing, Theme.screenX)
-                .padding(.bottom, 16)
+        .withGlassNavBar(extra: session.isAdmin
+            ? .init(icon: AppIcons.plusBig) { router.push(.reportCreate) }
+            : nil)
+        .overlay {
+            FiltersOverlay(isOpen: $filtersOpen) { result in
+                statusFilter = result.statuses.isEmpty ? nil : result.statuses
             }
         }
         .onAppear(perform: seed)
         .task(id: statusFilter ?? []) { await load() }
-        .sheet(isPresented: $filtersOpen) {
-            FiltersSheet { result in
-                statusFilter = result.statuses.isEmpty ? nil : result.statuses
-            }
-            .presentationDetents([.large])
-            .presentationDragIndicator(.hidden)
-        }
     }
 
     /// Мгновенно показываем предзагруженные материалы (без фильтра), чтобы без скелетона.

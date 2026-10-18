@@ -6,10 +6,11 @@ struct FiltersResult {
     let dateMode: String
 }
 
-/// Нижний лист фильтров аналитики (analytics/FiltersSheet.vue).
+/// Лист фильтров «Аналитика фильтры». Показывается поверх экрана с
+/// затемнением (см. `FiltersOverlay`).
 struct FiltersSheet: View {
-    @Environment(\.dismiss) private var dismiss
     let onApply: (FiltersResult) -> Void
+    let onClose: () -> Void
 
     @State private var instruments: [InstrumentDto] = [
         .init(key: "gold", label: "Золото", on: true),
@@ -30,7 +31,7 @@ struct FiltersSheet: View {
     @State private var dateMode = "week"
     @State private var dateStart: String? = "2026-03-17"
     @State private var dateEnd: String? = "2026-03-28"
-    @State private var calendarOpen = true
+    @State private var calendarOpen = false
 
     private static let shortMonths = ["ЯНВ", "ФЕВ", "МАР", "АПР", "МАЙ", "ИЮН",
                                       "ИЮЛ", "АВГ", "СЕН", "ОКТ", "НОЯ", "ДЕК"]
@@ -49,71 +50,92 @@ struct FiltersSheet: View {
         return "С \(s)"
     }
 
+    @State private var dragY: CGFloat = 0
+
+    // Лист фильтров из макета: плашка «фон плашки» от y=172 до низа, радиус 24,
+    // полоска-хват 32 на y=183; «Искать» (Button/искать) справа сверху;
+    // заголовки Kreadon 24; блоки «Фон плашки 2» с чипами; календарь — стеклянный
+    // поп-ап над блоками.
     var body: some View {
-        VStack(spacing: 0) {
-            Capsule().fill(Color.white.opacity(0.3)).frame(width: 40, height: 4)
-                .padding(.top, 10).padding(.bottom, 12)
-
-            HStack {
-                Text("Инструменты").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
-                Spacer()
-                Button(action: apply) {
-                    Text("Искать").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
-                        .padding(.horizontal, 22).padding(.vertical, 10)
-                        .background(Theme.gradientAccent).clipShape(Capsule())
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.bottom, 16)
-
+        ZStack(alignment: .topLeading) {
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 16) {
-                    chipCard($instruments)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Инструменты").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
+                        .padding(.top, 35)
+                    chipCard($instruments).padding(.top, 24)
 
                     Text("По статусу").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
-                    chipCard($statuses)
+                        .padding(.top, 40)
+                    chipCard($statuses).padding(.top, 24)
 
-                    HStack {
+                    HStack(alignment: .center) {
                         Text("По дате").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
                         Spacer()
                         if !rangeLabel.isEmpty {
-                            Button { dateStart = nil; dateEnd = nil; calendarOpen = true } label: {
-                                Icon(AppIcons.close, size: 18, color: Theme.textSecondary)
-                            }.buttonStyle(.plain)
-                            Text(rangeLabel).font(Theme.sans(Theme.fontSm))
-                                .padding(.horizontal, 12).padding(.vertical, 8)
-                                .background(Theme.gradientAccent).clipShape(Capsule())
+                            GlassLabel(text: rangeLabel)
                         }
-                        Button { calendarOpen.toggle() } label: {
-                            Icon(AppIcons.calendar, size: 24, color: Theme.text)
-                        }.buttonStyle(.plain)
+                        Button {
+                            Haptics.light()
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { calendarOpen.toggle() }
+                        } label: {
+                            Icon(AppIcons.calendarNumber, size: 32, color: Theme.text)
+                        }
+                        .buttonStyle(.plain)
                     }
-
-                    if calendarOpen {
-                        AppCalendar(start: $dateStart, end: $dateEnd)
-                    }
+                    .padding(.top, 40)
 
                     SegmentedControl(selection: $dateMode, options: [
                         ("week", "Неделя"), ("month", "Месяц"), ("year", "Год"),
                     ])
+                    .padding(.top, 24)
                 }
-                .padding(.bottom, 20)
+                .padding(.horizontal, Theme.screenX)
+                .padding(.bottom, 60)
             }
+
+            if calendarOpen {
+                VStack(spacing: 8) {
+                    AppCalendar(start: $dateStart, end: $dateEnd)
+                }
+                .padding(.horizontal, Theme.screenX)
+                .padding(.top, 87)
+                .transition(.scale(scale: 0.92, anchor: .bottomTrailing).combined(with: .opacity))
+            }
+
+            HStack {
+                Spacer()
+                PillActionButton(title: "Искать", action: apply)
+            }
+            .padding(.horizontal, Theme.screenX)
+            .padding(.top, 12)
+
+            Capsule().fill(Color.white).frame(width: 32, height: 1.5)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 11)
         }
-        .padding(.horizontal, Theme.screenX)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Color(hex: "#1c1d1f").ignoresSafeArea())
+        .background(Theme.surface, in: UnevenRoundedRectangle(topLeadingRadius: 24, topTrailingRadius: 24, style: .continuous))
+        .ignoresSafeArea(.container, edges: .bottom)
+        .offset(y: max(dragY, 0))
+        .gesture(
+            DragGesture()
+                .onChanged { dragY = $0.translation.height }
+                .onEnded { v in
+                    if v.translation.height > 120 || v.predictedEndTranslation.height > 260 { onClose() }
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { dragY = 0 }
+                }
+        )
     }
 
     @ViewBuilder private func chipCard(_ items: Binding<[InstrumentDto]>) -> some View {
-        FlowLayout(spacing: 8) {
+        FlowLayout(spacing: 4, lineSpacing: 4) {
             ForEach(items.wrappedValue.indices, id: \.self) { i in
                 InstrumentChip(label: items.wrappedValue[i].label, on: items[i].on)
             }
         }
-        .padding(16)
-        .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.surface2Plate, in: RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
     }
 
     private func apply() {
@@ -123,6 +145,34 @@ struct FiltersSheet: View {
             statuses: statuses.filter { $0.on }.map { $0.key },
             dateMode: dateMode
         ))
-        dismiss()
+        onClose()
     }
+}
+
+/// Затемнение rgba(7,7,7,0.71) с размытием 6.45 и лист фильтров от y=172.
+struct FiltersOverlay: View {
+    @Binding var isOpen: Bool
+    let onApply: (FiltersResult) -> Void
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            if isOpen {
+                ZStack {
+                    BackdropBlur(radius: 6.45)
+                    Color(hex: "#070707").opacity(0.71)
+                }
+                .ignoresSafeArea()
+                .onTapGesture { close() }
+                .transition(.opacity)
+
+                FiltersSheet(onApply: onApply, onClose: close)
+                    .padding(.top, 172)
+                    .transition(.move(edge: .bottom))
+            }
+        }
+        .ignoresSafeArea(.container, edges: .top)
+        .animation(.spring(response: 0.42, dampingFraction: 0.9), value: isOpen)
+    }
+
+    private func close() { isOpen = false }
 }

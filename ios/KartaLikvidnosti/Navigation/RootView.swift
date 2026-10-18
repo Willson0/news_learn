@@ -67,19 +67,35 @@ private struct MainFlow: View {
                 .toolbar(.hidden, for: .tabBar)
                 .navigationDestination(for: Route.self) { route in
                     destination(route)
-                        .toolbar(.hidden, for: .navigationBar)
                         .toolbar(.hidden, for: .tabBar)
                 }
         }
         .toolbar(.hidden, for: .tabBar)
     }
 
+    /// Внутренние экраны: системная панель скрыта, у экрана своя стеклянная
+    /// кнопка «назад» (GlassTopBar). Чат пока со своей шапкой в toolbar.
     @ViewBuilder private func destination(_ route: Route) -> some View {
+        switch route {
+        case .chat(let id):
+            ChatView(chatId: id)
+                .toolbarBackground(.hidden, for: .navigationBar)
+        case .reportDetail:
+            screen(route)
+                .toolbar(.hidden, for: .navigationBar)
+        default:
+            screen(route)
+                .glassTopBar()
+                .toolbar(.hidden, for: .navigationBar)
+        }
+    }
+
+    @ViewBuilder private func screen(_ route: Route) -> some View {
         switch route {
         case .reportDetail(let id): ReportDetailView(reportId: id)
         case .reportCreate: ReportFormView(reportId: nil)
         case .reportEdit(let id): ReportFormView(reportId: id)
-        case .chat(let id): ChatView(chatId: id)
+        case .chat: EmptyView()
         case .chatInfo(let id): ChatInfoView(chatId: id)
         case .chatEdit(let id): ChatEditView(chatId: id)
         case .chatUser(let id, let uid): UserProfileView(chatId: id, uid: uid)

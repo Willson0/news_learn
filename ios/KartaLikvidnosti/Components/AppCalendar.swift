@@ -27,57 +27,81 @@ struct AppCalendar: View {
 
     private struct Cell: Identifiable { let id = UUID(); let day: Int; let iso: String?; let out: Bool }
 
+    // Calendar из макета: стеклянная плашка 361×385 («черный 2» + glass),
+    // шапка с шевронами и месяцем (Min Sans SemiBold 20), линия 40%, дни недели
+    // Medium 12 капсом, даты Medium 18 в ячейках 37×42; начало диапазона —
+    // зелёная капсула, конец — белая с зелёной цифрой; чужие дни — 40%.
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Button { prevMonth() } label: { Icon(AppIcons.back, size: 20, color: Theme.text) }
-                Spacer()
-                Text("\(Self.months[viewMonth]) \(String(viewYear))").font(Theme.sans(Theme.fontMd, .bold))
+            HStack(spacing: 9) {
+                Button { prevMonth() } label: { Icon(AppIcons.monthPrev, size: 24, color: Theme.text) }
+                    .buttonStyle(.plain)
+                Text(Self.months[viewMonth])
+                    .font(Theme.sans(20, .semibold))
                     .foregroundStyle(Theme.text)
-                Spacer()
-                Button { nextMonth() } label: { Icon(AppIcons.chevronRight, size: 20, color: Theme.text) }
+                    .frame(maxWidth: .infinity)
+                Button { nextMonth() } label: { Icon(AppIcons.monthNext, size: 24, color: Theme.text) }
+                    .buttonStyle(.plain)
             }
-            .padding(.bottom, 12)
+            .padding(.horizontal, 16)
+            .frame(height: 51)
+            .padding(.top, 4)
 
-            Rectangle().fill(Color.white.opacity(0.1)).frame(height: 1).padding(.bottom, 8)
+            Rectangle().fill(Color.white.opacity(0.4)).frame(height: 1)
+                .padding(.horizontal, 3)
+                .padding(.top, 8)
 
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 7), spacing: 2) {
+            HStack(spacing: 0) {
                 ForEach(Self.weekdays, id: \.self) { w in
-                    Text(w).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
-                        .frame(maxWidth: .infinity).padding(.vertical, 6)
-                }
-                ForEach(cells) { cell in
-                    Button { select(cell) } label: { dayView(cell) }
-                        .buttonStyle(.plain)
-                        .disabled(cell.out)
+                    Text(w).font(Theme.sans(Theme.fontSm, .medium)).tracking(0.36)
+                        .foregroundStyle(Theme.text)
+                        .frame(maxWidth: .infinity)
                 }
             }
+            .frame(height: 16)
+            .padding(.top, 20)
+            .padding(.bottom, 16)
+
+            VStack(spacing: 0) {
+                ForEach(0..<(cells.count / 7), id: \.self) { row in
+                    HStack(spacing: 0) {
+                        ForEach(cells[(row * 7)..<(row * 7 + 7)]) { cell in
+                            Button { select(cell) } label: { dayView(cell) }
+                                .buttonStyle(.plain)
+                                .disabled(cell.out)
+                        }
+                    }
+                    .frame(height: 50)
+                }
+            }
+            .padding(.bottom, 4)
         }
-        .padding(16)
-        .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+        .padding(.horizontal, 14.83)
+        .frame(width: 361)
+        .liquidGlass(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous), fill: Theme.black2)
     }
 
     @ViewBuilder private func dayView(_ cell: Cell) -> some View {
         let isStart = cell.iso != nil && cell.iso == start
-        let isEnd = cell.iso != nil && cell.iso == end
-        let isEdge = isStart || isEnd
+        let isEnd = cell.iso != nil && cell.iso == end && end != start
         let inRange = isInRange(cell.iso)
-        let isToday = cell.iso == today && !isEdge
         ZStack {
-            // Подсветка диапазона между краями.
-            if inRange && !isEdge {
-                Rectangle().fill(Theme.green.opacity(0.18)).frame(height: 34)
+            if inRange {
+                Capsule().fill(Theme.green.opacity(0.3)).frame(width: 37, height: 42)
             }
-            Circle()
-                .fill(isEdge ? Theme.green : (isToday ? Color.white : Color.clear))
-                .frame(width: 34, height: 34)
+            if isStart {
+                Capsule().fill(Theme.green).frame(width: 37, height: 42)
+            } else if isEnd {
+                Capsule().fill(Color.white).frame(width: 37, height: 42)
+            }
             Text("\(cell.day)")
-                .font(Theme.sans(Theme.fontBase))
-                .foregroundStyle(cell.out ? Theme.textMuted : (isToday ? Theme.green : Theme.text))
+                .font(Theme.sans(18, .medium))
+                .foregroundStyle(isEnd ? Theme.green : Theme.text)
+                .opacity(cell.out ? 0.4 : 1)
         }
-        .frame(height: 40)
         .frame(maxWidth: .infinity)
+        .frame(height: 50)
+        .contentShape(Rectangle())
     }
 
     /// Дата строго между выбранными краями (для подсветки «моста»).

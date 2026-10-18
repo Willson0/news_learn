@@ -3,6 +3,9 @@ import SwiftUI
 /// Простой перенос по строкам (аналог flex-wrap) — для лент чипов.
 struct FlowLayout: Layout {
     var spacing: CGFloat = 8
+    /// Расстояние между строками (по умолчанию как между элементами).
+    var lineSpacing: CGFloat? = nil
+    private var rowGap: CGFloat { lineSpacing ?? spacing }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
         let maxWidth = proposal.width ?? .infinity
@@ -13,7 +16,7 @@ struct FlowLayout: Layout {
         for sub in subviews {
             let size = sub.sizeThatFits(.unspecified)
             if x + size.width > maxWidth && !rows[rows.count - 1].isEmpty {
-                totalHeight += rowHeight + spacing
+                totalHeight += rowHeight + rowGap
                 rows.append([]); x = 0; rowHeight = 0
             }
             rows[rows.count - 1].append(sub)
@@ -34,7 +37,7 @@ struct FlowLayout: Layout {
             let size = sub.sizeThatFits(.unspecified)
             if x + size.width > bounds.minX + maxWidth && x > bounds.minX {
                 x = bounds.minX
-                y += rowHeight + spacing
+                y += rowHeight + rowGap
                 rowHeight = 0
             }
             sub.place(at: CGPoint(x: x, y: y), anchor: .topLeading, proposal: ProposedViewSize(size))
