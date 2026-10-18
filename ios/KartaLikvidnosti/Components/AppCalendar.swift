@@ -15,7 +15,7 @@ struct AppCalendar: View {
                                  "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
     private static let weekdays = ["ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "ВС"]
 
-    init(start: Binding<String?>, end: Binding<String?>, today: String = "2026-03-28") {
+    init(start: Binding<String?>, end: Binding<String?>, today: String = AppCalendar.isoToday()) {
         _start = start
         _end = end
         self.today = today
@@ -23,6 +23,14 @@ struct AppCalendar: View {
         let comps = Self.parse(base) ?? (2026, 3, 1)
         _viewYear = State(initialValue: comps.0)
         _viewMonth = State(initialValue: comps.1 - 1)
+    }
+
+    static func isoToday() -> String {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: Date())
     }
 
     private struct Cell: Identifiable { let id = UUID(); let day: Int; let iso: String?; let out: Bool }

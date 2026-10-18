@@ -90,12 +90,9 @@ struct ReportDetailView: View {
     @ViewBuilder private var hero: some View {
         let shape = UnevenRoundedRectangle(bottomLeadingRadius: Theme.radiusCard, bottomTrailingRadius: Theme.radiusCard, style: .continuous)
         ZStack(alignment: .bottomLeading) {
-            Group {
-                if let cover = report.coverUrl {
-                    RemoteImage(url: cover)
-                } else {
-                    ReportCoverPlaceholder()
-                }
+            ZStack {
+                ReportCoverPlaceholder()
+                if let cover = report.coverUrl { RemoteImage(url: cover) }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipped()

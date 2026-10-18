@@ -11,12 +11,9 @@ struct ReportCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             ZStack(alignment: .topTrailing) {
-                Group {
-                    if let url = fileURL(report.coverUrl) {
-                        RemoteImage(url: url)
-                    } else {
-                        ReportCoverPlaceholder()
-                    }
+                ZStack {
+                    ReportCoverPlaceholder()
+                    if let url = fileURL(report.coverUrl) { RemoteImage(url: url) }
                 }
                 .frame(height: 162)
                 .frame(maxWidth: .infinity)

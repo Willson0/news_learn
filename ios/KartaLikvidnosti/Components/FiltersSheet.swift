@@ -29,8 +29,8 @@ struct FiltersSheet: View {
         .init(key: "archive", label: "Архивное", on: false),
     ]
     @State private var dateMode = "week"
-    @State private var dateStart: String? = "2026-03-17"
-    @State private var dateEnd: String? = "2026-03-28"
+    @State private var dateStart: String? = nil
+    @State private var dateEnd: String? = nil
     @State private var calendarOpen = false
 
     private static let shortMonths = ["ЯНВ", "ФЕВ", "МАР", "АПР", "МАЙ", "ИЮН",
@@ -72,7 +72,30 @@ struct FiltersSheet: View {
                         Text("По дате").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
                         Spacer()
                         if !rangeLabel.isEmpty {
-                            GlassLabel(text: rangeLabel)
+                            // Выбранный диапазон (Figma 474:15508): крестик 12 в
+                            // области 38×32, пилюля 32 со стеклом «active», 14 Regular.
+                            HStack(spacing: 4) {
+                                Button {
+                                    Haptics.light()
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                                        dateStart = nil
+                                        dateEnd = nil
+                                    }
+                                } label: {
+                                    Icon(AppIcons.close, size: 24, color: Theme.text)
+                                        .frame(width: 38, height: 32)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                Text(rangeLabel)
+                                    .font(Theme.sans(Theme.fontBase))
+                                    .foregroundStyle(Theme.text)
+                                    .padding(.horizontal, 12)
+                                    .frame(height: 32)
+                                    .liquidGlass(Capsule(), fill: ActiveFill())
+                            }
+                            .padding(.trailing, 8)
+                            .transition(.opacity)
                         }
                         Button {
                             Haptics.light()
