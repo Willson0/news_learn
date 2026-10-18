@@ -27,7 +27,7 @@ struct AnalyticsView: View {
                         Haptics.light()
                         filtersOpen = true
                     } label: {
-                        Icon(AppIcons.filter, size: 20, color: Theme.text)
+                        Icon(AppIcons.filter, size: 16, color: Theme.text)
                             .frame(width: 48, height: 48)
                             .contentShape(Circle())
                             .liquidGlass(Circle(), fill: ActiveFill(), interactive: true)

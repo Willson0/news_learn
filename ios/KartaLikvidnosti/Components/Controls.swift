@@ -146,6 +146,10 @@ struct AppToggle: View {
 struct InstrumentChip: View {
     let label: String
     @Binding var on: Bool
+    /// Боковые отступы: компонент — 10 (hug); в листе фильтров макет растягивает
+    /// чипы инструментов до ~15.5 и чипы статусов до ~24
+    /// (там ширины фиксированные, содержимое по центру).
+    var hPadding: CGFloat = 10
 
     private let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
 
@@ -159,7 +163,7 @@ struct InstrumentChip: View {
                 Icon(on ? AppIcons.checkboxOn : AppIcons.checkboxOff, size: 20, color: Theme.text)
             }
             .foregroundStyle(Theme.text)
-            .padding(10)
+            .padding(.horizontal, hPadding)
             .frame(height: 40)
             .contentShape(shape)
             .modifier(Fill(on: on, shape: shape))

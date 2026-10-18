@@ -94,7 +94,7 @@ struct ReportDetailView: View {
                 if let cover = report.coverUrl {
                     RemoteImage(url: cover)
                 } else {
-                    HoloFoil()
+                    ReportCoverPlaceholder()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

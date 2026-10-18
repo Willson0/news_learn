@@ -81,7 +81,7 @@ struct GlassNavBar: View {
                     Haptics.light()
                     router.selectTab(item.tab)
                 } label: {
-                    Icon(item.icon, size: 24, color: router.tab == item.tab ? Theme.text : Theme.textSecondary)
+                    Icon(item.icon, size: 24, color: router.tab == item.tab ? Theme.text : Theme.textMuted)
                         .frame(width: 40, height: 40)
                         .contentShape(Circle())
                 }

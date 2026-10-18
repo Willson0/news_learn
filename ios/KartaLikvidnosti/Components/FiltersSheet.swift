@@ -66,7 +66,7 @@ struct FiltersSheet: View {
 
                     Text("По статусу").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
                         .padding(.top, 40)
-                    chipCard($statuses).padding(.top, 24)
+                    chipCard($statuses, hPadding: 24).padding(.top, 24)
 
                     HStack(alignment: .center) {
                         Text("По дате").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
@@ -127,10 +127,10 @@ struct FiltersSheet: View {
         )
     }
 
-    @ViewBuilder private func chipCard(_ items: Binding<[InstrumentDto]>) -> some View {
+    @ViewBuilder private func chipCard(_ items: Binding<[InstrumentDto]>, hPadding: CGFloat = 15.5) -> some View {
         FlowLayout(spacing: 4, lineSpacing: 4) {
             ForEach(items.wrappedValue.indices, id: \.self) { i in
-                InstrumentChip(label: items.wrappedValue[i].label, on: items[i].on)
+                InstrumentChip(label: items.wrappedValue[i].label, on: items[i].on, hPadding: hPadding)
             }
         }
         .padding(12)

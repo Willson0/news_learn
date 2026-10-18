@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Block/Карточка отчета: плашка «фон плашки», обложка 162, справа сверху —
 /// бейдж статуса; заголовок Min Sans Bold 16, дата 14 «белый неактив»,
-/// описание Light 14, иконка материала 20 и кнопка «Перейти в отчет».
+/// описание Regular 14, иконка материала 20 и кнопка «Перейти в отчет».
 struct ReportCard: View {
     let report: ReportDto
     var actionLabel: String = "Перейти в отчет"
@@ -15,7 +15,7 @@ struct ReportCard: View {
                     if let url = fileURL(report.coverUrl) {
                         RemoteImage(url: url)
                     } else {
-                        HoloFoil()
+                        ReportCoverPlaceholder()
                     }
                 }
                 .frame(height: 162)
@@ -45,7 +45,7 @@ struct ReportCard: View {
                             }
                         }
                         Text(report.description)
-                            .font(Theme.sans(Theme.fontBase, .light))
+                            .font(Theme.sans(Theme.fontBase))
                             .foregroundStyle(Theme.text)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -60,5 +60,15 @@ struct ReportCard: View {
         }
         .padding(.bottom, 16)
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+    }
+}
+
+/// Обложка из макета (заливка «Rectangle 7», режим Fill) — для отчётов без
+/// своей картинки.
+struct ReportCoverPlaceholder: View {
+    var body: some View {
+        Color.clear
+            .overlay(Image("ReportCover").resizable().scaledToFill())
+            .clipped()
     }
 }
