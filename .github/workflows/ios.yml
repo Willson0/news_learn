@@ -14,14 +14,30 @@ on:
 
 jobs:
   build:
-    # macos-15 поставляется с Xcode 16 — он читает формат проекта,
-    # который генерирует актуальный XcodeGen (objectVersion 77).
+    # macos-15 несёт несколько Xcode; выбираем Xcode 26 — он даёт SDK iOS 26
+    # с настоящим Liquid Glass (.glassEffect). Код под iOS 26 закрыт
+    # #if compiler(>=6.2) + #available(iOS 26.0, *); при более старом Xcode
+    # собирается только запасной вид, но тогда настоящее стекло не проверить,
+    # поэтому если Xcode 26 нет — падаем с понятной ошибкой.
     runs-on: macos-15
     defaults:
       run:
         working-directory: ios
     steps:
       - uses: actions/checkout@v4
+
+      - name: Select Xcode 26 (SDK iOS 26 / Liquid Glass)
+        run: |
+          set -e
+          XC=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$XC" ]; then
+            echo "::error::Xcode 26 не найден на раннере — SDK iOS 26 недоступен, настоящее Liquid Glass не собрать."
+            echo "Доступные Xcode:"
+            ls -d /Applications/Xcode_*.app || true
+            exit 1
+          fi
+          sudo xcode-select -s "$XC/Contents/Developer"
+          echo "Выбран $XC"
 
       - name: Show Xcode version
         run: xcodebuild -version
