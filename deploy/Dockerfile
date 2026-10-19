@@ -30,7 +30,7 @@ COPY deploy/entrypoint.sh /usr/local/bin/app-entrypoint
 RUN chmod +x /usr/local/bin/app-entrypoint \
     && rm -f /app/backend/.env \
     && cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini" \
-    && printf 'upload_max_filesize=20M\npost_max_size=25M\n' > "$PHP_INI_DIR/conf.d/uploads.ini"
+    && printf 'upload_max_filesize=100M\npost_max_size=105M\n' > "$PHP_INI_DIR/conf.d/uploads.ini"
 
 ENV APP_ENV=production APP_DEBUG=false LOG_CHANNEL=stderr \
     DB_CONNECTION=sqlite DB_DATABASE=/app/backend/database/data/database.sqlite

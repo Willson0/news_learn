@@ -311,11 +311,17 @@ struct ChatView: View {
     }
 
     @ViewBuilder private func messageAvatar(_ m: ChatMessage) -> some View {
-        if let url = fileURL(m.avatarUrl) {
-            RemoteImage(url: url).frame(width: 30, height: 30).background(Color(hex: "#d9d9d9")).clipShape(Circle())
-        } else {
-            Circle().fill(Color(hex: "#d9d9d9")).frame(width: 30, height: 30)
+        ZStack {
+            Circle().fill(Color(hex: "#d9d9d9"))
+            if let url = fileURL(m.avatarUrl) {
+                RemoteImage(url: url).clipShape(Circle())
+            } else {
+                Text(String((m.author ?? "?").prefix(1)).uppercased())
+                    .font(Theme.heading(13))
+                    .foregroundStyle(Theme.text)
+            }
         }
+        .frame(width: 30, height: 30)
     }
 
     private func bubble(_ m: ChatMessage, isTail: Bool, showHeader: Bool) -> some View {
@@ -867,6 +873,10 @@ struct ChatView: View {
             showAttachError("Файл не прочитался, попробуйте ещё раз")
             return
         }
+        guard data.count <= Self.maxAttachmentBytes else {
+            showAttachError("Файл больше 100 МБ, выберите файл поменьше")
+            return
+        }
         let reply = replyTo?.id
         // Текст из поля ввода становится подписью к фото и файлу (голосовое без подписи).
         let caption = kind == "voice" ? "" : draft.trimmed
@@ -880,10 +890,14 @@ struct ChatView: View {
                 if let dto { messages.append(ChatMessage(dto)) }
             } catch {
                 if !caption.isEmpty { draft = caption }
-                showAttachError((error as? ApiError)?.message ?? "Не удалось отправить вложение")
+                let message = (error as? ApiError)?.message ?? ""
+                let tooBig = message.lowercased().contains("upload") || message.lowercased().contains("maximum")
+                showAttachError(tooBig ? "Файл не загрузился: максимум 100 МБ" : "Не удалось отправить вложение")
             }
         }
     }
+
+    static let maxAttachmentBytes = 100 * 1024 * 1024
 
     private func showAttachError(_ text: String) {
         toast = text

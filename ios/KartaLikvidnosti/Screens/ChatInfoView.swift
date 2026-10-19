@@ -161,6 +161,7 @@ struct ChatInfoView: View {
                 }
                 .padding(4)
             }
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
             .liquidGlass(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
             .padding(.horizontal, Theme.screenX)
         }

@@ -123,7 +123,7 @@ class ChatController extends Controller
         $data = $request->validate([
             'body' => ['nullable', 'string', 'max:4000'],
             'reply_to' => ['nullable', 'integer'],
-            'attachment' => ['nullable', 'file', 'max:20480'],
+            'attachment' => ['nullable', 'file', 'max:102400'],
             'kind' => ['nullable', 'in:image,file,voice', 'required_with:attachment'],
             'duration' => ['nullable', 'integer', 'min:0', 'max:36000'],
         ]);
@@ -431,7 +431,7 @@ class ChatController extends Controller
             'duration' => $a->duration,
             'author' => $m?->author_name,
             'date' => $m?->created_at?->toIso8601String(),
-            'meta' => trim(self::formatSize($a->size).' / '.($m?->created_at?->translatedFormat('j MMM Y, H:i') ?? ''), ' /'),
+            'meta' => trim(self::formatSize($a->size).' / '.($m?->created_at?->translatedFormat('j M Y, H:i') ?? ''), ' /'),
         ];
     }
 
@@ -586,7 +586,7 @@ class ChatController extends Controller
 
     private static function monthLabel(Carbon $date): string
     {
-        return mb_convert_case($date->translatedFormat('MMMM Y'), MB_CASE_TITLE);
+        return mb_convert_case($date->translatedFormat('F Y'), MB_CASE_TITLE);
     }
 
     public static function seenLabelFor(?Carbon $at): string
@@ -615,6 +615,6 @@ class ChatController extends Controller
             return 'Был(а) в сети '.(int) $days.' дн назад';
         }
 
-        return 'Был(а) в сети '.$at->translatedFormat('j MMM Y');
+        return 'Был(а) в сети '.$at->translatedFormat('j M Y');
     }
 }
