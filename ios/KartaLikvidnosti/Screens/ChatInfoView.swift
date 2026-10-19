@@ -102,7 +102,14 @@ struct ChatInfoView: View {
                     UserDefaults.standard.set(muted, forKey: "kl_muted_\(chatId)")
                 }
                 actionButton(AppIcons.search) { searchOpen.toggle(); if !searchOpen { query = "" } }
-                actionButton(AppIcons.leave) { router.popToRoot() }
+                actionButton(AppIcons.leave) {
+                    Task {
+                        do {
+                            try await Api.leaveChat(slug: chatId)
+                            router.popToRoot()
+                        } catch {}
+                    }
+                }
             }
             .padding(.top, 16)
             .padding(.horizontal, Theme.screenX)

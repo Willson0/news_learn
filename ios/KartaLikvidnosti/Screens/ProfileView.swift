@@ -25,7 +25,8 @@ struct ProfileView: View {
 
     private var avatarInitial: String {
         let t = tag.replacingOccurrences(of: "@", with: "")
-        return t.isEmpty ? "" : String(t.prefix(1)).uppercased()
+        let source = t.isEmpty ? (session.user?.name ?? "") : t
+        return source.isEmpty ? "?" : String(source.prefix(1)).uppercased()
     }
 
     private var displayTag: String {

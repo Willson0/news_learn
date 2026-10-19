@@ -162,14 +162,17 @@ struct CommunityView: View {
     }
 
     @ViewBuilder private func chatAvatar(_ item: ChatItemDto) -> some View {
-        if let url = fileURL(item.avatarUrl) {
-            RemoteImage(url: url)
-                .frame(width: 64, height: 64)
-                .background(Color(hex: "#797979"))
-                .clipShape(Circle())
-        } else {
-            Circle().fill(Color(hex: "#797979")).frame(width: 64, height: 64)
+        ZStack {
+            Circle().fill(Color(hex: "#797979"))
+            if let url = fileURL(item.avatarUrl) {
+                RemoteImage(url: url).clipShape(Circle())
+            } else {
+                Text(String(item.title.prefix(1)).uppercased())
+                    .font(Theme.heading(24))
+                    .foregroundStyle(Theme.text)
+            }
         }
+        .frame(width: 64, height: 64)
     }
 
     private func load() async {

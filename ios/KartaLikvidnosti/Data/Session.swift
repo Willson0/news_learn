@@ -28,7 +28,10 @@ final class Session: ObservableObject {
 
     func loadSubscription() async {
         guard TokenStore.isAuthenticated else { subscriptionActive = nil; return }
-        if let s = try? await Api.fetchSubscription() { subscriptionActive = s.active }
+        // Нет записи подписки (сервер отдаёт data: null) — это неактивная подписка.
+        do {
+            subscriptionActive = try await Api.fetchSubscription()?.active ?? false
+        } catch {}
     }
 
     /// Подгружает пользователя, если есть токен. Тихо гасит ошибки.
