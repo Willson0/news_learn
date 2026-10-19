@@ -173,6 +173,7 @@ fun ProfileScreen(
     }
 
     val avatarInitial = tag.removePrefix("@").take(1).uppercase()
+        .ifEmpty { (Session.user?.name ?: "").take(1).uppercase().ifEmpty { "?" } }
     val displayTag = if (tag.isEmpty()) "" else if (tag.startsWith("@")) tag else "@$tag"
 
     TabScaffold(navBar = navBar) {

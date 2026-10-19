@@ -203,8 +203,16 @@ private fun ChatRow(item: ChatItemDto, modifier: Modifier = Modifier, onClick: (
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = if (hasDetails) Alignment.Top else Alignment.CenterVertically,
         ) {
-            Box(modifier = Modifier.size(64.dp).clip(CircleShape).background(hex("#797979"))) {
-                RemoteImage(fileUrl(item.avatarUrl), Modifier.size(64.dp).clip(CircleShape))
+            Box(
+                modifier = Modifier.size(64.dp).clip(CircleShape).background(hex("#797979")),
+                contentAlignment = Alignment.Center,
+            ) {
+                val url = fileUrl(item.avatarUrl)
+                if (url != null) {
+                    RemoteImage(url, Modifier.size(64.dp).clip(CircleShape))
+                } else {
+                    Text(item.title.take(1).uppercase(), style = AppFont.heading(24.sp))
+                }
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(

@@ -76,6 +76,9 @@ interface ApiService {
     @GET("subscription")
     suspend fun subscription(): DataWrapper<SubscriptionDto>
 
+    @POST("chats/{slug}/leave")
+    suspend fun leaveChat(@Path("slug") slug: String): StatusResponse
+
     @PUT("subscription")
     suspend fun updateSubscription(@Body body: SubscriptionBody): StatusResponse
 

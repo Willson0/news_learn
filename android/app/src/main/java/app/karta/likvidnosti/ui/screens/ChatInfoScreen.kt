@@ -74,6 +74,8 @@ import app.karta.likvidnosti.ui.theme.T
 import app.karta.likvidnosti.ui.theme.designTop
 import app.karta.likvidnosti.ui.theme.hex
 import kotlin.math.abs
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 
 private val INFO_TABS = listOf(
     "members" to "Участники",
@@ -116,6 +118,7 @@ fun ChatInfoScreen(
     onLeave: () -> Unit = onBack,
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var title by remember { mutableStateOf("") }
     var members by remember { mutableStateOf("") }
     var avatar by remember { mutableStateOf<String?>(null) }
@@ -235,7 +238,11 @@ fun ChatInfoScreen(
                                 searchOpen = !searchOpen
                                 if (!searchOpen) query = ""
                             }
-                            InfoActionButton(AppIcons.leave) { onLeave() }
+                            InfoActionButton(AppIcons.leave) {
+                                scope.launch {
+                                    runCatching { Repository.leaveChat(slug) }.onSuccess { onLeave() }
+                                }
+                            }
                         }
 
                         AnimatedVisibility(

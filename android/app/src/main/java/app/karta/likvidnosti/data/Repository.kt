@@ -119,6 +119,8 @@ object Repository {
     suspend fun updateSubscription(autoPay: Boolean? = null, paymentMethod: String? = null) =
         apiCall { api.updateSubscription(SubscriptionBody(autoPay, paymentMethod)) }
 
+    suspend fun leaveChat(slug: String) = apiCall { api.leaveChat(slug) }
+
     // --- Аккаунт ---
     suspend fun changeEmail(email: String) = apiCall { api.changeEmail(ChangeEmailBody(email)) }
     suspend fun changePhone(phone: String) = apiCall { api.changePhone(ChangePhoneBody(phone)) }

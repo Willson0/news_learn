@@ -53,7 +53,8 @@ object Session {
             subscriptionActive = null
             return
         }
-        runCatching { Repository.subscription() }.getOrNull()?.let { subscriptionActive = it.active }
+        // Нет записи подписки (сервер отдаёт data: null) — это неактивная подписка.
+        runCatching { Repository.subscription() }.onSuccess { subscriptionActive = it?.active ?: false }
     }
 
     /** Подгружает пользователя, если есть токен. Тихо гасит ошибки. */
