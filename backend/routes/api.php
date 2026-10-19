@@ -3,6 +3,7 @@
 use App\Http\Controllers\AccountController;
 use App\Http\Controllers\Admin;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\YandexAuthController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\InstrumentController;
 use App\Http\Controllers\ProfileController;
@@ -27,6 +28,8 @@ Route::prefix('auth')->group(function () {
     Route::post('/register/confirm', [AuthController::class, 'confirmRegistration']);
     Route::post('/register/resend', [AuthController::class, 'resendRegistrationCode']);
     Route::post('/login', [AuthController::class, 'login']);
+    Route::get('/yandex/start', [YandexAuthController::class, 'start']);
+    Route::get('/yandex/callback', [YandexAuthController::class, 'callback']);
     Route::post('/recovery', [AuthController::class, 'requestRecovery']);
     Route::post('/recovery/reset', [AuthController::class, 'resetPassword']);
 });
