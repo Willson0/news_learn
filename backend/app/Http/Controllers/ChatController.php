@@ -40,6 +40,7 @@ class ChatController extends Controller
 
         $chats = Chat::with('latestMessage')
             ->whereIn('section', ['main', 'reports'])
+            ->whereNotIn('id', $user->leftChats()->select('chats.id'))
             ->orderByDesc('pinned')
             ->orderBy('position')
             ->get();
@@ -320,7 +321,26 @@ class ChatController extends Controller
             abort(404);
         }
 
+        if ($user->leftChats()->whereKey($chat->id)->exists()) {
+            abort(404);
+        }
+
         return $chat;
+    }
+
+    /**
+     * Выйти из группового чата: чат пропадает из списка пользователя и закрывается для записи.
+     */
+    public function leave(Request $request, string $slug): JsonResponse
+    {
+        $user = $request->user();
+        $chat = self::resolve($slug, $user);
+
+        abort_if($chat->type === 'direct', 422, 'Личный чат нельзя покинуть.');
+
+        $user->leftChats()->syncWithoutDetaching([$chat->id]);
+
+        return response()->json(['status' => 'ok']);
     }
 
     public static function directChatFor(User $user): Chat

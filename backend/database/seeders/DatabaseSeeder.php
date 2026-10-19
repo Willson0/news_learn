@@ -130,7 +130,7 @@ class DatabaseSeeder extends Seeder
             [
                 'active' => true,
                 'plan' => '1300 руб. месяц',
-                'until' => '2026-09-14',
+                'until' => now()->addYear()->toDateString(),
                 'auto_pay' => true,
                 'payment_method' => 'СБП 1488',
             ]

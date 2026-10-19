@@ -71,4 +71,10 @@ class User extends Authenticatable
     {
         return $this->hasOne(Subscription::class);
     }
+
+    /** Чаты, из которых пользователь вышел (скрыты от него и закрыты для записи). */
+    public function leftChats(): BelongsToMany
+    {
+        return $this->belongsToMany(Chat::class, 'chat_leaves')->withTimestamps();
+    }
 }
