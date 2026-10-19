@@ -37,7 +37,10 @@ class ProfileController extends Controller
     {
         $data = $request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
-            'username' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'username' => ['sometimes', 'nullable', 'string', 'max:255',
+                \Illuminate\Validation\Rule::unique('users', 'username')->ignore($request->user()->id)],
+        ], [
+            'username.unique' => 'Тег уже занят',
         ]);
 
         $request->user()->update($data);
