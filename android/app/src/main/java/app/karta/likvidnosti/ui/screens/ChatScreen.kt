@@ -381,13 +381,32 @@ fun ChatScreen(
 
     fun sendAttachment(uri: Uri, kind: String) {
         val reply = replyTo?.id
+        // Текст из поля ввода становится подписью к фото и файлу (голосовое без подписи).
+        val caption = if (kind == "voice") "" else draft.text.trim()
         replyTo = null
         attachOpen = false
         scope.launch {
-            val part = Uploads.filePart(context, "attachment", uri) ?: return@launch
+            val part = Uploads.filePart(context, "attachment", uri)
+            if (part == null) {
+                showToast("Файл не прочитался, попробуйте ещё раз")
+                return@launch
+            }
+            if (part.body.contentLength() > 100L * 1024 * 1024) {
+                showToast("Файл больше 100 МБ, выберите файл поменьше")
+                return@launch
+            }
             val parts = mutableListOf(part, Uploads.textPart("kind", kind))
+            if (caption.isNotEmpty()) {
+                parts.add(Uploads.textPart("body", caption))
+                draft = TextFieldValue("")
+            }
             reply?.let { parts.add(Uploads.textPart("reply_to", it.toString())) }
-            runCatching { Repository.sendMessageAttachment(slug, parts) }.getOrNull()?.let { messages.add(it.toUi()) }
+            runCatching { Repository.sendMessageAttachment(slug, parts) }
+                .onSuccess { sent -> sent?.let { messages.add(it.toUi()) } }
+                .onFailure {
+                    if (caption.isNotEmpty()) draft = TextFieldValue(caption)
+                    showToast("Не удалось отправить вложение")
+                }
         }
     }
 
@@ -729,6 +748,7 @@ fun ChatScreen(
                                                 if (isTail) {
                                                     MessageAvatar(
                                                         m.avatarUrl,
+                                                        m.author,
                                                         Modifier.pressable(pressAlpha = 1f) {
                                                             if (!selectMode) m.userId?.let { onUser(it) }
                                                         },
@@ -1198,9 +1218,17 @@ private fun PinnedBar(p: MessageQuoteDto, onUnpin: (Long) -> Unit) {
 // MARK: - Сообщения
 
 @Composable
-private fun MessageAvatar(url: String?, modifier: Modifier = Modifier) {
-    Box(modifier = modifier.size(30.dp).clip(CircleShape).background(hex("#d9d9d9"))) {
-        RemoteImage(fileUrl(url), Modifier.fillMaxSize())
+private fun MessageAvatar(url: String?, name: String?, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier.size(30.dp).clip(CircleShape).background(hex("#d9d9d9")),
+        contentAlignment = Alignment.Center,
+    ) {
+        val photo = fileUrl(url)
+        if (photo != null) {
+            RemoteImage(photo, Modifier.fillMaxSize())
+        } else {
+            Text((name ?: "?").take(1).uppercase(), style = AppFont.heading(13.sp))
+        }
     }
 }
 

@@ -127,7 +127,7 @@ fun MessageBubble(
             .widthIn(max = MessageBubbleMaxWidth)
             .width(IntrinsicSize.Max)
             .liquidGlass(shape, if (message.mine) Fills.Active else Fills.Glass)
-            .padding(12.dp),
+            .padding(start = 12.dp, end = 12.dp, top = 16.dp, bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         if (showHeader && !message.mine && !message.author.isNullOrEmpty() && !hasVoice) {
