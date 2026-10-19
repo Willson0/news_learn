@@ -100,7 +100,9 @@ struct MessageBubble: View {
             }
             footer
         }
-        .padding(12)
+        .padding(.horizontal, 12)
+        .padding(.top, 16)
+        .padding(.bottom, 12)
         .frame(maxWidth: Self.maxWidth, alignment: .leading)
         .fixedSize(horizontal: true, vertical: false)
         .modifier(BubbleGlass(mine: message.mine, shape: bubbleShape))

@@ -239,7 +239,7 @@ struct ChatView: View {
                             ForEach(Array(list.enumerated()), id: \.element.id) { idx, m in
                                 messageRow(m, prev: idx > 0 ? list[idx - 1] : nil,
                                            next: idx + 1 < list.count ? list[idx + 1] : nil)
-                                    .padding(.top, idx == 0 ? 0 : 12)
+                                    .padding(.top, idx == 0 ? 0 : (sameAuthor(list[idx - 1], m) ? 4 : 12))
                                     .id(m.id)
                             }
                         }
