@@ -17,11 +17,18 @@
             android:name=".MainActivity"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|screenLayout|uiMode|density"
             android:exported="true"
+            android:launchMode="singleTop"
             android:theme="@style/Theme.Karta"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="karta" android:host="auth" />
             </intent-filter>
         </activity>
     </application>

@@ -41,6 +41,11 @@ import app.karta.likvidnosti.ui.theme.T
 import app.karta.likvidnosti.ui.theme.designBottom
 import app.karta.likvidnosti.ui.theme.designTop
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
+import app.karta.likvidnosti.YandexSignIn
+import app.karta.likvidnosti.data.Session
+import app.karta.likvidnosti.data.TokenStore
 
 internal val AUTH_EMAIL_RE = Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")
 private val PHONE_RE = Regex("^\\+?[0-9\\s\\-()]{7,}$")
@@ -94,6 +99,20 @@ fun LoginScreen(
     var passwordConfirm by remember { mutableStateOf("") }
     var errors by remember { mutableStateOf(mapOf<String, String>()) }
     var submitting by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    LaunchedEffect(Unit) {
+        YandexSignIn.callbacks.collect { uri ->
+            val token = uri.getQueryParameter("token")
+            if (!token.isNullOrEmpty()) {
+                TokenStore.token = token
+                Session.load(force = true)
+                if (Session.user != null) onAuthed()
+                else { TokenStore.token = null; errors = mapOf("identifier" to "Не удалось загрузить профиль") }
+            } else {
+                errors = mapOf("identifier" to (uri.getQueryParameter("error") ?: "Не удалось войти через Яндекс"))
+            }
+        }
+    }
     val scope = rememberCoroutineScope()
 
     fun switchMode(m: AuthMode) {
@@ -265,7 +284,9 @@ fun LoginScreen(
                     .padding(top = 12.dp, bottom = designBottom(T.NavBarBottom)),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                AppButton("Войти с Yandex", variant = ButtonVariant.Secondary) {}
+                AppButton("Войти с Yandex", variant = ButtonVariant.Secondary) {
+                    YandexSignIn.start(context)
+                }
                 AppButton(
                     if (mode == AuthMode.Login) "Войти" else "Далее",
                     variant = ButtonVariant.Accent,
