@@ -66,11 +66,10 @@ struct RegisterProfileView: View {
                             .onChange(of: tag) { _ in errors["username"] = nil }
                     }
                 }
-                .padding(.top, 35)
+                .padding(.top, 24)
             }
         } buttons: {
             legal
-                .padding(.bottom, 3)
             AppButton(title: "Зарегистрироваться", variant: .accent, disabled: saving || uploading) { submit() }
         }
         .onChange(of: photoItem) { _ in loadPicked() }

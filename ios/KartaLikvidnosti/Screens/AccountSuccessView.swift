@@ -12,12 +12,8 @@ struct AccountSuccessView: View {
         }
     }
 
+    // «успешно» (Figma 363:9535 …): Kreadon 24 по центру экрана.
     var body: some View {
-        Text(message)
-            .font(Theme.sans(Theme.fontLg)).foregroundStyle(Theme.text)
-            .multilineTextAlignment(.center)
-            .padding(Theme.screenX)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .screenBackground()
+        AuthMessageView(text: message)
     }
 }

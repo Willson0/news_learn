@@ -1,5 +1,10 @@
 import SwiftUI
 
+/// «Профиль push-уведомления» (Figma 337:26945, 337:27005, 349:8338):
+/// заголовок Kreadon 24 на y=160, блок свитчей 361 (#25262A, радиус 24,
+/// строки 43, Min Sans 14), через 40 — «Уведомления по инструментам»,
+/// подпись 12 pt белый 65 %, блок чипов (отступ 12, шаг 4).
+/// «Только по инструментам» показывается, пока не включены все уведомления.
 struct NotificationsView: View {
     @State private var allNotifications = true
     @State private var byInstrument = false
@@ -7,44 +12,58 @@ struct NotificationsView: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 0) {
                 Text("Уведомления").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
 
-                VStack(spacing: 18) {
-                    HStack {
-                        Text("Все уведомления").font(Theme.sans(Theme.fontMd)).foregroundStyle(Theme.text)
-                        Spacer()
-                        AppToggle(isOn: $allNotifications)
-                    }
+                VStack(spacing: 0) {
+                    switchRow("Все уведомления", $allNotifications)
                     if !allNotifications {
-                        HStack {
-                            Text("Только по инструментам").font(Theme.sans(Theme.fontMd)).foregroundStyle(Theme.text)
-                            Spacer()
-                            AppToggle(isOn: $byInstrument)
-                        }
+                        switchRow("Только по инструментам", $byInstrument)
+                            .transition(.opacity)
                     }
                 }
-                .padding(16).background(Theme.surface).clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+                .padding(.top, 24)
 
                 Text("Уведомления\nпо инструментам").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
-                Text("Для этой функции выше включите уведомления по инструментам")
-                    .font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textMuted)
+                    .padding(.top, 40)
+                Text("Для этой функции выше включите\nуведомления по инструментам")
+                    .font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
+                    .padding(.top, 12)
 
-                FlowLayout(spacing: 8) {
+                FlowLayout(spacing: 4, lineSpacing: 4) {
                     ForEach(instruments.indices, id: \.self) { i in
                         InstrumentChip(label: instruments[i].label, on: Binding(
                             get: { instruments[i].on },
                             set: { instruments[i].on = $0; saveInstruments() }))
                     }
                 }
-                .padding(16).background(Theme.surface).clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+                .padding(.top, 24)
+                .opacity(byInstrument || allNotifications ? 1 : 0.5)
             }
-            .padding(.horizontal, Theme.screenX).padding(.top, 16).padding(.bottom, 40)
+            .padding(.horizontal, Theme.screenX)
+            .padding(.top, 32)
+            .padding(.bottom, 40)
         }
         .screenBackground()
+        .animation(.easeOut(duration: 0.2), value: allNotifications)
         .task { await load() }
         .onChange(of: allNotifications) { v in Task { try? await Api.updateNotifications(["all": v]) } }
         .onChange(of: byInstrument) { v in Task { try? await Api.updateNotifications(["by_instrument": v]) } }
+    }
+
+    private func switchRow(_ title: String, _ isOn: Binding<Bool>) -> some View {
+        HStack {
+            Text(title).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
+            Spacer(minLength: 8)
+            AppToggle(isOn: isOn)
+        }
+        .frame(height: 43)
     }
 
     private func load() async {

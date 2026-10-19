@@ -18,58 +18,72 @@ struct ProfileEditView: View {
         return src.isEmpty ? "" : String(src.prefix(1)).uppercased()
     }
 
-    var body: some View {
-        VStack(spacing: 24) {
-            HStack {
-                Spacer()
-                Button { save() } label: {
-                    Text(saving ? "Сохранение…" : "Готово").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
-                        .padding(.horizontal, 22).padding(.vertical, 11)
-                        .background(Theme.surfaceMuted).overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 1)).clipShape(Capsule())
-                }.buttonStyle(.plain).opacity(saving ? 0.6 : 1).disabled(saving)
-            }
+    @State private var tagError: String? = nil
 
-            VStack(spacing: 14) {
-                ZStack {
-                    AvatarCircle(url: fileURL(avatarUrl), size: 148, initial: avatarInitial)
-                        .overlay(Circle().stroke(Color.white.opacity(0.08), lineWidth: 1))
-                    if uploading {
-                        Circle().fill(Color.black.opacity(0.35)).frame(width: 148, height: 148)
-                        ProgressView().tint(.white)
+    // «Профиль изменить» (Figma 337:26931, ошибка 349:12444): «назад» и
+    // «Готово» (стекло 72×42) на y=78, между ними аватар 148 с y=78,
+    // «Изменить фотографию» 14 pt на y=238, поля «Имя» и «Тег» с подписью
+    // (64 pt, через 12) с y=281.
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 0) {
+                PhotosPicker(selection: $photoItem, matching: .images) {
+                    VStack(spacing: 12) {
+                        ZStack {
+                            AvatarCircle(url: fileURL(avatarUrl), size: 148, initial: avatarInitial)
+                            if uploading {
+                                Circle().fill(Color.black.opacity(0.35)).frame(width: 148, height: 148)
+                                ProgressView().tint(.white)
+                            }
+                        }
+                        Text(uploading ? "Загрузка…" : "Изменить фотографию")
+                            .font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
                     }
                 }
-                PhotosPicker(selection: $photoItem, matching: .images) {
-                    Text(uploading ? "Загрузка…" : "Изменить фотографию")
-                        .font(Theme.sans(Theme.fontMd)).foregroundStyle(Theme.text)
-                }.disabled(uploading)
-                if avatarUrl != nil {
-                    Button { removePhoto() } label: {
-                        Text("Удалить фото").font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.error)
-                    }.buttonStyle(.plain).disabled(uploading)
+                .buttonStyle(.plain)
+                .disabled(uploading)
+                .contextMenu {
+                    if avatarUrl != nil {
+                        Button("Удалить фото", role: .destructive) { removePhoto() }
+                    }
                 }
-            }.padding(.vertical, 8)
 
-            VStack(spacing: 12) {
-                labeledField("Имя", $name)
-                labeledField("Тег", $tag)
+                VStack(spacing: 12) {
+                    AppInput(text: $name, placeholder: "Введите имя", label: "Имя", textContentType: .name)
+                    AuthField(error: tagError) {
+                        AppInput(text: $tag, placeholder: "Придумайте тег", label: "Тег", error: tagError != nil)
+                            .onChange(of: tag) { _ in tagError = nil }
+                    }
+                }
+                .padding(.top, 24)
             }
-            Spacer()
+            .padding(.horizontal, Theme.screenX)
+            .padding(.top, 78)
+            .padding(.bottom, 40)
         }
-        .padding(.horizontal, Theme.screenX).padding(.top, 16).padding(.bottom, 40)
+        .ignoresSafeArea(.container, edges: .top)
+        .overlay(alignment: .top) {
+            HStack(alignment: .top) {
+                GlassBackButton()
+                Spacer()
+                Button { save() } label: {
+                    Text(saving ? "…" : "Готово")
+                        .font(Theme.sans(13)).tracking(0.52)
+                        .foregroundStyle(Theme.text)
+                        .frame(width: 72, height: 42)
+                        .liquidGlass(Capsule(), interactive: true)
+                }
+                .buttonStyle(PressableStyle())
+                .disabled(saving)
+            }
+            .padding(.horizontal, Theme.screenX)
+            .padding(.top, Theme.topBarY)
+            .ignoresSafeArea(.container, edges: .top)
+        }
         .screenBackground()
+        .animation(.easeOut(duration: 0.2), value: tagError)
         .onChange(of: photoItem) { _ in loadPicked() }
         .task { await load() }
-    }
-
-    private func labeledField(_ label: String, _ text: Binding<String>) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
-            TextField("", text: text).foregroundStyle(Theme.text).tint(Theme.green)
-                .autocorrectionDisabled()
-        }
-        .padding(.horizontal, 16).padding(.vertical, 12)
-        .background(Theme.surfaceMuted).overlay(RoundedRectangle(cornerRadius: Theme.radiusInput).stroke(Color.white.opacity(0.08), lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusInput, style: .continuous))
     }
 
     private func load() async {
@@ -119,6 +133,9 @@ struct ProfileEditView: View {
                 await session.load(force: true)
                 Haptics.medium()
                 router.pop()
+            } catch let e as ApiError {
+                Haptics.rigid()
+                tagError = e.errors["username"]?.first ?? e.message
             } catch {
                 Haptics.rigid()
             }

@@ -30,31 +30,35 @@ struct AccountChangeView: View {
         }
     }
 
+    // «Смена пароля / номера / почты» (Figma 363:9417, 363:9499, 363:9459):
+    // заголовок Kreadon 24 по центру на y=278, поля 48 через 12 с y=331,
+    // внизу кнопка (низ — 45 pt).
     var body: some View {
-        VStack(spacing: 0) {
-            Spacer().frame(height: 100)
-            VStack(spacing: 16) {
-                Text(config.title).font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
-                VStack(spacing: 12) {
-                    ForEach(config.fields, id: \.key) { f in
-                        AppInput(text: binding(f.key), placeholder: f.placeholder, isSecure: f.secure, keyboard: f.keyboard)
-                    }
+        AuthScaffold(title: config.title, showBack: false, contentTop: 278) {
+            VStack(spacing: 12) {
+                ForEach(config.fields, id: \.key) { f in
+                    AppInput(text: binding(f.key), placeholder: f.placeholder, isSecure: f.secure,
+                             error: !error.isEmpty, keyboard: f.keyboard)
                 }
-                if !error.isEmpty { Text(error).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.error) }
+                if !error.isEmpty { AuthFieldError(text: error) }
             }
-            Spacer()
+        } buttons: {
             AppButton(title: config.button, variant: .accent) { submit() }
         }
-        .padding(.horizontal, Theme.screenX).padding(.top, 16).padding(.bottom, 24)
-        .screenBackground()
+        .animation(.easeOut(duration: 0.2), value: error)
     }
 
     private func binding(_ key: String) -> Binding<String> {
-        Binding(get: { values[key] ?? "" }, set: { values[key] = $0 })
+        Binding(get: { values[key] ?? "" },
+                set: { values[key] = field == "phone" ? PhoneMask.format($0) : $0; error = "" })
     }
 
     private func submit() {
         error = ""
+        if field == "password" {
+            if (values["new"] ?? "").count < 8 { error = "Пароль должен содержать от 8 символов"; Haptics.rigid(); return }
+            if values["new"] != values["confirm"] { error = "Пароль не совпадает"; Haptics.rigid(); return }
+        }
         Task {
             do {
                 switch field {
@@ -62,6 +66,7 @@ struct AccountChangeView: View {
                 case "phone": try await Api.changePhone((values["new"] ?? "").trimmed)
                 default: try await Api.changePassword(values["new"] ?? "", values["confirm"] ?? "", values["old"])
                 }
+                Haptics.medium()
                 router.push(.accountSuccess(field: field))
             } catch let e as ApiError { self.error = e.message }
             catch { self.error = "Не удалось сохранить изменения" }

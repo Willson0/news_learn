@@ -27,7 +27,7 @@ struct AuthScaffold<Content: View, Buttons: View>: View {
                         .foregroundStyle(Color.white.opacity(0.6))
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 300)
-                        .padding(.top, 8)
+                        .padding(.top, 12)
                 }
                 content()
                     .padding(.top, title == nil ? 0 : 24)
