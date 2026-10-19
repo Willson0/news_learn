@@ -17,32 +17,44 @@ struct LoginView: View {
     private let emailRE = #"^[^\s@]+@[^\s@]+\.[^\s@]+$"#
     private let phoneRE = #"^\+?[0-9\s\-()]{7,}$"#
 
+    // «Вход/регистрация» (Figma 337:26653, регистрация 337:26667, ошибки
+    // 349:9124/9982/9056…): «16+» Kreadon 24 белый 40 % справа на y=71, круг-логотип
+    // 100 (#25262A) на y=94, заголовок Kreadon 24 на y=234 — активная часть белая,
+    // вторая белый 40 %; поля 48 через 12 с y=287; ошибки 12 pt красным 70 %
+    // в 4 pt под полем; внизу «Войти с Yandex» и «Войти»/«Далее» (низ — 45 pt).
     var body: some View {
-        VStack(spacing: 0) {
+        ZStack(alignment: .top) {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
-                    HStack {
-                        Spacer()
-                        Text("16+").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.textMuted)
-                    }
-                    AvatarCircle(size: 100)
-                        .overlay(Circle().stroke(Color.white.opacity(0.06), lineWidth: 1))
-                        .padding(.top, 24)
+                    Circle()
+                        .fill(Theme.surface)
+                        .frame(width: 100, height: 100)
+                        .padding(.top, 94)
 
-                    HStack(spacing: 0) {
-                        toggle("Вход", .login)
-                        Text(" / ").foregroundStyle(Theme.textMuted)
-                        toggle("Регистрация", .register)
-                    }
-                    .font(Theme.heading(Theme.fontTitle))
-                    .padding(.vertical, 26)
+                    title
+                        .padding(.top, 40)
 
-                    if mode == .login { loginFields } else { registerFields }
+                    Group {
+                        if mode == .login { loginFields } else { registerFields }
+                    }
+                    .padding(.top, 24)
                 }
                 .padding(.horizontal, Theme.screenX)
-                .padding(.top, 24)
+                .padding(.bottom, 24)
             }
+            .scrollDismissesKeyboard(.interactively)
 
+            HStack {
+                Spacer()
+                Text("16+")
+                    .font(Theme.heading(Theme.fontTitle))
+                    .foregroundStyle(Theme.textMuted)
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 71)
+            .allowsHitTesting(false)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 12) {
                 AppButton(title: "Войти с Yandex", variant: .secondary) { Haptics.light() }
                 AppButton(title: mode == .login ? "Войти" : "Далее", variant: .accent, disabled: submitting) {
@@ -50,35 +62,68 @@ struct LoginView: View {
                 }
             }
             .padding(.horizontal, Theme.screenX)
-            .padding(.top, 16)
-            .padding(.bottom, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 45)
         }
-        .screenBackground { authGradient }
+        .ignoresSafeArea(.container, edges: [.top, .bottom])
+        .background(ScreenBackdrop())
+        .animation(.spring(response: 0.32, dampingFraction: 0.86), value: mode)
+        .animation(.easeOut(duration: 0.2), value: errors)
+        #if DEBUG
+        .onAppear {
+            // `-kl_auth signup | loginErrors | signupErrors` — состояния для сверки с макетом.
+            switch UserDefaults.standard.string(forKey: "kl_auth") {
+            case "signup": mode = .register
+            case "loginErrors": identifier = "BIBI@JKIJI.RU"; password = "1234567"; _ = validateLogin()
+                errors["identifier"] = "Неверный email или номер телефона"; errors["password"] = "Неверный пароль"
+            case "signupErrors": mode = .register; email = "bibi@"; phone = "+7 (999"; password = "123"
+                passwordConfirm = "1"; _ = validateRegister()
+            default: break
+            }
+        }
+        #endif
     }
 
-    private func toggle(_ title: String, _ m: Mode) -> some View {
-        Button {
-            if mode != m { mode = m; errors = [:]; Haptics.light() }
-        } label: {
-            Text(title).foregroundStyle(mode == m ? Theme.text : Theme.textMuted)
+    /// «Вход / Регистрация»: косая черта принадлежит активной части.
+    private var title: some View {
+        HStack(spacing: 0) {
+            Button { switchMode(.login) } label: {
+                Text(mode == .login ? "Вход / " : "Вход ")
+                    .foregroundStyle(mode == .login ? Theme.text : Theme.textMuted)
+            }
+            .buttonStyle(.plain)
+            Button { switchMode(.register) } label: {
+                Text(mode == .register ? "/ Регистрация" : "Регистрация")
+                    .foregroundStyle(mode == .register ? Theme.text : Theme.textMuted)
+            }
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
+        .font(Theme.heading(Theme.fontTitle))
+    }
+
+    private func switchMode(_ m: Mode) {
+        guard mode != m else { return }
+        Haptics.light()
+        mode = m
+        errors = [:]
     }
 
     @ViewBuilder private var loginFields: some View {
         VStack(spacing: 12) {
             field(error: errors["identifier"]) {
                 AppInput(text: $identifier, placeholder: "Email или номер телефона",
-                         error: errors["identifier"] != nil, textContentType: .username)
+                         error: errors["identifier"] != nil, keyboard: .emailAddress, textContentType: .username)
             }
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 4) {
                 AppInput(text: $password, placeholder: "Пароль", isSecure: true,
                          error: errors["password"] != nil, textContentType: .password)
-                HStack {
-                    if let e = errors["password"] { Text(e).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.error) }
+                HStack(alignment: .top) {
+                    if let e = errors["password"] { errorText(e) }
                     Spacer()
                     Button("Забыли пароль?") { router.authPath.append(.passwordRecovery) }
-                        .font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
+                        .font(Theme.sans(Theme.fontSm))
+                        .foregroundStyle(Color.white.opacity(0.6))
+                        .padding(.top, 8)
                 }
             }
         }
@@ -93,36 +138,37 @@ struct LoginView: View {
             field(error: errors["phone"]) {
                 AppInput(text: $phone, placeholder: "Номер телефона", error: errors["phone"] != nil,
                          keyboard: .phonePad, textContentType: .telephoneNumber)
+                    .onChange(of: phone) { v in
+                        let f = PhoneMask.format(v)
+                        if f != v { phone = f }
+                    }
             }
-            VStack(alignment: .leading, spacing: 6) {
-                AppInput(text: $password, placeholder: "Пароль", isSecure: true, error: errors["password"] != nil)
-                Text("Пароль должен содержать от 8 символов")
+            VStack(alignment: .leading, spacing: 4) {
+                AppInput(text: $password, placeholder: "Пароль", isSecure: true, error: errors["password"] != nil,
+                         textContentType: .newPassword)
+                Text(errors["password"] ?? "Пароль должен содержать от 8 символов")
                     .font(Theme.sans(Theme.fontSm))
-                    .foregroundStyle(errors["password"] != nil ? Theme.error : Theme.textSecondary)
+                    .foregroundStyle(errors["password"] != nil ? Theme.error.opacity(0.7) : Theme.text)
             }
             field(error: errors["passwordConfirm"]) {
                 AppInput(text: $passwordConfirm, placeholder: "Подтвердите пароль", isSecure: true,
-                         error: errors["passwordConfirm"] != nil)
+                         error: errors["passwordConfirm"] != nil, textContentType: .newPassword)
             }
         }
     }
 
     @ViewBuilder private func field<Content: View>(error: String?, @ViewBuilder _ content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 4) {
             content()
-            if let error = error { Text(error).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.error) }
+            if let error = error { errorText(error) }
         }
     }
 
-    private var authGradient: some View {
-        ZStack {
-            Theme.bg
-            LinearGradient(colors: [Color(hex: "#1a1b1d"), Color(hex: "#1e1f21"), Color(hex: "#161719")],
-                           startPoint: .top, endPoint: .bottom)
-            RadialGradient(colors: [Color(hex: "#78285a").opacity(0.35), .clear],
-                           center: .init(x: 0.85, y: 0.06), startRadius: 0, endRadius: 320)
-        }
-        .ignoresSafeArea()
+    private func errorText(_ text: String) -> some View {
+        Text(text)
+            .font(Theme.sans(Theme.fontSm))
+            .foregroundStyle(Theme.error.opacity(0.7))
+            .transition(.opacity)
     }
 
     private func matches(_ value: String, _ pattern: String) -> Bool {
@@ -161,7 +207,7 @@ struct LoginView: View {
         var e: [String: String] = [:]
         let id = identifier.trimmed
         if id.isEmpty { e["identifier"] = "Введите email или номер телефона" }
-        else if !matches(id, emailRE) && !matches(id, phoneRE) { e["identifier"] = "Неверный формат email или телефона" }
+        else if !matches(id, emailRE) && !matches(id, phoneRE) { e["identifier"] = "Неверный email или номер телефона" }
         if password.isEmpty { e["password"] = "Введите пароль" }
         errors = e
         return e.isEmpty
@@ -169,8 +215,8 @@ struct LoginView: View {
 
     private func validateRegister() -> Bool {
         var e: [String: String] = [:]
-        if !matches(email.trimmed, emailRE) { e["email"] = "Неверный формат email" }
-        if !matches(phone.trimmed, phoneRE) { e["phone"] = "Неверный формат телефона" }
+        if !matches(email.trimmed, emailRE) { e["email"] = "Несуществующий email" }
+        if PhoneMask.digits(phone).count != 11 { e["phone"] = "Неверный номер телефона" }
         if password.count < 8 { e["password"] = "Пароль должен содержать от 8 символов" }
         if passwordConfirm != password { e["passwordConfirm"] = "Пароль не совпадает" }
         errors = e
@@ -180,4 +226,30 @@ struct LoginView: View {
 
 extension String {
     var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
+}
+
+/// Маска российского номера из макета: «+7 (999) 999-99-99».
+enum PhoneMask {
+    static func digits(_ s: String) -> String {
+        var d = s.filter(\.isNumber)
+        if d.first == "8" { d = "7" + d.dropFirst() }
+        if !d.isEmpty && d.first != "7" { d = "7" + d }
+        return String(d.prefix(11))
+    }
+
+    static func format(_ s: String) -> String {
+        let d = Array(digits(s))
+        guard !d.isEmpty else { return "" }
+        var out = "+7"
+        let rest = d.dropFirst()
+        for (i, ch) in rest.enumerated() {
+            switch i {
+            case 0: out += " (" + String(ch)
+            case 3: out += ") " + String(ch)
+            case 6, 8: out += "-" + String(ch)
+            default: out.append(ch)
+            }
+        }
+        return out
+    }
 }

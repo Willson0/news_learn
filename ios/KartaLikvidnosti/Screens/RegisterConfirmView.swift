@@ -19,48 +19,27 @@ struct RegisterConfirmView: View {
         return "\(head)@\(parts[1])"
     }
 
+    // Подтверждение почты — в макете отдельного кадра нет, экран собран
+    // на каркасе «Восстановления пароля»: заголовок на y=234, поле кода,
+    // внизу «Повторное сообщение через m:ss» и «Далее».
     var body: some View {
-        VStack(spacing: 0) {
-            Circle().fill(Color.white.opacity(0.04))
-                .overlay(Circle().stroke(Color.white.opacity(0.06), lineWidth: 1))
-                .frame(width: 72, height: 72)
-                .padding(.top, 8).padding(.bottom, 28)
-
-            Text("Подтверждение почты").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
-                .padding(.bottom, 12)
-            (Text("Мы отправили код подтверждения на ") + Text(maskedEmail).bold() + Text(". Введите его ниже."))
-                .font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
-                .multilineTextAlignment(.center).lineSpacing(4)
-                .padding(.bottom, 28)
-
-            VStack(alignment: .leading, spacing: 6) {
-                AppInput(text: $code, placeholder: "Код из письма", error: !error.isEmpty, keyboard: .numberPad)
+        AuthScaffold(title: "Подтверждение почты",
+                     subtitle: "Мы отправили код подтверждения на \(maskedEmail). Введите его ниже") {
+            AuthField(error: error.isEmpty ? nil : error) {
+                AppInput(text: $code, placeholder: "Код из письма", error: !error.isEmpty,
+                         keyboard: .numberPad, textContentType: .oneTimeCode)
                     .onChange(of: code) { newValue in
-                        code = String(newValue.filter(\.isNumber).prefix(6))
+                        let digits = String(newValue.filter(\.isNumber).prefix(6))
+                        if digits != newValue { code = digits }
                         error = ""
                     }
-                if !error.isEmpty { Text(error).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.error) }
             }
-
-            Button {
-                resend()
-            } label: {
-                Text(resendIn > 0 ? "Отправить код повторно (\(resendIn))" : "Отправить код повторно")
-                    .font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
-            }
-            .disabled(resendIn > 0)
-            .opacity(resendIn > 0 ? 0.5 : 1)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, 16)
-
-            Spacer()
-
-            AppButton(title: "Подтвердить", variant: .accent, disabled: submitting) { confirm() }
+        } buttons: {
+            AppButton(title: resendIn > 0 ? String(format: "Повторное сообщение через %d:%02d", resendIn / 60, resendIn % 60)
+                                          : "Отправить код повторно",
+                      variant: .secondary, disabled: resendIn > 0) { resend() }
+            AppButton(title: "Далее", variant: .accent, disabled: submitting) { confirm() }
         }
-        .padding(.horizontal, Theme.screenX)
-        .padding(.top, 40)
-        .padding(.bottom, 24)
-        .screenBackground()
         .onAppear { startCooldown() }
         .onDisappear { timer?.invalidate() }
     }
@@ -81,7 +60,7 @@ struct RegisterConfirmView: View {
             do {
                 let user = try await Api.confirmRegistration(email: email, code: code)
                 session.setCurrent(user)
-                router.enterApp()
+                router.authPath.append(.registerProfile)
             } catch let e as ApiError {
                 Haptics.rigid(); error = e.firstError
             } catch { self.error = "Не удалось подтвердить код" }

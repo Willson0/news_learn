@@ -38,6 +38,8 @@ private struct AuthFlow: View {
                         RegisterConfirmView(email: email).navigationBarBackButtonHidden(false)
                     case .passwordRecovery:
                         PasswordRecoveryView()
+                    case .registerProfile:
+                        RegisterProfileView().navigationBarBackButtonHidden(true)
                     }
                 }
         }

@@ -27,6 +27,7 @@ enum Route: Hashable {
 enum AuthRoute: Hashable {
     case registerConfirm(email: String)
     case passwordRecovery
+    case registerProfile
 }
 
 @MainActor
@@ -59,6 +60,7 @@ final class Router: ObservableObject {
             switch a {
             case "recovery": authPath = [.passwordRecovery]
             case "register": authPath = [.registerConfirm(email: "demo@karta.app")]
+            case "profile": authPath = [.registerProfile]
             default: break
             }
         }

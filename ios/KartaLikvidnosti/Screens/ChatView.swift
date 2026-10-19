@@ -73,7 +73,7 @@ struct ChatView: View {
         }
     }
 
-    private var showSend: Bool { !draft.trimmed.isEmpty || replyTo != nil }
+    private var showSend: Bool { !draft.trimmed.isEmpty }
 
     /// Высота шапки (и закрепа), под которой начинаются сообщения.
     private var contentTop: CGFloat {
@@ -381,11 +381,19 @@ struct ChatView: View {
 
     private var inputBar: some View {
         HStack(alignment: .bottom, spacing: 12) {
-            GlassCircleButton(icon: AppIcons.plus, iconSize: 20) {
+            // Поворачивается только «+», стекло остаётся на месте: вращение
+            // самого glassEffect на iOS 26 раздувает линзу на поле ввода.
+            Button {
                 Haptics.light()
                 attachOpen.toggle()
+            } label: {
+                Icon(AppIcons.plus, size: 20, color: Theme.text)
+                    .rotationEffect(.degrees(attachOpen ? 45 : 0))
+                    .frame(width: 42, height: 42)
+                    .contentShape(Circle())
+                    .liquidGlass(Circle())
             }
-            .rotationEffect(.degrees(attachOpen ? 45 : 0))
+            .buttonStyle(PressableStyle())
             .overlay(alignment: .bottomLeading) {
                 if attachOpen {
                     attachMenu

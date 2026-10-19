@@ -15,64 +15,71 @@ struct PasswordRecoveryView: View {
     private let emailRE = #"^[^\s@]+@[^\s@]+\.[^\s@]+$"#
     private let resendSeconds = 5 * 60
 
+    @State private var done = false
+
     private var canResend: Bool { secondsLeft <= 0 }
     private var resendLabel: String {
         if canResend { return codeSent ? "Отправить код повторно" : "Отправить код" }
         return String(format: "Повторное сообщение через %d:%02d", secondsLeft / 60, secondsLeft % 60)
     }
 
+    // «Восстановление пароля» (Figma 349:10487 … 349:10715): почта и новый
+    // пароль; «Далее» отправляет письмо с кодом и запускает таймер повторной
+    // отправки 5:00, после чего кнопка становится «Сменить пароль». Бэкенд
+    // подтверждает смену кодом из письма, поэтому после отправки появляется
+    // поле кода. Успех — «Вы успешно сменили пароль».
     var body: some View {
-        VStack(spacing: 0) {
-            Spacer().frame(height: 76)
-            Text("Восстановление пароля").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
-                .padding(.bottom, 12)
-            Text("Отправим код на указанную почту. Введите его вместе с новым паролем — позднее пароль можно сменить в профиле.")
-                .font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
-                .multilineTextAlignment(.center).lineSpacing(3).frame(maxWidth: 300)
-                .padding(.bottom, 28)
-
-            VStack(spacing: 12) {
-                field(error: errors["email"]) {
-                    AppInput(text: $email, placeholder: "Email", error: errors["email"] != nil,
-                             keyboard: .emailAddress, textContentType: .emailAddress)
+        if done {
+            AuthMessageView(text: "Вы успешно сменили пароль", showBack: true)
+                .task {
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    router.enterApp()
                 }
-                field(error: errors["code"]) {
-                    AppInput(text: $code, placeholder: "Код из письма", error: errors["code"] != nil,
-                             keyboard: .numberPad, textContentType: .oneTimeCode)
-                        .onChange(of: code) { v in
-                            let digits = v.filter(\.isNumber)
-                            code = String(digits.prefix(6))
-                            if errors["code"] != nil { errors["code"] = nil }
+        } else {
+            AuthScaffold(title: "Восстановление пароля",
+                         subtitle: "Временный пароль придет на указанную почту, позднее пароль можно сменить в профиле") {
+                VStack(spacing: 12) {
+                    AuthField(error: errors["email"]) {
+                        AppInput(text: $email, placeholder: "Email", error: errors["email"] != nil,
+                                 keyboard: .emailAddress, textContentType: .emailAddress)
+                    }
+                    AuthField(error: errors["newPassword"]) {
+                        AppInput(text: $newPassword, placeholder: "Новый пароль", isSecure: true,
+                                 error: errors["newPassword"] != nil, textContentType: .newPassword)
+                    }
+                    if codeSent {
+                        AuthField(error: errors["code"]) {
+                            AppInput(text: $code, placeholder: "Код из письма", error: errors["code"] != nil,
+                                     keyboard: .numberPad, textContentType: .oneTimeCode)
+                                .onChange(of: code) { v in
+                                    let digits = String(v.filter(\.isNumber).prefix(6))
+                                    if digits != v { code = digits }
+                                    if errors["code"] != nil { errors["code"] = nil }
+                                }
                         }
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
                 }
-                field(error: errors["newPassword"]) {
-                    AppInput(text: $newPassword, placeholder: "Новый пароль", isSecure: true, error: errors["newPassword"] != nil)
-                }
-            }
-
-            Spacer()
-
-            VStack(spacing: 12) {
+            } buttons: {
                 AppButton(title: resendLabel, variant: .secondary, disabled: !canResend) { resend() }
-                AppButton(title: "Далее", variant: .accent) { submit() }
+                AppButton(title: codeSent ? "Сменить пароль" : "Далее", variant: .accent) {
+                    codeSent ? submit() : next()
+                }
             }
-            .padding(.top, 24)
+            .animation(.easeOut(duration: 0.2), value: codeSent)
+            .animation(.easeOut(duration: 0.2), value: errors)
+            .onDisappear { timer?.invalidate() }
         }
-        .padding(.horizontal, Theme.screenX)
-        .padding(.top, 24)
-        .padding(.bottom, 24)
-        .screenBackground(
-            LinearGradient(colors: [Color(hex: "#1a1b1d"), Color(hex: "#1e1f21"), Color(hex: "#161719")],
-                           startPoint: .top, endPoint: .bottom)
-        )
-        .onDisappear { timer?.invalidate() }
     }
 
-    private func field<Content: View>(error: String?, @ViewBuilder _ content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            content()
-            if let e = error { Text(e).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.error) }
-        }
+    /// Первый шаг: проверяем поля и отправляем письмо с кодом.
+    private func next() {
+        var e: [String: String] = [:]
+        if !matches(email.trimmed) { e["email"] = "Несуществующий email" }
+        if newPassword.count < 8 { e["newPassword"] = "Пароль должен содержать от 8 символов" }
+        errors = e
+        if !e.isEmpty { Haptics.rigid(); return }
+        resend()
     }
 
     private func matches(_ v: String) -> Bool { v.range(of: emailRE, options: .regularExpression) != nil }
@@ -106,7 +113,7 @@ struct PasswordRecoveryView: View {
 
     private func submit() {
         var e: [String: String] = [:]
-        if !matches(email.trimmed) { e["email"] = "Неверный формат email" }
+        if !matches(email.trimmed) { e["email"] = "Несуществующий email" }
         if code.count < 6 { e["code"] = "Введите код из 6 цифр из письма" }
         if newPassword.count < 8 { e["newPassword"] = "Пароль должен содержать от 8 символов" }
         errors = e
@@ -116,7 +123,8 @@ struct PasswordRecoveryView: View {
             do {
                 let user = try await Api.resetPassword(email: email.trimmed, password: newPassword, code: code)
                 session.setCurrent(user)
-                router.enterApp()
+                Haptics.medium()
+                done = true
             } catch let err as ApiError {
                 Haptics.rigid()
                 if !err.errors.isEmpty {
