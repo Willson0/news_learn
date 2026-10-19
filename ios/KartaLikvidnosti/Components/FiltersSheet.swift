@@ -99,11 +99,16 @@ struct FiltersSheet: View {
                         }
                         Button {
                             Haptics.light()
-                            calendarOpen = true
+                            calendarOpen.toggle()
                         } label: {
                             Icon(AppIcons.calendarNumber, size: 32, color: Theme.text)
                         }
                         .buttonStyle(.plain)
+                        // Системный календарь во всплывающем окне у кнопки (не лист).
+                        .popover(isPresented: $calendarOpen, attachmentAnchor: .point(.bottom), arrowEdge: .top) {
+                            DateRangePopover(start: $dateStart, end: $dateEnd)
+                                .popoverOnPhone()
+                        }
                     }
                     .padding(.top, 40)
 
@@ -128,9 +133,6 @@ struct FiltersSheet: View {
                 .padding(.top, 11)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .sheet(isPresented: $calendarOpen) {
-            DateRangeSheet(start: $dateStart, end: $dateEnd)
-        }
         .background(Theme.surface, in: UnevenRoundedRectangle(topLeadingRadius: 24, topTrailingRadius: 24, style: .continuous))
         .ignoresSafeArea(.container, edges: .bottom)
         .offset(y: max(dragY, 0))
@@ -166,12 +168,11 @@ struct FiltersSheet: View {
     }
 }
 
-/// Выбор периода системным календарём (graphical DatePicker) в нативном листе:
-/// на iOS 26 лист и календарь получают системное Liquid Glass.
-struct DateRangeSheet: View {
+/// Выбор периода двумя системными календарями (graphical DatePicker) во
+/// всплывающем окне у кнопки. Значения применяются сразу при выборе.
+struct DateRangePopover: View {
     @Binding var start: String?   // ISO yyyy-MM-dd
     @Binding var end: String?
-    @Environment(\.dismiss) private var dismiss
     @State private var from = Date()
     @State private var to = Date()
 
@@ -184,37 +185,38 @@ struct DateRangeSheet: View {
     }()
 
     var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    DatePicker("С", selection: $from, displayedComponents: .date)
-                        .datePickerStyle(.graphical)
-                }
-                Section {
-                    DatePicker("По", selection: $to, in: from...Date.distantFuture, displayedComponents: .date)
-                        .datePickerStyle(.graphical)
-                }
+        ScrollView {
+            VStack(spacing: 12) {
+                DatePicker("С", selection: $from, displayedComponents: .date)
+                    .datePickerStyle(.graphical)
+                DatePicker("По", selection: $to, in: from...Date.distantFuture, displayedComponents: .date)
+                    .datePickerStyle(.graphical)
             }
-            .navigationTitle("Период")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Отмена") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Готово") {
-                        start = Self.isoFormatter.string(from: from)
-                        end = Self.isoFormatter.string(from: max(from, to))
-                        dismiss()
-                    }
-                }
-            }
+            .padding(12)
         }
-        .presentationDetents([.large])
+        .frame(width: 340, height: 560)
         .onAppear {
             let s = start.flatMap { Self.isoFormatter.date(from: $0) } ?? Date()
             from = s
             to = end.flatMap { Self.isoFormatter.date(from: $0) } ?? s
+        }
+        .onChange(of: from) { _ in commit() }
+        .onChange(of: to) { _ in commit() }
+    }
+
+    private func commit() {
+        start = Self.isoFormatter.string(from: from)
+        end = Self.isoFormatter.string(from: max(from, to))
+    }
+}
+
+private extension View {
+    /// На iPhone поповер по умолчанию становится листом; здесь оставляем поповер (iOS 16.4+).
+    @ViewBuilder func popoverOnPhone() -> some View {
+        if #available(iOS 16.4, *) {
+            self.presentationCompactAdaptation(.popover)
+        } else {
+            self
         }
     }
 }
