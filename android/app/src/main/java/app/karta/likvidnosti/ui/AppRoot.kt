@@ -256,7 +256,14 @@ fun AppRoot() {
                 arguments = listOf(navArgument("slug") { type = NavType.StringType }),
             ) { entry ->
                 val slug = entry.arguments?.getString("slug").orEmpty()
-                ChatInfoScreen(slug = slug, onBack = { actions.back() }, onEdit = { actions.toChatEdit(slug) })
+                ChatInfoScreen(
+                    slug = slug,
+                    onBack = { actions.back() },
+                    onEdit = { actions.toChatEdit(slug) },
+                    onReport = { actions.toReportDetail(it) },
+                    onUser = { actions.toChatUser(it) },
+                    onLeave = { actions.toCommunity() },
+                )
             }
             composable(
                 Routes.CHAT_EDIT,

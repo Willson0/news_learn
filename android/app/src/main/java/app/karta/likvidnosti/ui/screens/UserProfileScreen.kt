@@ -1,14 +1,11 @@
 package app.karta.likvidnosti.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -18,19 +15,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.karta.likvidnosti.data.Repository
 import app.karta.likvidnosti.data.api.UserProfileDto
-import app.karta.likvidnosti.ui.components.insetTop
-import app.karta.likvidnosti.ui.icons.AppIcon
-import app.karta.likvidnosti.ui.icons.AppIcons
+import app.karta.likvidnosti.data.fileUrl
+import app.karta.likvidnosti.ui.components.AvatarCircle
+import app.karta.likvidnosti.ui.components.BackdropBox
+import app.karta.likvidnosti.ui.components.GlassBackButton
+import app.karta.likvidnosti.ui.components.RemoteImage
+import app.karta.likvidnosti.ui.theme.AppFont
 import app.karta.likvidnosti.ui.theme.T
-import coil.compose.AsyncImage
+import app.karta.likvidnosti.ui.theme.designTop
+import app.karta.likvidnosti.ui.theme.hex
 import kotlin.math.abs
 
 private fun plural(n: Int, forms: Triple<String, String, String>): String {
@@ -44,6 +45,12 @@ private fun plural(n: Int, forms: Triple<String, String, String>): String {
     }
 }
 
+/**
+ * «Чат Профиль пользователя» (Figma 337:30766) — порт iOS `UserProfileView`:
+ * фон #3B5839 с размытой аватаркой (blur 50 + чёрный 50 %), «назад» на y=78;
+ * «Зарегистрирован» Kreadon 24 на y=274, дата 14 белый 65 % через 12, аватар
+ * 148 через 40, имя Kreadon 20 через 12, тег 14 через 4.
+ */
 @Composable
 fun UserProfileScreen(userId: Long, onBack: () -> Unit) {
     var user by remember { mutableStateOf<UserProfileDto?>(null) }
@@ -54,58 +61,71 @@ fun UserProfileScreen(userId: Long, onBack: () -> Unit) {
         loading = false
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(listOf(Color(0xFF4A5A54), Color(0xFF2A2D2E), Color(0xFF1A1B1D))),
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(start = T.ScreenX, top = insetTop() + 16.dp)
-                .size(42.dp)
-                .clip(CircleShape)
-                .background(T.SurfaceMuted)
-                .clickable { onBack() },
-            contentAlignment = Alignment.Center,
-        ) { AppIcon(AppIcons.Back, size = 22.dp) }
+    val u = user
+    val registeredAt = u?.registeredAt
+    val registeredDays = u?.registeredDays
+    val registered = when {
+        registeredAt == null -> ""
+        registeredDays == null -> registeredAt
+        else -> "$registeredAt ($registeredDays ${plural(registeredDays, Triple("день", "дня", "дней"))})"
+    }
 
-        val u = user
-        if (u != null) {
-            val registered = buildString {
-                append(u.registeredAt ?: "")
-                if (u.registeredDays != null) {
-                    val word = plural(u.registeredDays, Triple("день", "дня", "дней"))
-                    append(" (${u.registeredDays} $word)")
-                }
-            }
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Text("Зарегистрирован", color = T.Text, fontSize = T.FsTitle, fontWeight = FontWeight.Bold)
-                Text(registered, color = T.TextSecondary, fontSize = T.FsBase, modifier = Modifier.padding(bottom = 20.dp))
-                Box(
+    BackdropBox(
+        modifier = Modifier.fillMaxSize(),
+        contentModifier = Modifier.background(hex("#3b5839")),
+        content = {
+            RemoteImage(
+                fileUrl(u?.avatarUrl),
+                Modifier.fillMaxSize().blur(50.dp, BlurredEdgeTreatment.Rectangle),
+            )
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f)))
+
+            if (u != null) {
+                Column(
                     modifier = Modifier
-                        .size(160.dp)
-                        .clip(CircleShape)
-                        .background(Brush.linearGradient(listOf(Color(0xFF6B7350), Color(0xFF3F4A2C))))
-                        .padding(bottom = 14.dp),
+                        .fillMaxWidth()
+                        .padding(top = designTop(274.dp))
+                        .padding(horizontal = T.ScreenX),
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    val av = u.avatarUrl
-                    if (!av.isNullOrEmpty()) {
-                        AsyncImage(model = av, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().clip(CircleShape))
+                    Text("Зарегистрирован", style = AppFont.heading(T.FsTitle))
+                    Text(
+                        registered,
+                        style = AppFont.sans(T.FsBase, color = T.TextSecondary),
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+                    AvatarCircle(
+                        fileUrl(u.avatarUrl),
+                        modifier = Modifier.padding(top = 40.dp),
+                        size = 148.dp,
+                        name = u.name ?: u.username,
+                    )
+                    Text(
+                        u.name ?: "",
+                        style = AppFont.heading(20.sp),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+                    val un = u.username
+                    if (!un.isNullOrEmpty()) {
+                        Text(
+                            if (un.startsWith("@")) un else "@$un",
+                            style = AppFont.sans(T.FsBase),
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
                     }
                 }
-                Text(u.name ?: "", color = T.Text, fontSize = T.FsTitle, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 14.dp))
-                if (!u.username.isNullOrEmpty()) Text(u.username!!, color = T.TextSecondary, fontSize = T.FsMd)
-                if (!u.seen.isNullOrEmpty()) Text(u.seen!!, color = T.TextMuted, fontSize = T.FsSm)
+            } else if (!loading) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Пользователь не найден", style = AppFont.heading(T.FsTitle))
+                }
             }
-        } else if (!loading) {
-            Text("Пользователь не найден", color = T.Text, fontSize = T.FsTitle, fontWeight = FontWeight.Bold)
-        }
-    }
+        },
+        overlay = {
+            GlassBackButton(
+                modifier = Modifier.padding(start = T.ScreenX, top = designTop(T.TopBarY)),
+                onClick = onBack,
+            )
+        },
+    )
 }

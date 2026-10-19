@@ -3,18 +3,18 @@ package app.karta.likvidnosti.ui.screens
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -26,21 +26,37 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.karta.likvidnosti.data.Repository
 import app.karta.likvidnosti.data.Uploads
 import app.karta.likvidnosti.data.api.ApiException
 import app.karta.likvidnosti.data.fileUrl
-import app.karta.likvidnosti.ui.components.FieldError
-import app.karta.likvidnosti.ui.components.Screen
+import app.karta.likvidnosti.ui.components.AppInput
+import app.karta.likvidnosti.ui.components.AuthField
+import app.karta.likvidnosti.ui.components.BackdropBox
+import app.karta.likvidnosti.ui.components.CapsuleShape
+import app.karta.likvidnosti.ui.components.GlassBackButton
+import app.karta.likvidnosti.ui.components.ReportCover
+import app.karta.likvidnosti.ui.components.liquidGlass
+import app.karta.likvidnosti.ui.components.pressable
+import app.karta.likvidnosti.ui.components.screenBackground
+import app.karta.likvidnosti.ui.theme.AppFont
 import app.karta.likvidnosti.ui.theme.T
+import app.karta.likvidnosti.ui.theme.designTop
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 
+/**
+ * «Чат Инфа Настройки для админа» (Figma 337:36498, 349:12314) — порт iOS
+ * `ChatEditView`: как «Профиль изменить» — «назад» и стеклянная пилюля 72×42
+ * на y=78, аватар 148 с y=78, «Изменить фотографию» 14, поле «Имя» с
+ * подписью (64).
+ */
 @Composable
 fun ChatEditScreen(slug: String, onBack: () -> Unit) {
     var name by remember { mutableStateOf("") }
@@ -49,6 +65,7 @@ fun ChatEditScreen(slug: String, onBack: () -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -63,6 +80,7 @@ fun ChatEditScreen(slug: String, onBack: () -> Unit) {
     }
 
     fun save() {
+        if (saving) return
         if (name.trim().isEmpty()) { error = "Напишите название"; return }
         saving = true; error = null
         scope.launch {
@@ -72,6 +90,7 @@ fun ChatEditScreen(slug: String, onBack: () -> Unit) {
                     picked?.let { Uploads.filePart(context, "avatar", it)?.let { p -> add(p) } }
                 }
                 Repository.updateChat(slug, parts)
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                 onBack()
             } catch (ex: ApiException) {
                 error = ex.fieldError("title", "avatar") ?: ex.message
@@ -83,37 +102,73 @@ fun ChatEditScreen(slug: String, onBack: () -> Unit) {
         }
     }
 
-    Screen(verticalArrangement = Arrangement.spacedBy(24.dp)) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            Box(
+    BackdropBox(
+        modifier = Modifier.fillMaxSize(),
+        contentModifier = Modifier.screenBackground(),
+        content = {
+            Column(
                 modifier = Modifier
-                    .clip(T.ShapePill).background(T.SurfaceMuted).border(1.dp, Color(0x26FFFFFF), T.ShapePill)
-                    .clickable(enabled = !saving) { save() }
-                    .padding(horizontal = 14.dp, vertical = 11.dp),
-            ) { Text("Готово", color = T.Text, fontSize = T.FsBase) }
-        }
-
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            val model: Any? = picked ?: previewUrl
-            Box(
-                modifier = Modifier
-                    .size(150.dp)
-                    .clip(CircleShape)
-                    .background(Brush.linearGradient(listOf(Color(0xFFD7CFE0), Color(0xFFA9ADBD), Color(0xFFB7C2BF))))
-                    .clickable { picker.launch("image/*") },
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = T.ScreenX)
+                    .padding(top = designTop(78.dp), bottom = 40.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                if (model != null) {
-                    AsyncImage(model = model, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().clip(CircleShape))
+                Column(
+                    modifier = Modifier.pressable(pressAlpha = 1f) { picker.launch("image/*") },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    val local = picked
+                    Box(modifier = Modifier.size(148.dp).clip(CircleShape)) {
+                        if (local != null) {
+                            AsyncImage(
+                                model = local,
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        } else {
+                            ReportCover(previewUrl, Modifier.fillMaxSize())
+                        }
+                    }
+                    Text("Изменить фотографию", style = AppFont.sans(T.FsBase))
+                }
+
+                AuthField(error = error, modifier = Modifier.fillMaxWidth().padding(top = 24.dp)) {
+                    AppInput(
+                        value = name,
+                        onValueChange = { name = it; error = null },
+                        placeholder = "Название чата",
+                        label = "Имя",
+                        error = error != null,
+                    )
                 }
             }
-            Text("Изменить фотографию", color = T.Text, fontSize = T.FsMd, modifier = Modifier.clickable { picker.launch("image/*") })
-        }
-
-        LabeledInput("Название", name) { name = it; error = null }
-        FieldError(error)
-    }
+        },
+        overlay = {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = designTop(T.TopBarY))
+                    .padding(horizontal = T.ScreenX),
+                verticalAlignment = Alignment.Top,
+            ) {
+                GlassBackButton(onClick = onBack)
+                Spacer(Modifier.weight(1f))
+                Box(
+                    modifier = Modifier
+                        .size(72.dp, 42.dp)
+                        .liquidGlass(CapsuleShape)
+                        .pressable(enabled = !saving) { save() },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        if (saving) "…" else "Готово",
+                        style = AppFont.sans(13.sp).copy(letterSpacing = 0.52.sp),
+                    )
+                }
+            }
+        },
+    )
 }
