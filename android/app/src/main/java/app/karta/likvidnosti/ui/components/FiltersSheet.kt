@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package app.karta.likvidnosti.ui.components
 
 import androidx.activity.compose.BackHandler

@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package app.karta.likvidnosti.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
@@ -273,14 +275,11 @@ fun ProfileScreen(
                             }
                         }
                     }
-                    AnimatedVisibility(
+                    AnimatedSortPopup(
                         visible = sortOpen,
-                        enter = scaleIn(initialScale = 0.9f, transformOrigin = TransformOrigin(1f, 0f)) + fadeIn(),
-                        exit = scaleOut(targetScale = 0.9f, transformOrigin = TransformOrigin(1f, 0f)) + fadeOut(),
+                        sort = sort,
                         modifier = Modifier.align(Alignment.TopEnd).padding(top = 56.dp),
-                    ) {
-                        SortPopup(sort) { sort = it; sortOpen = false }
-                    }
+                    ) { sort = it; sortOpen = false }
                 }
             }
         }
@@ -441,6 +440,18 @@ private fun SettingRow(label: String, onClick: () -> Unit) {
     ) {
         Text(label, style = AppFont.sans(T.FsBase), modifier = Modifier.weight(1f))
         AppIcon(AppIcons.back, size = 16.dp, flipX = true)
+    }
+}
+
+@Composable
+private fun AnimatedSortPopup(visible: Boolean, sort: String, modifier: Modifier, onSelect: (String) -> Unit) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = scaleIn(initialScale = 0.9f, transformOrigin = TransformOrigin(1f, 0f)) + fadeIn(),
+        exit = scaleOut(targetScale = 0.9f, transformOrigin = TransformOrigin(1f, 0f)) + fadeOut(),
+        modifier = modifier,
+    ) {
+        SortPopup(sort, onSelect)
     }
 }
 
