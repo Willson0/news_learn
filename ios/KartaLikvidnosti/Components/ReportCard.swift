@@ -67,5 +67,6 @@ struct ReportCoverPlaceholder: View {
         Color.clear
             .overlay(Image("ReportCover").resizable().scaledToFill())
             .clipped()
+            .allowsHitTesting(false)
     }
 }

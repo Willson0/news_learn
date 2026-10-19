@@ -15,8 +15,11 @@ struct RemoteImage: View {
                     Color.clear
                 }
             }
+            .clipped()
+            .allowsHitTesting(false)
         } else {
             Color.clear
+                .allowsHitTesting(false)
         }
     }
 }

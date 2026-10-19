@@ -863,14 +863,31 @@ struct ChatView: View {
     }
 
     private func sendAttachment(data: Data, filename: String, mime: String, kind: String, duration: Int? = nil) {
+        guard !data.isEmpty else {
+            showAttachError("Файл не прочитался, попробуйте ещё раз")
+            return
+        }
         let reply = replyTo?.id
+        // Текст из поля ввода становится подписью к фото и файлу (голосовое без подписи).
+        let caption = kind == "voice" ? "" : draft.trimmed
         replyTo = nil
+        if !caption.isEmpty { draft = "" }
         attachOpen = false
         Task { @MainActor in
-            if let dto = try? await Api.sendMessage(chatId, replyTo: reply, attachment: (data, filename, mime), kind: kind, duration: duration) {
-                messages.append(ChatMessage(dto))
+            do {
+                let dto = try await Api.sendMessage(chatId, body: caption.isEmpty ? nil : caption, replyTo: reply,
+                                                    attachment: (data, filename, mime), kind: kind, duration: duration)
+                if let dto { messages.append(ChatMessage(dto)) }
+            } catch {
+                if !caption.isEmpty { draft = caption }
+                showAttachError((error as? ApiError)?.message ?? "Не удалось отправить вложение")
             }
         }
+    }
+
+    private func showAttachError(_ text: String) {
+        toast = text
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) { if toast == text { toast = nil } }
     }
 
     private func startVoice() {
