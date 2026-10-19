@@ -99,7 +99,7 @@ struct FiltersSheet: View {
                         }
                         Button {
                             Haptics.light()
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { calendarOpen.toggle() }
+                            calendarOpen = true
                         } label: {
                             Icon(AppIcons.calendarNumber, size: 32, color: Theme.text)
                         }
@@ -116,15 +116,6 @@ struct FiltersSheet: View {
                 .padding(.bottom, 60)
             }
 
-            if calendarOpen {
-                VStack(spacing: 8) {
-                    AppCalendar(start: $dateStart, end: $dateEnd)
-                }
-                .padding(.horizontal, Theme.screenX)
-                .padding(.top, 87)
-                .transition(.scale(scale: 0.92, anchor: .bottomTrailing).combined(with: .opacity))
-            }
-
             HStack {
                 Spacer()
                 PillActionButton(title: "Искать", action: apply)
@@ -137,6 +128,9 @@ struct FiltersSheet: View {
                 .padding(.top, 11)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .sheet(isPresented: $calendarOpen) {
+            DateRangeSheet(start: $dateStart, end: $dateEnd)
+        }
         .background(Theme.surface, in: UnevenRoundedRectangle(topLeadingRadius: 24, topTrailingRadius: 24, style: .continuous))
         .ignoresSafeArea(.container, edges: .bottom)
         .offset(y: max(dragY, 0))
@@ -169,6 +163,59 @@ struct FiltersSheet: View {
             dateMode: dateMode
         ))
         onClose()
+    }
+}
+
+/// Выбор периода системным календарём (graphical DatePicker) в нативном листе:
+/// на iOS 26 лист и календарь получают системное Liquid Glass.
+struct DateRangeSheet: View {
+    @Binding var start: String?   // ISO yyyy-MM-dd
+    @Binding var end: String?
+    @Environment(\.dismiss) private var dismiss
+    @State private var from = Date()
+    @State private var to = Date()
+
+    private static let isoFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    DatePicker("С", selection: $from, displayedComponents: .date)
+                        .datePickerStyle(.graphical)
+                }
+                Section {
+                    DatePicker("По", selection: $to, in: from...Date.distantFuture, displayedComponents: .date)
+                        .datePickerStyle(.graphical)
+                }
+            }
+            .navigationTitle("Период")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Отмена") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Готово") {
+                        start = Self.isoFormatter.string(from: from)
+                        end = Self.isoFormatter.string(from: max(from, to))
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .presentationDetents([.large])
+        .onAppear {
+            let s = start.flatMap { Self.isoFormatter.date(from: $0) } ?? Date()
+            from = s
+            to = end.flatMap { Self.isoFormatter.date(from: $0) } ?? s
+        }
     }
 }
 

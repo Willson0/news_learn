@@ -235,7 +235,11 @@ struct SegmentedControl: View {
 struct SelectionLens: View {
     var radius: CGFloat = Theme.radiusChip
     var body: some View {
-        Color.clear.liquidGlass(RoundedRectangle(cornerRadius: radius, style: .continuous), fill: PurpleFill())
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        Color.clear
+            .liquidGlass(shape, fill: PurpleFill())
+            .clipShape(shape)
+            .compositingGroup()
     }
 }
 
@@ -327,6 +331,7 @@ struct PurplePillButton: View {
                 .padding(.horizontal, 12)
                 .frame(height: 32)
                 .liquidGlass(Capsule(), fill: PurpleFill())
+                .clipShape(Capsule())
         }
         .buttonStyle(PressableStyle())
     }

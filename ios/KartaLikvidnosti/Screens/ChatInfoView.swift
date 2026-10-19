@@ -152,6 +152,7 @@ struct ChatInfoView: View {
                                     if tab == t.0 {
                                         Color.clear.liquidGlass(RoundedRectangle(cornerRadius: 20, style: .continuous),
                                                                 fill: PurpleFill())
+                                            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                                     }
                                 }
                         }

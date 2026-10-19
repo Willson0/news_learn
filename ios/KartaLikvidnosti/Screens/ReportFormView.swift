@@ -116,11 +116,11 @@ struct ReportFormView: View {
                 }
             }
         }
-        .overlay {
-            if confirmOpen {
-                ConfirmDialog(title: "Удалить отчет?", text: "Удалив отчет он пропадет у всех пользователей, включая чат",
-                              busy: deleting, onConfirm: { remove() }, onCancel: { confirmOpen = false })
-            }
+        .alert("Удалить отчет?", isPresented: $confirmOpen) {
+            Button("Удалить", role: .destructive) { remove() }
+            Button("Отмена", role: .cancel) {}
+        } message: {
+            Text("Удалив отчет он пропадет у всех пользователей, включая чат")
         }
     }
 
@@ -223,6 +223,7 @@ struct ReportFormView: View {
         Text(t).font(Theme.sans(13)).tracking(0.52).foregroundStyle(Theme.text)
             .padding(.horizontal, 12).frame(height: 32)
             .liquidGlass(Capsule(), fill: PurpleFill())
+            .clipShape(Capsule())
     }
 
     private func load() async {

@@ -41,11 +41,14 @@ struct AdminsView: View {
         }
         .screenBackground()
         .task { await load() }
-        .overlay {
-            if let a = confirmFor {
-                ConfirmDialog(title: "Удалить админа?", text: "Он потеряет доступ к админ-панели",
-                              busy: removing != nil, onConfirm: { remove(a) }, onCancel: { confirmFor = nil })
-            }
+        .alert("Удалить админа?", isPresented: Binding(
+            get: { confirmFor != nil },
+            set: { if !$0 { confirmFor = nil } }
+        )) {
+            Button("Удалить", role: .destructive) { if let a = confirmFor { remove(a) } }
+            Button("Отмена", role: .cancel) { confirmFor = nil }
+        } message: {
+            Text("Он потеряет доступ к админ-панели")
         }
     }
 

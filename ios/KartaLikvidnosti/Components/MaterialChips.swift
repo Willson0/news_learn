@@ -58,6 +58,7 @@ struct MaterialChips: View {
                     }
                 }
                 .padding(4)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
             }
         }
         .frame(height: 56)

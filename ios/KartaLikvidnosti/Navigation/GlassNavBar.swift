@@ -62,7 +62,7 @@ struct GlassNavBar: View {
             Rectangle()
                 .fill(Theme.bottomFade)
                 .frame(height: 79)
-                .offset(y: 7)
+                .ignoresSafeArea(edges: .bottom)
                 .allowsHitTesting(false)
         }
         .onAppear {
