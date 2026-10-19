@@ -99,16 +99,11 @@ struct FiltersSheet: View {
                         }
                         Button {
                             Haptics.light()
-                            calendarOpen.toggle()
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { calendarOpen.toggle() }
                         } label: {
                             Icon(AppIcons.calendarNumber, size: 32, color: Theme.text)
                         }
                         .buttonStyle(.plain)
-                        // Системный календарь во всплывающем окне у кнопки (не лист).
-                        .popover(isPresented: $calendarOpen) {
-                            DateRangePopover(start: $dateStart, end: $dateEnd)
-                                .popoverOnPhone()
-                        }
                     }
                     .padding(.top, 40)
 
@@ -119,6 +114,15 @@ struct FiltersSheet: View {
                 }
                 .padding(.horizontal, Theme.screenX)
                 .padding(.bottom, 60)
+            }
+
+            if calendarOpen {
+                VStack(spacing: 8) {
+                    AppCalendar(start: $dateStart, end: $dateEnd)
+                }
+                .padding(.horizontal, Theme.screenX)
+                .padding(.top, 87)
+                .transition(.scale(scale: 0.92, anchor: .bottomTrailing).combined(with: .opacity))
             }
 
             HStack {
@@ -165,80 +169,6 @@ struct FiltersSheet: View {
             dateMode: dateMode
         ))
         onClose()
-    }
-}
-
-/// Выбор периода системным календарём (graphical DatePicker) во всплывающем окне
-/// у кнопки. Переключатель «С / По» выбирает, какую дату менять. Значения
-/// записываются только после действия пользователя.
-struct DateRangePopover: View {
-    @Binding var start: String?   // ISO yyyy-MM-dd
-    @Binding var end: String?
-    @State private var from = Date()
-    @State private var to = Date()
-    @State private var editingEnd = false
-
-    private static let isoFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.calendar = Calendar(identifier: .gregorian)
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "yyyy-MM-dd"
-        return f
-    }()
-
-    private var fromPick: Binding<Date> {
-        Binding(get: { from }, set: { new in
-            from = new
-            if to < new { to = new }
-            commit()
-        })
-    }
-
-    private var toPick: Binding<Date> {
-        Binding(get: { to }, set: { new in
-            to = new
-            commit()
-        })
-    }
-
-    var body: some View {
-        VStack(spacing: 12) {
-            Picker("Граница", selection: $editingEnd) {
-                Text("С").tag(false)
-                Text("По").tag(true)
-            }
-            .pickerStyle(.segmented)
-
-            if editingEnd {
-                DatePicker("По", selection: toPick, in: from...Date.distantFuture, displayedComponents: .date)
-            } else {
-                DatePicker("С", selection: fromPick, displayedComponents: .date)
-            }
-        }
-        .datePickerStyle(.graphical)
-        .padding(12)
-        .frame(width: 340)
-        .onAppear {
-            let s = start.flatMap { Self.isoFormatter.date(from: $0) } ?? Date()
-            from = s
-            to = end.flatMap { Self.isoFormatter.date(from: $0) } ?? s
-        }
-    }
-
-    private func commit() {
-        start = Self.isoFormatter.string(from: from)
-        end = Self.isoFormatter.string(from: to)
-    }
-}
-
-private extension View {
-    /// На iPhone поповер по умолчанию становится листом; здесь оставляем поповер (iOS 16.4+).
-    @ViewBuilder func popoverOnPhone() -> some View {
-        if #available(iOS 16.4, *) {
-            self.presentationCompactAdaptation(.popover)
-        } else {
-            self
-        }
     }
 }
 
