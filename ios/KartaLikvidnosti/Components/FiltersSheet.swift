@@ -82,7 +82,7 @@ struct FiltersSheet: View {
                                         dateEnd = nil
                                     }
                                 } label: {
-                                    Icon(AppIcons.close, size: 24, color: Theme.text)
+                                    Icon(AppIcons.close, size: 12, color: Theme.text)
                                         .frame(width: 38, height: 32)
                                         .contentShape(Rectangle())
                                 }

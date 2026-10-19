@@ -199,7 +199,7 @@ struct ChatView: View {
                 Spacer(minLength: 0)
             }
             Button { unpin(p.id) } label: {
-                Icon(AppIcons.close, size: 24, color: Theme.text)
+                Icon(AppIcons.close, size: 12, color: Theme.text)
                     .frame(width: 38, height: 36)
                     .contentShape(Rectangle())
             }
@@ -454,7 +454,7 @@ struct ChatView: View {
             .foregroundStyle(Theme.text)
             Spacer(minLength: 4)
             Button { replyTo = nil } label: {
-                Icon(AppIcons.close, size: 18, color: Theme.text).frame(width: 28, height: 32)
+                Icon(AppIcons.close, size: 12, color: Theme.text).frame(width: 28, height: 32)
             }
             .buttonStyle(.plain)
         }

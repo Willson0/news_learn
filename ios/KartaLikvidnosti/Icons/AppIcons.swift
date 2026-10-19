@@ -115,25 +115,14 @@ enum AppIcons {
     static let profile = navProfile
     static let gear = settings
 
-    static let chevronRight = IconDef(box: b24, parts: [sp("M9 5l7 7-7 7", 1.8)])
-    static let close = IconDef(box: b24, parts: [sp("M6 6l12 12M18 6 6 18", 1.8)])
+    /// Крестик 12 из макета (закреп, диапазон дат, цитата ответа).
+    static let close = IconDef(box: CGSize(width: 13, height: 13),
+                               parts: [sp("M0.353516 0.353516L12.3535 12.3535M12.3535 0.353516L0.353516 12.3535", 1)])
 
-    static let calendar = IconDef(box: b24, parts: [
-        sRRect(3.5, 5, 17, 15, 3),
-        sp("M3.5 9.5h17M8 3.5v3M16 3.5v3", 1.6, join: .miter)
-    ])
-
-    static let contact = IconDef(box: b24, parts: [
-        sRRect(3, 5, 18, 14, 3),
-        sCircle(9, 11, 2),
-        sp("M6 16c.5-1.5 1.7-2.2 3-2.2s2.5.7 3 2.2M14.5 10h3.5M14.5 13.5h2.5", 1.6)
-    ])
-
-    static let forward = IconDef(box: b24, parts: [sp("M15 7l5 5-5 5M20 12H9a5 5 0 0 0-5 5v1", 1.6)])
-    static let sort = IconDef(box: b24, parts: [sp("M4 7h16M6.5 12h11M10 17h4", 1.8)])
-    static let checkSquare = IconDef(box: b24, parts: [
-        sRRect(4, 4, 16, 16, 4),
-        sp("M8 12l3 3 5-6", 1.6)
+    /// icon-park-outline:return из макета (переслать в режиме выбора).
+    static let forward = IconDef(box: b24, parts: [
+        sp("M16.5 4L20 7L16.5 10.5", 1.5),
+        sp("M20 7H9.78035C6.72121 7 4.12341 9.59385 4.0043 12.7692C3.87808 16.1246 6.54788 19 9.78035 19H17.3342", 1.5),
     ])
 
     // --- Материалы (box 16) ---
