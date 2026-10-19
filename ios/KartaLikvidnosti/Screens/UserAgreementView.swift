@@ -44,7 +44,7 @@ struct UserAgreementView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            .padding(.horizontal, Theme.screenX).padding(.top, 16).padding(.bottom, 40)
+            .padding(.horizontal, Theme.screenX).padding(.top, 32).padding(.bottom, 40)
         }
         .screenBackground()
     }
