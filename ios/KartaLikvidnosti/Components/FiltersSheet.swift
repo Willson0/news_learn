@@ -109,7 +109,7 @@ struct FiltersSheet: View {
 
                     SegmentedControl(selection: $dateMode, options: [
                         ("week", "Неделя"), ("month", "Месяц"), ("year", "Год"),
-                    ])
+                    ], highlight: rangeLabel.isEmpty)
                     .padding(.top, 24)
                 }
                 .padding(.horizontal, Theme.screenX)

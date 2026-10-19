@@ -188,6 +188,8 @@ struct SegmentedControl: View {
     let options: [(value: String, label: String)]
     /// true — подложка стеклянная (как в «Сообществе»), иначе плашка #2D2E35.
     var glass: Bool = false
+    /// false — выбранный пункт не подсвечивается (например, пока выбран диапазон дат).
+    var highlight: Bool = true
 
     @Namespace private var lens
 
@@ -205,7 +207,7 @@ struct SegmentedControl: View {
                         .frame(maxWidth: .infinity)
                         .frame(height: 48)
                         .background {
-                            if selection == opt.value {
+                            if highlight && selection == opt.value {
                                 SelectionLens(radius: Theme.radiusChip)
                                     .matchedGeometryEffect(id: "lens", in: lens)
                             }
