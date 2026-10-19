@@ -35,6 +35,13 @@ return [
         ],
     ],
 
+    'yandex' => [
+        'client_id' => env('YANDEX_CLIENT_ID'),
+        'client_secret' => env('YANDEX_CLIENT_SECRET'),
+        'redirect_uri' => env('YANDEX_REDIRECT_URI', env('APP_URL').'/api/auth/yandex/callback'),
+        'app_scheme' => env('YANDEX_APP_SCHEME', 'karta'),
+    ],
+
     'telegram' => [
         'bot_token' => env('TELEGRAM_BOT_TOKEN'),
         'allow_insecure' => (bool) env('TELEGRAM_ALLOW_INSECURE', false),

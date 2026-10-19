@@ -56,7 +56,7 @@ struct LoginView: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 12) {
-                AppButton(title: "Войти с Yandex", variant: .secondary) { Haptics.light() }
+                AppButton(title: "Войти с Yandex", variant: .secondary) { signInWithYandex() }
                 AppButton(title: mode == .login ? "Войти" : "Далее", variant: .accent, disabled: submitting) {
                     submit()
                 }
@@ -200,6 +200,26 @@ struct LoginView: View {
                 errors = ["identifier": "Не удалось выполнить запрос"]
             }
             submitting = false
+        }
+    }
+
+    private func signInWithYandex() {
+        Task {
+            do {
+                TokenStore.token = try await YandexSignIn.token()
+                await session.load(force: true)
+                if session.user != nil {
+                    router.enterApp()
+                } else {
+                    TokenStore.token = nil
+                    errors = ["identifier": "Не удалось загрузить профиль"]
+                }
+            } catch let err as ApiError {
+                Haptics.rigid()
+                errors = ["identifier": err.message]
+            } catch {
+                errors = ["identifier": "Не удалось войти через Яндекс"]
+            }
         }
     }
 
