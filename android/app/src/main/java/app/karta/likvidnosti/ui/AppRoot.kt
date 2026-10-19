@@ -1,15 +1,14 @@
 package app.karta.likvidnosti.ui
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -20,7 +19,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -30,7 +29,10 @@ import androidx.navigation.navArgument
 import app.karta.likvidnosti.data.AppData
 import app.karta.likvidnosti.data.Session
 import app.karta.likvidnosti.data.TokenStore
-import app.karta.likvidnosti.ui.components.BottomNav
+import app.karta.likvidnosti.ui.components.AppTab
+import app.karta.likvidnosti.ui.components.GlassNavBar
+import app.karta.likvidnosti.ui.components.NavBarExtra
+import app.karta.likvidnosti.ui.icons.AppIcons
 import app.karta.likvidnosti.ui.nav.NavActions
 import app.karta.likvidnosti.ui.nav.Routes
 import app.karta.likvidnosti.ui.screens.AccountChangeScreen
@@ -86,10 +88,58 @@ fun AppRoot() {
     val backStack by nav.currentBackStackEntryAsState()
     val currentBase = Routes.base(backStack?.destination?.route)
     val isAdmin = Session.isAdmin
-    val showNav = currentBase in Routes.WITH_NAV
+    val restricted = Session.restricted
+
+    // Без подписки главная и аналитика недоступны — открываем «Сообщество»
+    // (iOS MainFlow.enforceRestriction). После оплаты возвращаем на главную.
+    var wasRestricted by remember { mutableStateOf(restricted) }
+    LaunchedEffect(restricted, currentBase) {
+        if (restricted && (currentBase == Routes.HOME || currentBase == Routes.ANALYTICS)) {
+            nav.navigate(Routes.COMMUNITY) {
+                popUpTo(0) { inclusive = true }
+                launchSingleTop = true
+            }
+        } else if (wasRestricted && !restricted && currentBase in Routes.ROOT) {
+            nav.navigate(Routes.HOME) {
+                popUpTo(0) { inclusive = true }
+                launchSingleTop = true
+            }
+        }
+        wasRestricted = restricted
+    }
+
+    fun selectTab(tab: AppTab) {
+        when (tab) {
+            AppTab.Home -> actions.toHome()
+            AppTab.Analytics -> actions.toAnalytics()
+            AppTab.Community -> actions.toCommunity()
+            AppTab.Profile -> actions.toProfile()
+        }
+    }
+
+    /** Навбар корневой вкладки; справа — «+» у админа на «Аналитике», чат на «Профиле». */
+    val navBar: @Composable (AppTab) -> Unit = { tab ->
+        val extra = when (tab) {
+            AppTab.Analytics -> if (isAdmin) NavBarExtra(AppIcons.plusBig) { actions.toReportCreate() } else null
+            AppTab.Profile -> NavBarExtra(AppIcons.chat) {
+                // Админ ведёт личные чаты во вкладке «Сообщество», пользователь — свой чат с админом.
+                if (Session.isAdmin) actions.toCommunity() else actions.toChat("admin")
+            }
+            else -> null
+        }
+        GlassNavBar(current = tab, onSelect = { selectTab(it) }, extra = extra)
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(T.Bg)) {
-        NavHost(navController = nav, startDestination = start) {
+        NavHost(
+            navController = nav,
+            startDestination = start,
+            // Вкладки переключаются без анимации, внутренние экраны въезжают справа (как push в iOS).
+            enterTransition = { if (isTabSwitch()) EnterTransition.None else slideInHorizontally(tween(320)) { it } },
+            exitTransition = { if (isTabSwitch()) ExitTransition.None else slideOutHorizontally(tween(320)) { -it / 4 } },
+            popEnterTransition = { if (isTabSwitch()) EnterTransition.None else slideInHorizontally(tween(320)) { -it / 4 } },
+            popExitTransition = { if (isTabSwitch()) ExitTransition.None else slideOutHorizontally(tween(320)) { it } },
+        ) {
             // --- Auth ---
             composable(Routes.LOGIN) {
                 LoginScreen(
@@ -120,9 +170,15 @@ fun AppRoot() {
             }
 
             // --- Tabs ---
-            composable(Routes.HOME) { HomeScreen(onOpenReport = { actions.toReportDetail(it) }) }
-            composable(Routes.ANALYTICS) { AnalyticsScreen(onOpenReport = { actions.toReportDetail(it) }) }
-            composable(Routes.COMMUNITY) { CommunityScreen(onOpenChat = { actions.toChat(it) }) }
+            composable(Routes.HOME) {
+                HomeScreen(onOpenReport = { actions.toReportDetail(it) }, navBar = { navBar(AppTab.Home) })
+            }
+            composable(Routes.ANALYTICS) {
+                AnalyticsScreen(onOpenReport = { actions.toReportDetail(it) }, navBar = { navBar(AppTab.Analytics) })
+            }
+            composable(Routes.COMMUNITY) {
+                CommunityScreen(onOpenChat = { actions.toChat(it) }, navBar = { navBar(AppTab.Community) })
+            }
             composable(Routes.PROFILE) {
                 ProfileScreen(
                     onSettings = { actions.toProfileEdit() },
@@ -132,6 +188,7 @@ fun AppRoot() {
                     onAdmins = { actions.toAdmins() },
                     onAgreement = { actions.toUserAgreement() },
                     onOpenReport = { actions.toReportDetail(it) },
+                    navBar = { navBar(AppTab.Profile) },
                 )
             }
 
@@ -145,7 +202,7 @@ fun AppRoot() {
                     id = id,
                     onBack = { actions.back() },
                     onEdit = { actions.toReportEdit(it) },
-                    onDiscuss = { slug -> if (slug != null) actions.toChat(slug) },
+                    onDiscuss = { slug -> if (slug != null) actions.toChat(slug) else actions.toCommunity() },
                 )
             }
             composable(Routes.REPORT_CREATE) {
@@ -248,32 +305,12 @@ fun AppRoot() {
             composable(Routes.SUBSCRIPTION) { SubscriptionScreen(onBack = { actions.back() }) }
             composable(Routes.USER_AGREEMENT) { UserAgreementScreen(onBack = { actions.back() }) }
         }
-
-        // Плавающая нижняя навигация поверх корневых вкладок.
-        AnimatedVisibility(
-            visible = showNav,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier.align(Alignment.BottomCenter),
-        ) {
-            val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-            BottomNav(
-                current = currentBase,
-                onTab = { route ->
-                    when (route) {
-                        Routes.HOME -> actions.toHome()
-                        Routes.ANALYTICS -> actions.toAnalytics()
-                        Routes.COMMUNITY -> actions.toCommunity()
-                        Routes.PROFILE -> actions.toProfile()
-                    }
-                },
-                showCreate = isAdmin && currentBase == Routes.ANALYTICS,
-                onCreate = { actions.toReportCreate() },
-                modifier = Modifier.padding(bottom = bottomInset + 16.dp),
-            )
-        }
     }
 }
+
+/** Переход между корневыми вкладками (без анимации). */
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.isTabSwitch(): Boolean =
+    Routes.base(initialState.destination.route) in Routes.ROOT && Routes.base(targetState.destination.route) in Routes.ROOT
 
 /** Гард админских маршрутов: не-админа возвращаем на главную. */
 @Composable

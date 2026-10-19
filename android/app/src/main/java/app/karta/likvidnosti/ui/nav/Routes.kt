@@ -2,6 +2,7 @@ package app.karta.likvidnosti.ui.nav
 
 import androidx.navigation.NavController
 import androidx.navigation.NavHostController
+import app.karta.likvidnosti.data.Session
 
 /**
  * Маршруты приложения (аналог frontend/src/router/index.js).
@@ -59,7 +60,12 @@ class NavActions(private val nav: NavHostController) {
     }
 
     private fun tab(route: String) = nav.navigate(route) {
-        popUpTo(nav.graph.startDestinationId) { saveState = true }
+        // Без подписки корень стека — «Сообщество» (главной в стеке нет).
+        if (Session.restricted) {
+            popUpTo(Routes.COMMUNITY) { saveState = true }
+        } else {
+            popUpTo(nav.graph.startDestinationId) { saveState = true }
+        }
         launchSingleTop = true
         restoreState = true
     }
