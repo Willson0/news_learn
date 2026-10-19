@@ -10,41 +10,34 @@ struct ConfirmDialog: View {
     let onConfirm: () -> Void
     let onCancel: () -> Void
 
+    // Попап «Удалить отчет?» (Figma 349:12705): стекло «чёрный 2», радиус 24,
+    // заголовок Bold 16 и текст 14 по левому краю, красная «Удалить» и
+    // стеклянная «Отмена» по 48; фон затемняется и размывается.
     var body: some View {
         ZStack {
-            Color.black.opacity(0.25).ignoresSafeArea()
+            ZStack { BackdropBlur(radius: 6); Color.black.opacity(0.35) }
+                .ignoresSafeArea()
                 .onTapGesture { onCancel() }
-            VStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 0) {
                 Text(title).font(Theme.sans(Theme.fontMd, .bold))
                     .foregroundStyle(Theme.text)
-                    .multilineTextAlignment(.center)
                 if !text.isEmpty {
                     Text(text)
                         .font(Theme.sans(Theme.fontBase))
-                        .foregroundStyle(Theme.textSecondary)
-                        .multilineTextAlignment(.center)
-                        .lineSpacing(3)
-                        .padding(.bottom, 8)
+                        .foregroundStyle(Theme.text)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 4)
                 }
-                Button(action: { if !busy { onConfirm() } }) {
-                    Text(confirmLabel).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
-                        .frame(maxWidth: .infinity).frame(height: 48)
-                        .background(LinearGradient(colors: [Color(hex: "#8c1b1b"), Color(hex: "#6e1212")],
-                                                   startPoint: .top, endPoint: .bottom))
-                        .clipShape(Capsule())
+                VStack(spacing: 8) {
+                    AppButton(title: confirmLabel, variant: .danger, disabled: busy) { onConfirm() }
+                    AppButton(title: cancelLabel, variant: .secondary) { onCancel() }
                 }
-                .opacity(busy ? 0.6 : 1)
-                Button(action: onCancel) {
-                    Text(cancelLabel).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
-                        .frame(maxWidth: .infinity).frame(height: 48)
-                        .overlay(Capsule().stroke(Color.white.opacity(0.35), lineWidth: 1))
-                }
+                .padding(.top, 16)
             }
             .padding(16)
-            .frame(maxWidth: 276)
-            .background(Color(hex: "#202124").opacity(0.92))
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .padding(.horizontal, 60)
+            .frame(width: 243)
+            .liquidGlass(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous), fill: Theme.black2)
+            .transition(.scale(scale: 0.92).combined(with: .opacity))
         }
     }
 }

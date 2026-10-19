@@ -32,67 +32,72 @@ struct ReportFormView: View {
     private var isEdit: Bool { reportId != nil }
     private let shortLabels = ["gas": "Нат. газ"]
 
+    // «Создание и загрузка отчета» (Figma 349:11597, 349:11743, ошибки
+    // 349:12486, редактирование 349:12705): «назад» (и красная корзина при
+    // редактировании) на y=78, заголовок Kreadon 24 на y=144; поля со
+    // стеклом и подписью: «Заголовок» 63, «Описание» 101 со счётчиком
+    // «N/250 символов» справа, «График» 63; блок чипов-инструментов
+    // (#25262A, радиус 24, отступ 12, шаг 4); строки файлов 64 («Отчет html»,
+    // «Обложка»: белая иконка 32 с зелёным «+», пурпурная пилюля
+    // «Добавить/Удалить»); ошибки 12 pt красным 70 % под полем; внизу кнопка.
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Spacer()
-                    if isEdit {
-                        Button { confirmOpen = true } label: {
-                            Icon(AppIcons.trashX, size: 22, color: Color(hex: "#e0262b"))
-                                .frame(width: 42, height: 42).background(Theme.surfaceMuted)
-                                .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 1)).clipShape(Circle())
-                        }.buttonStyle(.plain)
-                    }
-                }.frame(minHeight: 42)
-
                 Text(isEdit ? "Редактирование отчета" : "Создание отчета")
-                    .font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text).padding(.vertical, 4)
+                    .font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
+                    .padding(.bottom, 12)
 
-                labeledInput(title: "Заголовок", error: errors["title"]) {
-                    TextField("", text: $title, prompt: Text("Введите текст").foregroundColor(Theme.textMuted))
+                AuthField(error: errors["title"]) {
+                    AppInput(text: $title, placeholder: "Введите текст", label: "Заголовок", height: 63)
                         .onChange(of: title) { _ in errors["title"] = nil }
                 }
 
-                field(error: errors["description"]) {
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text("Описание   \(descriptionText.count)/\(descriptionMax) символов")
-                            .font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                        TextField("Введите текст", text: $descriptionText, axis: .vertical)
-                            .lineLimit(3...6).foregroundStyle(Theme.text)
-                            .onChange(of: descriptionText) { v in
-                                if v.count > descriptionMax { descriptionText = String(v.prefix(descriptionMax)) }
-                                errors["description"] = nil
-                            }
-                    }
-                    .fieldChrome()
+                AuthField(error: errors["description"]) { descriptionInput }
+
+                AuthField(error: errors["chart_url"]) {
+                    AppInput(text: $chartUrl, placeholder: "Ссылка на график", label: "График",
+                             keyboard: .URL, height: 63)
                 }
 
-                labeledInput(title: "График", error: errors["chart_url"]) {
-                    TextField("", text: $chartUrl, prompt: Text("Ссылка на график").foregroundColor(Theme.textMuted))
-                        .keyboardType(.URL).autocorrectionDisabled().textInputAutocapitalization(.never)
+                AuthField(error: errors["instrument"]) { instrumentChips }
+
+                AuthField(error: errors["html"]) {
+                    fileRow(name: htmlName.isEmpty ? "Отчет html" : htmlName, has: !htmlName.isEmpty,
+                            icon: { if htmlName.isEmpty { AnyView(addIcon) } else { AnyView(FileHtmlIcon(size: 30)) } },
+                            add: { htmlImporter = true }, drop: { htmlData = nil; htmlName = ""; removeHtml = isEdit })
                 }
 
-                instrumentChips
+                AuthField(error: errors["cover"]) { fileRowCover }
 
-                fileRow(name: htmlName.isEmpty ? "Отчет html" : htmlName, has: !htmlName.isEmpty,
-                        icon: { if htmlName.isEmpty { AnyView(addIcon) } else { AnyView(FileHtmlIcon(size: 32)) } },
-                        add: { htmlImporter = true }, drop: { htmlData = nil; htmlName = ""; removeHtml = isEdit })
-                if let e = errors["html"] { Text(e).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.error) }
-
-                fileRowCover
-
-                if let e = errors["cover"] { Text(e).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.error) }
-
-                if let e = errors["form"] { Text(e).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.error).frame(maxWidth: .infinity, alignment: .center) }
-
-                AppButton(title: isEdit ? "Сохранить" : "Создать отчет", variant: .accent, disabled: saving) { submit() }
-                    .padding(.top, 20)
+                if let e = errors["form"] { AuthFieldError(text: e) }
             }
-            .padding(.horizontal, Theme.screenX).padding(.top, 16).padding(.bottom, 32)
+            .padding(.horizontal, Theme.screenX)
+            .padding(.top, 144)
+            .padding(.bottom, 24)
         }
-        .screenBackground()
+        .scrollDismissesKeyboard(.interactively)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            AppButton(title: isEdit ? "Сохранить" : "Создать отчет", variant: .accent, disabled: saving) { submit() }
+                .padding(.horizontal, Theme.screenX)
+                .padding(.top, 12)
+                .padding(.bottom, 45)
+        }
+        .ignoresSafeArea(.container, edges: [.top, .bottom])
+        .overlay(alignment: .top) {
+            HStack {
+                GlassBackButton()
+                Spacer()
+                if isEdit {
+                    GlassCircleButton(icon: AppIcons.trashX, iconSize: 24, iconColor: Theme.error) { confirmOpen = true }
+                }
+            }
+            .padding(.horizontal, Theme.screenX)
+            .padding(.top, Theme.topBarY)
+            .ignoresSafeArea(.container, edges: .top)
+        }
+        .background(ScreenBackdrop())
+        .toolbar(.hidden, for: .navigationBar)
+        .animation(.easeOut(duration: 0.2), value: errors)
         .task { await load() }
         .onChange(of: coverItem) { item in
             Task {
@@ -119,29 +124,63 @@ struct ReportFormView: View {
         }
     }
 
+    private var descriptionInput: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("Описание")
+                Spacer()
+                Text("\(descriptionText.count)/\(descriptionMax) символов")
+            }
+            .font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
+            TextField("", text: $descriptionText,
+                      prompt: Text("Введите текст").foregroundColor(Theme.textMuted), axis: .vertical)
+                .lineLimit(3...6)
+                .font(Theme.sans(Theme.fontBase))
+                .foregroundStyle(errors["description"] != nil ? Theme.error : Theme.text)
+                .tint(Theme.green)
+                .onChange(of: descriptionText) { v in
+                    if v.count > descriptionMax { descriptionText = String(v.prefix(descriptionMax)) }
+                    errors["description"] = nil
+                }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(minHeight: 101, alignment: .top)
+        .liquidGlass(RoundedRectangle(cornerRadius: Theme.radiusInput, style: .continuous))
+    }
+
     private var addIcon: some View {
-        Icon(AppIcons.plus, size: 22, color: Color(hex: "#6fbf1f"))
-            .frame(width: 32, height: 32).background(Color.white).clipShape(RoundedRectangle(cornerRadius: 6))
+        Icon(AppIcons.plus, size: 24, color: Theme.green)
+            .frame(width: 32, height: 32)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private var instrumentChips: some View {
-        FlowLayout(spacing: 6) {
+        FlowLayout(spacing: 4, lineSpacing: 4) {
             ForEach(instruments, id: \.key) { item in
+                let on = instrument == item.key
                 Button {
-                    instrument = instrument == item.key ? nil : item.key
+                    instrument = on ? nil : item.key
                     errors["instrument"] = nil; Haptics.light()
                 } label: {
                     Text(item.label).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
-                        .padding(.horizontal, 16).frame(height: 40)
-                        .background(instrument == item.key ? AnyShapeStyle(Theme.gradientAccent) : AnyShapeStyle(Color.clear),
-                                    in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(instrument == item.key ? 0.25 : 0.18), lineWidth: 1))
-                }.buttonStyle(.plain)
+                        .padding(.horizontal, 24).frame(height: 40)
+                        .modifier(ChipFill(on: on))
+                }
+                .buttonStyle(.plain)
             }
         }
-        .padding(12).background(Theme.surface).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(alignment: .bottomLeading) {
-            if let e = errors["instrument"] { Text(e).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.error).offset(y: 22) }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+    }
+
+    private struct ChipFill: ViewModifier {
+        let on: Bool
+        func body(content: Content) -> some View {
+            let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+            if on { content.liquidGlass(shape, fill: ActiveFill()) } else { content.liquidGlass(shape) }
         }
     }
 
@@ -153,47 +192,37 @@ struct ReportFormView: View {
                     else if let url = coverPreviewURL { RemoteImage(url: url) }
                     else { Color.white }
                 }
-                .frame(width: 32, height: 32).background(Color.white).clipShape(RoundedRectangle(cornerRadius: 6))
+                .frame(width: 32, height: 32).background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             } else { addIcon }
             Text(coverName.isEmpty ? "Обложка" : coverName).font(Theme.sans(Theme.fontMd)).foregroundStyle(Theme.text).lineLimit(1)
-            Spacer()
+            Spacer(minLength: 8)
             if coverName.isEmpty {
                 PhotosPicker(selection: $coverItem, matching: .images) { pillLabel("Добавить") }
+                    .buttonStyle(.plain)
             } else {
-                Button { coverData = nil; coverName = ""; coverPreviewURL = nil; removeCover = isEdit } label: { pillLabel("Удалить") }.buttonStyle(.plain)
+                PurplePillButton(title: "Удалить") { coverData = nil; coverName = ""; coverPreviewURL = nil; removeCover = isEdit }
             }
         }
-        .padding(.horizontal, 16).frame(height: 64).background(Theme.surface).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .padding(.horizontal, 16).frame(height: 64)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
     }
 
     private func fileRow(name: String, has: Bool, icon: () -> AnyView, add: @escaping () -> Void, drop: @escaping () -> Void) -> some View {
         HStack(spacing: 12) {
             icon()
             Text(name).font(Theme.sans(Theme.fontMd)).foregroundStyle(Theme.text).lineLimit(1)
-            Spacer()
-            Button(action: has ? drop : add) { pillLabel(has ? "Удалить" : "Добавить") }.buttonStyle(.plain)
+            Spacer(minLength: 8)
+            PurplePillButton(title: has ? "Удалить" : "Добавить", action: has ? drop : add)
         }
-        .padding(.horizontal, 16).frame(height: 64).background(Theme.surface).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .padding(.horizontal, 16).frame(height: 64)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
     }
 
     private func pillLabel(_ t: String) -> some View {
-        Text(t).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
-            .padding(.horizontal, 12).frame(height: 32).background(Theme.gradientPurpleSolid).clipShape(Capsule())
-    }
-
-    private func field<C: View>(error: String?, @ViewBuilder _ content: () -> C) -> some View {
-        VStack(alignment: .leading, spacing: 6) { content(); if let error = error { Text(error).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.error) } }
-    }
-
-    private func labeledInput<C: View>(title: String, error: String?, @ViewBuilder _ content: () -> C) -> some View {
-        field(error: error) {
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(title).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                content().foregroundStyle(Theme.text).tint(Theme.green)
-            }
-            .fieldChrome()
-        }
+        Text(t).font(Theme.sans(13)).tracking(0.52).foregroundStyle(Theme.text)
+            .padding(.horizontal, 12).frame(height: 32)
+            .liquidGlass(Capsule(), fill: PurpleFill())
     }
 
     private func load() async {
@@ -255,14 +284,5 @@ struct ReportFormView: View {
             catch { errors = ["form": "Не удалось удалить"]; confirmOpen = false }
             deleting = false
         }
-    }
-}
-
-private extension View {
-    func fieldChrome() -> some View {
-        self.padding(.horizontal, 16).padding(.vertical, 10)
-            .background(Theme.surfaceMuted)
-            .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.12), lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 }

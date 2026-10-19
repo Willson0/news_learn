@@ -82,7 +82,7 @@ private struct MainFlow: View {
         case .chat(let id):
             ChatView(chatId: id)
                 .toolbar(.hidden, for: .navigationBar)
-        case .reportDetail, .profileEdit, .chatInfo, .chatUser, .chatEdit:
+        case .reportDetail, .profileEdit, .chatInfo, .chatUser, .chatEdit, .reportCreate, .reportEdit:
             screen(route)
                 .toolbar(.hidden, for: .navigationBar)
         default:
