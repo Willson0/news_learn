@@ -1,23 +1,16 @@
 package app.karta.likvidnosti.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -31,29 +24,69 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import app.karta.likvidnosti.data.Repository
 import app.karta.likvidnosti.data.api.ApiException
 import app.karta.likvidnosti.ui.components.AppButton
 import app.karta.likvidnosti.ui.components.AppInput
+import app.karta.likvidnosti.ui.components.AuthField
+import app.karta.likvidnosti.ui.components.AuthFieldError
 import app.karta.likvidnosti.ui.components.ButtonVariant
-import app.karta.likvidnosti.ui.components.FieldError
+import app.karta.likvidnosti.ui.components.pressable
+import app.karta.likvidnosti.ui.components.screenBackground
+import app.karta.likvidnosti.ui.theme.AppFont
 import app.karta.likvidnosti.ui.theme.T
+import app.karta.likvidnosti.ui.theme.designBottom
+import app.karta.likvidnosti.ui.theme.designTop
 import kotlinx.coroutines.launch
 
-private val EMAIL_RE = Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")
+internal val AUTH_EMAIL_RE = Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")
 private val PHONE_RE = Regex("^\\+?[0-9\\s\\-()]{7,}$")
 
+/** Маска российского номера из макета: «+7 (999) 999-99-99» (iOS PhoneMask). */
+object PhoneMask {
+    fun digits(s: String): String {
+        var d = s.filter { it.isDigit() }
+        if (d.startsWith("8")) d = "7" + d.drop(1)
+        if (d.isNotEmpty() && !d.startsWith("7")) d = "7$d"
+        return d.take(11)
+    }
+
+    fun format(s: String): String {
+        val d = digits(s)
+        if (d.isEmpty()) return ""
+        val out = StringBuilder("+7")
+        d.drop(1).forEachIndexed { i, ch ->
+            when (i) {
+                0 -> out.append(" (").append(ch)
+                3 -> out.append(") ").append(ch)
+                6, 8 -> out.append('-').append(ch)
+                else -> out.append(ch)
+            }
+        }
+        return out.toString()
+    }
+}
+
+private enum class AuthMode { Login, Register }
+
+/**
+ * «Вход/регистрация» (iOS LoginView, Figma 337:26653, регистрация 337:26667,
+ * ошибки 349:9124/9982/9056…): «16+» Kreadon 24 белый 40 % справа на y=71,
+ * круг-логотип 100 (#25262A) на y=94, заголовок Kreadon 24 через 40 —
+ * активная часть белая, вторая белый 40 %; поля 48 через 12 (отступ 24);
+ * ошибки 12 красным 70 % в 4 под полем; внизу «Войти с Yandex» и
+ * «Войти»/«Далее» (низ — 45).
+ */
 @Composable
 fun LoginScreen(
     onAuthed: () -> Unit,
     onRecovery: () -> Unit,
     onNeedConfirm: (String) -> Unit,
 ) {
-    var mode by remember { mutableStateOf("login") }
+    var mode by remember { mutableStateOf(AuthMode.Login) }
     var identifier by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
@@ -63,35 +96,39 @@ fun LoginScreen(
     var submitting by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    fun setMode(m: String) {
+    fun switchMode(m: AuthMode) {
         if (mode == m) return
         mode = m
         errors = emptyMap()
     }
 
-    fun validate(): Boolean {
+    fun validateLogin(): Boolean {
         val e = mutableMapOf<String, String>()
-        if (mode == "login") {
-            val id = identifier.trim()
-            if (id.isEmpty()) e["identifier"] = "Введите email или номер телефона"
-            else if (!EMAIL_RE.matches(id) && !PHONE_RE.matches(id)) e["identifier"] = "Неверный формат email или телефона"
-            if (password.isEmpty()) e["password"] = "Введите пароль"
-        } else {
-            if (!EMAIL_RE.matches(email.trim())) e["email"] = "Неверный формат email"
-            if (!PHONE_RE.matches(phone.trim())) e["phone"] = "Неверный формат телефона"
-            if (password.length < 8) e["password"] = "Пароль должен содержать от 8 символов"
-            if (passwordConfirm != password) e["passwordConfirm"] = "Пароль не совпадает"
-        }
+        val id = identifier.trim()
+        if (id.isEmpty()) e["identifier"] = "Введите email или номер телефона"
+        else if (!AUTH_EMAIL_RE.matches(id) && !PHONE_RE.matches(id)) e["identifier"] = "Неверный email или номер телефона"
+        if (password.isEmpty()) e["password"] = "Введите пароль"
+        errors = e
+        return e.isEmpty()
+    }
+
+    fun validateRegister(): Boolean {
+        val e = mutableMapOf<String, String>()
+        if (!AUTH_EMAIL_RE.matches(email.trim())) e["email"] = "Несуществующий email"
+        if (PhoneMask.digits(phone).length != 11) e["phone"] = "Неверный номер телефона"
+        if (password.length < 8) e["password"] = "Пароль должен содержать от 8 символов"
+        if (passwordConfirm != password) e["passwordConfirm"] = "Пароль не совпадает"
         errors = e
         return e.isEmpty()
     }
 
     fun submit() {
-        if (!validate()) return
+        val ok = if (mode == AuthMode.Login) validateLogin() else validateRegister()
+        if (!ok || submitting) return
         submitting = true
         scope.launch {
             try {
-                if (mode == "login") {
+                if (mode == AuthMode.Login) {
                     Repository.login(identifier.trim(), password)
                     onAuthed()
                 } else {
@@ -100,9 +137,8 @@ fun LoginScreen(
                     onNeedConfirm(em)
                 }
             } catch (ex: ApiException) {
-                val mapped = ex.errors.mapValues { it.value.firstOrNull() ?: "" }
-                errors = if (mapped.isNotEmpty()) mapped
-                else mapOf("identifier" to ex.message, "email" to ex.message)
+                val mapped = ex.errors.mapValues { it.value.firstOrNull() ?: "" }.filterValues { it.isNotEmpty() }
+                errors = mapped.ifEmpty { mapOf("identifier" to ex.message, "email" to ex.message) }
             } catch (ex: Exception) {
                 errors = mapOf("identifier" to "Не удалось выполнить запрос")
             } finally {
@@ -111,121 +147,141 @@ fun LoginScreen(
         }
     }
 
-    val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(listOf(Color(0xFF1A1B1D), Color(0xFF1E1F21), Color(0xFF161719))),
-            ),
-    ) {
-        // Декоративное свечение сверху (розовое пятно справа + тёплое слева)
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(240.dp)
-                .background(
-                    Brush.radialGradient(
-                        0f to Color(0x59782850),
-                        1f to Color(0x00000000),
-                        center = androidx.compose.ui.geometry.Offset(900f, 60f),
-                        radius = 700f,
-                    ),
-                ),
-        )
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .imePadding()
-                .padding(start = T.ScreenX, end = T.ScreenX, top = top + 24.dp, bottom = bottom + 24.dp),
-        ) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                Text("16+", color = T.TextMuted, fontSize = T.FsTitle, fontWeight = FontWeight.Bold)
-            }
-
-            Box(
+    Box(modifier = Modifier.fillMaxSize().screenBackground()) {
+        Column(modifier = Modifier.fillMaxSize().imePadding()) {
+            Column(
                 modifier = Modifier
-                    .padding(top = 24.dp)
-                    .size(100.dp)
-                    .clip(CircleShape)
-                    .background(Color(0x0AFFFFFF))
-                    .border(1.dp, Color(0x0FFFFFFF), CircleShape)
-                    .align(Alignment.CenterHorizontally),
-            )
-
-            Row(
-                modifier = Modifier
-                    .padding(top = 28.dp, bottom = 24.dp)
-                    .align(Alignment.CenterHorizontally),
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = T.ScreenX)
+                    .padding(top = designTop(94.dp), bottom = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                ToggleWord("Вход", mode == "login") { setMode("login") }
-                Text(" / ", color = T.TextMuted, fontSize = T.FsTitle, fontWeight = FontWeight.Bold)
-                ToggleWord("Регистрация", mode == "register") { setMode("register") }
-            }
+                Box(Modifier.size(100.dp).clip(CircleShape).background(T.Surface))
 
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (mode == "login") {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        AppInput(identifier, { identifier = it }, placeholder = "Email или номер телефона", error = errors.containsKey("identifier"))
-                        FieldError(errors["identifier"])
-                    }
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        AppInput(password, { password = it }, placeholder = "Пароль", isPassword = true, error = errors.containsKey("password"))
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            FieldError(errors["password"], modifier = Modifier.weight(1f, fill = false))
-                            Spacer(Modifier.weight(1f))
-                            Text("Забыли пароль?", color = T.TextSecondary, fontSize = T.FsSm, modifier = Modifier.clickable { onRecovery() })
+                Row(modifier = Modifier.padding(top = 40.dp)) {
+                    val login = mode == AuthMode.Login
+                    Text(
+                        if (login) "Вход / " else "Вход ",
+                        style = AppFont.heading(T.FsTitle, if (login) T.Text else T.TextMuted),
+                        modifier = Modifier.pressable(pressAlpha = 1f) { switchMode(AuthMode.Login) },
+                    )
+                    Text(
+                        if (!login) "/ Регистрация" else "Регистрация",
+                        style = AppFont.heading(T.FsTitle, if (!login) T.Text else T.TextMuted),
+                        modifier = Modifier.pressable(pressAlpha = 1f) { switchMode(AuthMode.Register) },
+                    )
+                }
+
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    if (mode == AuthMode.Login) {
+                        AuthField(errors["identifier"]) {
+                            AppInput(
+                                identifier,
+                                { identifier = it },
+                                placeholder = "Email или номер телефона",
+                                error = errors.containsKey("identifier"),
+                                keyboardType = KeyboardType.Email,
+                            )
                         }
-                    }
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        AppInput(email, { email = it }, placeholder = "Email", error = errors.containsKey("email"))
-                        FieldError(errors["email"])
-                    }
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        AppInput(phone, { phone = it }, placeholder = "Номер телефона", error = errors.containsKey("phone"))
-                        FieldError(errors["phone"])
-                    }
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        AppInput(password, { password = it }, placeholder = "Пароль", isPassword = true, error = errors.containsKey("password"))
-                        Text(
-                            "Пароль должен содержать от 8 символов",
-                            color = if (errors.containsKey("password")) T.Error else T.TextSecondary,
-                            fontSize = T.FsSm,
-                        )
-                    }
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        AppInput(passwordConfirm, { passwordConfirm = it }, placeholder = "Подтвердите пароль", isPassword = true, error = errors.containsKey("passwordConfirm"))
-                        FieldError(errors["passwordConfirm"])
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            AppInput(
+                                password,
+                                { password = it },
+                                placeholder = "Пароль",
+                                isPassword = true,
+                                error = errors.containsKey("password"),
+                            )
+                            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                                Box(modifier = Modifier.weight(1f)) {
+                                    errors["password"]?.let { AuthFieldError(it) }
+                                }
+                                Text(
+                                    "Забыли пароль?",
+                                    style = AppFont.sans(T.FsSm, color = Color.White.copy(alpha = 0.6f)),
+                                    modifier = Modifier
+                                        .padding(top = 8.dp)
+                                        .pressable { onRecovery() },
+                                )
+                            }
+                        }
+                    } else {
+                        AuthField(errors["email"]) {
+                            AppInput(
+                                email,
+                                { email = it },
+                                placeholder = "Email",
+                                error = errors.containsKey("email"),
+                                keyboardType = KeyboardType.Email,
+                            )
+                        }
+                        AuthField(errors["phone"]) {
+                            AppInput(
+                                phone,
+                                { phone = PhoneMask.format(it) },
+                                placeholder = "Номер телефона",
+                                error = errors.containsKey("phone"),
+                                keyboardType = KeyboardType.Phone,
+                            )
+                        }
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            AppInput(
+                                password,
+                                { password = it },
+                                placeholder = "Пароль",
+                                isPassword = true,
+                                error = errors.containsKey("password"),
+                            )
+                            Text(
+                                errors["password"] ?: "Пароль должен содержать от 8 символов",
+                                style = AppFont.sans(
+                                    T.FsSm,
+                                    color = if (errors.containsKey("password")) T.Error.copy(alpha = 0.7f) else T.Text,
+                                ),
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                        AuthField(errors["passwordConfirm"]) {
+                            AppInput(
+                                passwordConfirm,
+                                { passwordConfirm = it },
+                                placeholder = "Подтвердите пароль",
+                                isPassword = true,
+                                error = errors.containsKey("passwordConfirm"),
+                            )
+                        }
                     }
                 }
             }
 
-            Spacer(Modifier.size(32.dp))
-
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = T.ScreenX)
+                    .padding(top = 12.dp, bottom = designBottom(T.NavBarBottom)),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 AppButton("Войти с Yandex", variant = ButtonVariant.Secondary) {}
                 AppButton(
-                    if (mode == "login") "Войти" else "Далее",
+                    if (mode == AuthMode.Login) "Войти" else "Далее",
                     variant = ButtonVariant.Accent,
                     enabled = !submitting,
                 ) { submit() }
             }
         }
-    }
-}
 
-@Composable
-private fun ToggleWord(text: String, active: Boolean, onClick: () -> Unit) {
-    Text(
-        text,
-        color = if (active) T.Text else T.TextMuted,
-        fontSize = T.FsTitle,
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier.clickable(onClick = onClick),
-    )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp)
+                .padding(top = designTop(71.dp)),
+        ) {
+            Spacer(Modifier.weight(1f))
+            Text("16+", style = AppFont.heading(T.FsTitle, T.TextMuted))
+        }
+    }
 }

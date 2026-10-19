@@ -2,20 +2,25 @@ package app.karta.likvidnosti.ui.screens
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -28,30 +33,48 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.karta.likvidnosti.data.Repository
 import app.karta.likvidnosti.data.Session
 import app.karta.likvidnosti.data.Uploads
+import app.karta.likvidnosti.data.api.ApiException
 import app.karta.likvidnosti.data.fileUrl
-import app.karta.likvidnosti.ui.components.Screen
+import app.karta.likvidnosti.ui.components.AppInput
+import app.karta.likvidnosti.ui.components.AuthField
+import app.karta.likvidnosti.ui.components.AvatarCircle
+import app.karta.likvidnosti.ui.components.BackdropBox
+import app.karta.likvidnosti.ui.components.CapsuleShape
+import app.karta.likvidnosti.ui.components.GlassTopBar
+import app.karta.likvidnosti.ui.components.liquidGlass
+import app.karta.likvidnosti.ui.components.pressable
+import app.karta.likvidnosti.ui.components.screenBackground
+import app.karta.likvidnosti.ui.theme.AppFont
 import app.karta.likvidnosti.ui.theme.T
-import coil.compose.AsyncImage
+import app.karta.likvidnosti.ui.theme.designBottom
+import app.karta.likvidnosti.ui.theme.designTop
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import kotlinx.coroutines.launch
 
+/**
+ * «Профиль изменить» (iOS ProfileEditView, Figma 337:26931, ошибка 349:12444):
+ * «назад» и «Готово» (стекло 72×42) на y=78, между ними аватар 148 с y=78,
+ * «Изменить фотографию» 14 через 12, поля «Имя» и «Тег» с подписью (64,
+ * через 12) с отступом 24. Долгое нажатие на фото — «Удалить фото» (как
+ * контекстное меню в iOS). Ошибка тега («Тег уже занят») — под полем «Тег».
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun ProfileEditScreen(onDone: () -> Unit) {
+fun ProfileEditScreen(onBack: () -> Unit, onDone: () -> Unit) {
     var name by remember { mutableStateOf(Session.user?.name ?: "") }
     var tag by remember { mutableStateOf(Session.user?.username ?: "") }
     var avatarUrl by remember { mutableStateOf(Session.user?.avatarUrl) }
-    // Локально выбранное фото (предпросмотр). Отправка на сервер появится вместе
-    // с общим бэкенд-эндпоинтом загрузки аватара.
-    var pickedPhoto by remember { mutableStateOf<android.net.Uri?>(null) }
     var saving by remember { mutableStateOf(false) }
     var uploading by remember { mutableStateOf(false) }
+    var tagError by remember { mutableStateOf<String?>(null) }
+    var menuOpen by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
@@ -59,13 +82,12 @@ fun ProfileEditScreen(onDone: () -> Unit) {
         runCatching { Repository.profile() }.getOrNull()?.user?.let {
             name = it.name ?: name
             tag = it.username ?: tag
-            avatarUrl = it.avatarUrl ?: avatarUrl
+            avatarUrl = it.avatarUrl
         }
     }
 
     fun uploadPhoto(uri: android.net.Uri) {
         if (uploading) return
-        pickedPhoto = uri
         uploading = true
         scope.launch {
             val part = Uploads.filePart(context, "avatar", uri)
@@ -73,7 +95,6 @@ fun ProfileEditScreen(onDone: () -> Unit) {
                 runCatching { Repository.uploadAvatar(part) }.getOrNull()?.let { avatarUrl = it.avatarUrl }
                 runCatching { Session.load(force = true) }
             }
-            pickedPhoto = null
             uploading = false
         }
     }
@@ -83,9 +104,8 @@ fun ProfileEditScreen(onDone: () -> Unit) {
         uploading = true
         scope.launch {
             runCatching { Repository.removeAvatar() }
-            runCatching { Session.load(force = true) }
             avatarUrl = null
-            pickedPhoto = null
+            runCatching { Session.load(force = true) }
             uploading = false
         }
     }
@@ -98,76 +118,105 @@ fun ProfileEditScreen(onDone: () -> Unit) {
         if (saving) return
         saving = true
         scope.launch {
-            runCatching { Repository.updateProfile(name.trim(), tag.trim().ifEmpty { null }) }
-            runCatching { Session.load(force = true) }
-            saving = false
-            onDone()
+            try {
+                Repository.updateProfile(name.trim(), tag.trim().ifEmpty { null })
+                runCatching { Session.load(force = true) }
+                onDone()
+            } catch (ex: ApiException) {
+                tagError = ex.fieldError("username")?.let { tagErrorText(it) } ?: ex.message
+            } catch (ex: Exception) {
+                tagError = "Не удалось сохранить"
+            } finally {
+                saving = false
+            }
         }
     }
 
-    val initial = (tag.ifEmpty { name }).removePrefix("@").take(1).uppercase()
+    val initial = tag.replace("@", "").ifEmpty { name }.take(1).uppercase()
 
-    Screen(verticalArrangement = Arrangement.spacedBy(24.dp)) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            Box(
+    BackdropBox(
+        modifier = Modifier.fillMaxSize(),
+        contentModifier = Modifier.screenBackground(),
+        content = {
+            Column(
                 modifier = Modifier
-                    .clip(T.ShapePill)
-                    .background(T.SurfaceMuted)
-                    .border(1.dp, Color(0x26FFFFFF), T.ShapePill)
-                    .clickable { save() }
-                    .padding(horizontal = 22.dp, vertical = 11.dp),
-            ) { Text(if (saving) "Сохранение…" else "Готово", color = T.Text, fontSize = T.FsBase) }
-        }
-
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            val url = fileUrl(avatarUrl)
-            Box(
-                modifier = Modifier.size(148.dp).clip(CircleShape).background(Color(0xFF3F4A2C)),
-                contentAlignment = Alignment.Center,
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = T.ScreenX)
+                    .padding(top = designTop(T.TopBarY), bottom = designBottom(40.dp)),
             ) {
-                when {
-                    pickedPhoto != null -> AsyncImage(
-                        model = pickedPhoto,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize().clip(CircleShape),
-                    )
-                    url != null -> AsyncImage(
-                        model = url,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize().clip(CircleShape),
-                    )
-                    initial.isNotEmpty() -> Text(initial, color = T.Text, fontSize = T.FsTitle, fontWeight = FontWeight.Bold)
+                Box(modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                    Column(
+                        modifier = Modifier.combinedClickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            enabled = !uploading,
+                            onLongClick = { if (avatarUrl != null) menuOpen = true },
+                            onClick = { photoPicker.launch("image/*") },
+                        ),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            AvatarCircle(url = fileUrl(avatarUrl), size = 148.dp, initial = initial)
+                            if (uploading) {
+                                Box(Modifier.size(148.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.35f)))
+                                CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(28.dp))
+                            }
+                        }
+                        Text(if (uploading) "Загрузка…" else "Изменить фотографию", style = AppFont.sans(T.FsBase))
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Удалить фото", style = AppFont.sans(T.FsBase, color = T.Error)) },
+                            onClick = {
+                                menuOpen = false
+                                removePhoto()
+                            },
+                        )
+                    }
+                }
+
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    AppInput(name, { name = it }, placeholder = "Введите имя", label = "Имя")
+                    AuthField(tagError) {
+                        AppInput(
+                            tag,
+                            { tag = it; tagError = null },
+                            placeholder = "Придумайте тег",
+                            label = "Тег",
+                            error = tagError != null,
+                        )
+                    }
                 }
             }
-            Text(
-                if (uploading) "Загрузка…" else "Изменить фотографию",
-                color = T.Text,
-                fontSize = T.FsMd,
-                modifier = Modifier.clickable(enabled = !uploading) { photoPicker.launch("image/*") },
+        },
+        overlay = {
+            GlassTopBar(
+                onBack = onBack,
+                trailing = {
+                    Box(
+                        modifier = Modifier
+                            .size(width = 72.dp, height = 42.dp)
+                            .liquidGlass(CapsuleShape)
+                            .pressable(enabled = !saving) { save() },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            if (saving) "…" else "Готово",
+                            style = AppFont.sans(13.sp).copy(letterSpacing = 0.52.sp),
+                        )
+                    }
+                },
             )
-            if (avatarUrl != null) {
-                Text(
-                    "Удалить фото",
-                    color = Color(0xFFFF4D4D),
-                    fontSize = T.FsSm,
-                    modifier = Modifier.clickable(enabled = !uploading) { removePhoto() },
-                )
-            }
-        }
-
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            LabeledInput("Имя", name) { name = it }
-            LabeledInput("Тег", tag) { tag = it }
-        }
-    }
+        },
+    )
 }
 
+/** Старое поле с подписью (используется экраном изменения чата, ещё не перерисованным). */
 @Composable
 fun LabeledInput(label: String, value: String, onValueChange: (String) -> Unit) {
     Column(

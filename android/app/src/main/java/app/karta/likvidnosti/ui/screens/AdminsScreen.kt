@@ -1,13 +1,12 @@
 package app.karta.likvidnosti.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -23,26 +22,38 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.karta.likvidnosti.data.Repository
 import app.karta.likvidnosti.data.Session
 import app.karta.likvidnosti.data.api.AdminDto
 import app.karta.likvidnosti.data.api.ApiException
-import app.karta.likvidnosti.ui.components.AppButton
 import app.karta.likvidnosti.ui.components.AppInput
-import app.karta.likvidnosti.ui.components.ButtonVariant
+import app.karta.likvidnosti.ui.components.AuthFieldError
+import app.karta.likvidnosti.ui.components.CapsuleShape
 import app.karta.likvidnosti.ui.components.ConfirmDialog
-import app.karta.likvidnosti.ui.components.FieldError
-import app.karta.likvidnosti.ui.components.Screen
-import app.karta.likvidnosti.ui.components.ScreenHeader
+import app.karta.likvidnosti.ui.components.Fills
+import app.karta.likvidnosti.ui.components.InnerScreen
+import app.karta.likvidnosti.ui.components.PurplePillButton
+import app.karta.likvidnosti.ui.components.liquidGlass
+import app.karta.likvidnosti.ui.components.pressable
+import app.karta.likvidnosti.ui.theme.AppFont
 import app.karta.likvidnosti.ui.theme.T
+import app.karta.likvidnosti.ui.theme.hex
 import kotlinx.coroutines.launch
 
+/**
+ * «Администраторы» (iOS AdminsView): заголовок на y=160, пояснение 14 белый
+ * 65 %, поле Telegram ID со стеклянной кнопкой «Добавить» («active», 48),
+ * карточки админов (#25262A, радиус 24, ≥64): серый круг 30, имя SemiBold 12
+ * и «ID … · тег» 12; справа «Главный» («active») или пурпурная «Удалить» с
+ * подтверждением.
+ */
 @Composable
 fun AdminsScreen(onBack: () -> Unit, onLeftAdmin: () -> Unit) {
     val admins = remember { mutableStateListOf<AdminDto>() }
@@ -50,19 +61,32 @@ fun AdminsScreen(onBack: () -> Unit, onLeftAdmin: () -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     var adding by remember { mutableStateOf(false) }
     var confirmFor by remember { mutableStateOf<AdminDto?>(null) }
-    var removing by remember { mutableStateOf(false) }
+    var removing by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val myId = Session.user?.telegramId
 
     suspend fun reload() {
-        runCatching { Repository.admins() }.getOrNull()?.let { admins.clear(); admins.addAll(it) }
+        try {
+            val list = Repository.admins()
+            admins.clear()
+            admins.addAll(list)
+        } catch (ex: ApiException) {
+            error = ex.message
+        } catch (ex: Exception) {
+            error = "Не удалось загрузить список"
+        }
     }
     LaunchedEffect(Unit) { reload() }
 
     fun add() {
         val id = telegramId.trim()
-        if (!id.matches(Regex("^\\d+$"))) { error = "Telegram ID состоит только из цифр"; return }
-        adding = true; error = null
+        if (!id.matches(Regex("^\\d+$"))) {
+            error = "Telegram ID состоит только из цифр"
+            return
+        }
+        if (adding) return
+        adding = true
+        error = null
         scope.launch {
             try {
                 Repository.addAdmin(id)
@@ -72,13 +96,15 @@ fun AdminsScreen(onBack: () -> Unit, onLeftAdmin: () -> Unit) {
                 error = ex.fieldError("telegram_id") ?: ex.message
             } catch (ex: Exception) {
                 error = "Не удалось добавить"
-            } finally { adding = false }
+            } finally {
+                adding = false
+            }
         }
     }
 
     fun confirmRemove() {
         val admin = confirmFor ?: return
-        removing = true
+        removing = admin.telegramId
         scope.launch {
             try {
                 Repository.removeAdmin(admin.telegramId)
@@ -86,65 +112,115 @@ fun AdminsScreen(onBack: () -> Unit, onLeftAdmin: () -> Unit) {
                 if (admin.telegramId == myId) {
                     runCatching { Session.load(force = true) }
                     onLeftAdmin()
-                    return@launch
+                } else {
+                    reload()
                 }
-                reload()
-            } catch (ex: Exception) {
-                error = (ex as? ApiException)?.message ?: "Не удалось удалить"
+            } catch (ex: ApiException) {
+                error = ex.message
                 confirmFor = null
-            } finally { removing = false }
+            } catch (ex: Exception) {
+                error = "Не удалось удалить"
+                confirmFor = null
+            } finally {
+                removing = null
+            }
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        Screen(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            ScreenHeader("Администраторы", onBack = onBack)
-            Text(
-                "Админы видят админ-панель: создают и редактируют отчёты, настраивают чаты и отвечают в личных чатах. Добавить нового админа можно по его Telegram ID.",
-                color = T.TextSecondary, fontSize = T.FsBase,
+    InnerScreen(
+        onBack = onBack,
+        bottomPadding = 32.dp,
+        spacing = 12.dp,
+        overlay = {
+            ConfirmDialog(
+                open = confirmFor != null,
+                title = "Удалить админа?",
+                text = "Он потеряет доступ к админ-панели",
+                busy = removing != null,
+                onConfirm = { confirmRemove() },
+                onCancel = { confirmFor = null },
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                AppInput(telegramId, { telegramId = it; error = null }, placeholder = "Telegram ID", keyboardType = KeyboardType.Number, error = error != null, modifier = Modifier.weight(1f))
-                AppButton("Добавить", variant = ButtonVariant.Accent, enabled = !adding) { add() }
-            }
-            FieldError(error)
+        },
+    ) {
+        Text("Администраторы", style = AppFont.heading(T.FsTitle))
+        Text(
+            "Админы видят админ-панель: создают и редактируют отчёты, настраивают чаты и отвечают в личных чатах. Добавить нового админа можно по его Telegram ID.",
+            style = AppFont.sans(T.FsBase, color = T.TextSecondary).copy(lineHeight = 19.sp),
+        )
 
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                admins.forEach { a ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp).clip(T.ShapeChip).background(T.Surface).padding(horizontal = 16.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Box(Modifier.size(40.dp).clip(CircleShape).background(Color(0xFF8A8A8A)))
-                        Column(Modifier.weight(1f)) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(a.name ?: "Ещё не заходил", color = T.Text, fontSize = T.FsMd, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                if (a.telegramId == myId) Text("(вы)", color = T.TextSecondary, fontSize = T.FsMd)
-                            }
-                            Text("ID ${a.telegramId}" + (a.username?.let { " · $it" } ?: ""), color = T.TextSecondary, fontSize = T.FsSm)
-                        }
-                        if (a.root) {
-                            Box(modifier = Modifier.clip(T.ShapePill).background(T.GradientAccent).padding(horizontal = 12.dp, vertical = 6.dp)) {
-                                Text("Главный", color = T.Text, fontSize = T.FsSm)
-                            }
-                        } else {
-                            Box(
-                                modifier = Modifier.clip(T.ShapePill).background(T.GradientPurpleSolid).clickable { confirmFor = a }.padding(horizontal = 12.dp, vertical = 7.dp),
-                            ) { Text("Удалить", color = T.Text, fontSize = T.FsBase) }
-                        }
-                    }
-                }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            AppInput(
+                telegramId,
+                { telegramId = it; error = null },
+                placeholder = "Telegram ID",
+                error = error != null,
+                keyboardType = KeyboardType.Number,
+                modifier = Modifier.weight(1f),
+            )
+            Box(
+                modifier = Modifier
+                    .height(48.dp)
+                    .alpha(if (adding) 0.5f else 1f)
+                    .liquidGlass(T.ShapeInput, Fills.Active)
+                    .pressable(enabled = !adding) { add() }
+                    .padding(horizontal = 20.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("Добавить", style = AppFont.sans(T.FsBase))
             }
         }
 
-        ConfirmDialog(
-            open = confirmFor != null,
-            title = "Удалить админа?",
-            text = "Он потеряет доступ к админ-панели",
-            busy = removing,
-            onConfirm = { confirmRemove() },
-            onCancel = { confirmFor = null },
-        )
+        error?.let { AuthFieldError(it) }
+
+        Column(modifier = Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            admins.forEach { a -> AdminRow(a, isMe = a.telegramId == myId, removing = removing == a.telegramId) { confirmFor = a } }
+        }
+    }
+}
+
+@Composable
+private fun AdminRow(a: AdminDto, isMe: Boolean, removing: Boolean, onRemove: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 64.dp)
+            .clip(T.ShapeCard)
+            .background(T.Surface)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(Modifier.size(30.dp).clip(CircleShape).background(hex("#d9d9d9")))
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    a.name ?: "Ещё не заходил",
+                    style = AppFont.sans(T.FsSm, FontWeight.SemiBold),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (isMe) Text("(вы)", style = AppFont.sans(T.FsSm, color = T.TextSecondary))
+            }
+            Text(
+                "ID ${a.telegramId}" + (a.username?.let { " · $it" } ?: ""),
+                style = AppFont.sans(T.FsSm, color = T.TextSecondary),
+            )
+        }
+        if (a.root) {
+            Box(
+                modifier = Modifier
+                    .height(32.dp)
+                    .liquidGlass(CapsuleShape, Fills.Active)
+                    .padding(horizontal = 12.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("Главный", style = AppFont.sans(13.sp).copy(letterSpacing = 0.52.sp))
+            }
+        } else {
+            PurplePillButton("Удалить", modifier = Modifier.alpha(if (removing) 0.5f else 1f)) {
+                if (!removing) onRemove()
+            }
+        }
     }
 }

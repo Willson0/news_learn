@@ -4,22 +4,21 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material3.LocalTextStyle
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -35,7 +34,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.karta.likvidnosti.data.Repository
@@ -44,20 +43,43 @@ import app.karta.likvidnosti.data.api.ApiException
 import app.karta.likvidnosti.data.api.InstrumentDto
 import app.karta.likvidnosti.data.fileUrl
 import app.karta.likvidnosti.ui.components.AppButton
+import app.karta.likvidnosti.ui.components.AppInput
+import app.karta.likvidnosti.ui.components.AuthField
+import app.karta.likvidnosti.ui.components.AuthFieldError
+import app.karta.likvidnosti.ui.components.BackdropBox
 import app.karta.likvidnosti.ui.components.ButtonVariant
 import app.karta.likvidnosti.ui.components.ConfirmDialog
-import app.karta.likvidnosti.ui.components.Screen
-import app.karta.likvidnosti.ui.components.ScreenTitle
+import app.karta.likvidnosti.ui.components.FileHtmlIcon
+import app.karta.likvidnosti.ui.components.Fills
+import app.karta.likvidnosti.ui.components.FlowLayout
+import app.karta.likvidnosti.ui.components.GlassCircleButton
+import app.karta.likvidnosti.ui.components.GlassTopBar
+import app.karta.likvidnosti.ui.components.PurplePillButton
+import app.karta.likvidnosti.ui.components.liquidGlass
+import app.karta.likvidnosti.ui.components.pressable
+import app.karta.likvidnosti.ui.components.screenBackground
 import app.karta.likvidnosti.ui.icons.AppIcon
 import app.karta.likvidnosti.ui.icons.AppIcons
+import app.karta.likvidnosti.ui.theme.AppFont
 import app.karta.likvidnosti.ui.theme.T
+import app.karta.likvidnosti.ui.theme.designBottom
+import app.karta.likvidnosti.ui.theme.designTop
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 
 private const val DESCRIPTION_MAX = 250
 private val SHORT_LABELS = mapOf("gas" to "Нат. газ")
 
-@OptIn(ExperimentalLayoutApi::class)
+/**
+ * «Создание и загрузка отчета» (iOS ReportFormView, Figma 349:11597, 349:11743,
+ * ошибки 349:12486, редактирование 349:12705): «назад» (и красная корзина при
+ * редактировании) на y=78, заголовок Kreadon 24 на y=144; поля со стеклом и
+ * подписью: «Заголовок» 63, «Описание» ≥101 со счётчиком «N/250 символов»
+ * справа, «График» 63; блок чипов-инструментов (#25262A, радиус 24, отступ 12,
+ * шаг 4); строки файлов 64 («Отчет html», «Обложка»: белая иконка 32 с
+ * зелёным «+», пурпурная пилюля «Добавить/Удалить»); ошибки 12 красным 70 %
+ * под полем; внизу кнопка (низ — 45).
+ */
 @Composable
 fun ReportFormScreen(
     reportId: Long?,
@@ -140,9 +162,8 @@ fun ReportFormScreen(
     }
 
     fun submit() {
-        if (!validate()) return
+        if (!validate() || saving) return
         saving = true
-        errors = errors - "form"
         scope.launch {
             try {
                 val parts = buildList {
@@ -163,7 +184,7 @@ fun ReportFormScreen(
                 if (report != null) onSaved(report.id) else errors = mapOf("form" to "Не удалось сохранить")
             } catch (ex: ApiException) {
                 val fe = ex.errors.mapValues { (_, v) -> v.firstOrNull() ?: "" }.filterValues { it.isNotEmpty() }
-                errors = if (fe.isNotEmpty()) fe else mapOf("form" to (ex.message ?: "Не удалось сохранить"))
+                errors = fe.ifEmpty { mapOf("form" to ex.message) }
             } catch (ex: Exception) {
                 errors = mapOf("form" to "Не удалось сохранить")
             } finally {
@@ -173,13 +194,17 @@ fun ReportFormScreen(
     }
 
     fun remove() {
+        val id = reportId ?: return
         deleting = true
         scope.launch {
             try {
-                Repository.deleteReport(reportId!!)
+                Repository.deleteReport(id)
                 onDeleted()
+            } catch (ex: ApiException) {
+                errors = mapOf("form" to ex.message)
+                confirmOpen = false
             } catch (ex: Exception) {
-                errors = mapOf("form" to ((ex as? ApiException)?.message ?: "Не удалось удалить"))
+                errors = mapOf("form" to "Не удалось удалить")
                 confirmOpen = false
             } finally {
                 deleting = false
@@ -187,181 +212,241 @@ fun ReportFormScreen(
         }
     }
 
-    Screen(verticalArrangement = Arrangement.spacedBy(12.dp), bottomInset = 32.dp) {
-        Row(modifier = Modifier.fillMaxWidth().heightIn(min = 42.dp), horizontalArrangement = Arrangement.End) {
-            if (isEdit) {
-                Box(
+    BackdropBox(
+        modifier = Modifier.fillMaxSize(),
+        contentModifier = Modifier.screenBackground(),
+        content = {
+            Column(modifier = Modifier.fillMaxSize().imePadding()) {
+                Column(
                     modifier = Modifier
-                        .size(42.dp).clip(androidx.compose.foundation.shape.CircleShape)
-                        .background(T.SurfaceMuted).border(1.dp, Color(0x1FFFFFFF), androidx.compose.foundation.shape.CircleShape)
-                        .clickable { confirmOpen = true },
-                    contentAlignment = Alignment.Center,
-                ) { AppIcon(AppIcons.TrashX, size = 22.dp, tint = Color(0xFFE0262B)) }
-            }
-        }
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = T.ScreenX)
+                        .padding(top = designTop(144.dp), bottom = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        if (isEdit) "Редактирование отчета" else "Создание отчета",
+                        style = AppFont.heading(T.FsTitle),
+                        modifier = Modifier.padding(bottom = 12.dp),
+                    )
 
-        ScreenTitle(if (isEdit) "Редактирование отчета" else "Создание отчета")
+                    AuthField(errors["title"]) {
+                        AppInput(
+                            title,
+                            { title = it; clearError("title") },
+                            placeholder = "Введите текст",
+                            label = "Заголовок",
+                            error = errors.containsKey("title"),
+                            height = 63.dp,
+                        )
+                    }
 
-        RField("Заголовок", title, error = errors["title"]) { title = it; clearError("title") }
-        FormError(errors["title"])
-
-        RField(
-            label = "Описание",
-            value = description,
-            error = errors["description"],
-            counter = "${description.length}/$DESCRIPTION_MAX символов",
-            singleLine = false,
-        ) { if (it.length <= DESCRIPTION_MAX) description = it; clearError("description") }
-        FormError(errors["description"])
-
-        RField("График", chartUrl, placeholder = "Ссылка на график", error = errors["chart_url"]) {
-            chartUrl = it; clearError("chart_url")
-        }
-        FormError(errors["chart_url"])
-
-        // Инструменты
-        FlowRow(
-            modifier = Modifier.fillMaxWidth().clip(T.ShapeCard).background(T.Surface).padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            instruments.forEach { item ->
-                val on = instrument == item.key
-                val label = SHORT_LABELS[item.key] ?: item.label
-                Box(
-                    modifier = Modifier
-                        .height(40.dp)
-                        .clip(T.ShapeChip)
-                        .then(if (on) Modifier.background(T.GradientAccent) else Modifier.border(1.dp, Color(0x2EFFFFFF), T.ShapeChip))
-                        .clickable {
-                            instrument = if (instrument == item.key) null else item.key
-                            clearError("instrument")
+                    AuthField(errors["description"]) {
+                        DescriptionInput(description, error = errors.containsKey("description")) {
+                            description = it.take(DESCRIPTION_MAX)
+                            clearError("description")
                         }
-                        .padding(horizontal = 16.dp),
-                    contentAlignment = Alignment.Center,
-                ) { Text(label, color = T.Text, fontSize = T.FsBase, maxLines = 1) }
+                    }
+
+                    AuthField(errors["chart_url"]) {
+                        AppInput(
+                            chartUrl,
+                            { chartUrl = it; clearError("chart_url") },
+                            placeholder = "Ссылка на график",
+                            label = "График",
+                            error = errors.containsKey("chart_url"),
+                            keyboardType = KeyboardType.Uri,
+                            height = 63.dp,
+                        )
+                    }
+
+                    AuthField(errors["instrument"]) {
+                        FlowLayout(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(T.ShapeCard)
+                                .background(T.Surface)
+                                .padding(12.dp),
+                            spacing = 4.dp,
+                        ) {
+                            instruments.forEach { item ->
+                                val on = instrument == item.key
+                                InstrumentOption(SHORT_LABELS[item.key] ?: item.label, on) {
+                                    instrument = if (on) null else item.key
+                                    clearError("instrument")
+                                }
+                            }
+                        }
+                    }
+
+                    AuthField(errors["html"]) {
+                        FileRow(
+                            name = htmlName.ifEmpty { "Отчет html" },
+                            has = htmlName.isNotEmpty(),
+                            icon = {
+                                if (htmlName.isEmpty()) AddIcon() else FileHtmlIcon(Modifier.size(30.dp))
+                            },
+                            onAdd = { htmlPicker.launch("text/html") },
+                            onRemove = {
+                                htmlUri = null
+                                htmlName = ""
+                                removeHtml = isEdit
+                            },
+                        )
+                    }
+
+                    AuthField(errors["cover"]) {
+                        FileRow(
+                            name = coverName.ifEmpty { "Обложка" },
+                            has = coverName.isNotEmpty(),
+                            icon = {
+                                if (coverName.isEmpty()) {
+                                    AddIcon()
+                                } else {
+                                    AsyncImage(
+                                        model = coverUri ?: coverPreview,
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(Color.White),
+                                    )
+                                }
+                            },
+                            onAdd = { coverPicker.launch("image/*") },
+                            onRemove = {
+                                coverUri = null
+                                coverName = ""
+                                coverPreview = null
+                                removeCover = isEdit
+                            },
+                        )
+                    }
+
+                    errors["form"]?.let { AuthFieldError(it) }
+                }
+
+                AppButton(
+                    if (isEdit) "Сохранить" else "Создать отчет",
+                    variant = ButtonVariant.Accent,
+                    enabled = !saving,
+                    modifier = Modifier
+                        .padding(horizontal = T.ScreenX)
+                        .padding(top = 12.dp, bottom = designBottom(T.NavBarBottom)),
+                ) { submit() }
             }
-        }
-        FormError(errors["instrument"])
-
-        // HTML
-        FileRow(
-            name = htmlName.ifEmpty { "Отчет html" },
-            hasFile = htmlName.isNotEmpty(),
-            preview = null,
-            iconHtml = true,
-            onAdd = { htmlPicker.launch("text/html") },
-            onRemove = { htmlUri = null; htmlName = ""; removeHtml = isEdit },
-        )
-        FormError(errors["html"])
-
-        // Обложка
-        FileRow(
-            name = coverName.ifEmpty { "Обложка" },
-            hasFile = coverName.isNotEmpty(),
-            preview = coverUri ?: coverPreview,
-            iconHtml = false,
-            onAdd = { coverPicker.launch("image/*") },
-            onRemove = { coverUri = null; coverName = ""; coverPreview = null; removeCover = isEdit },
-        )
-        FormError(errors["cover"])
-
-        errors["form"]?.let {
-            Text(it, color = T.Error, fontSize = T.FsSm, modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-        }
-        AppButton(
-            text = if (isEdit) "Сохранить" else "Создать отчет",
-            variant = ButtonVariant.Accent,
-            enabled = !saving,
-            modifier = Modifier.padding(top = 16.dp),
-        ) { submit() }
-    }
-
-    ConfirmDialog(
-        open = confirmOpen,
-        title = "Удалить отчет?",
-        text = "Удалив отчет он пропадет у всех пользователей, включая чат",
-        busy = deleting,
-        onConfirm = { remove() },
-        onCancel = { confirmOpen = false },
+        },
+        overlay = {
+            GlassTopBar(
+                onBack = onBack,
+                trailing = if (isEdit) {
+                    { GlassCircleButton(AppIcons.trashX, iconSize = 24.dp, iconColor = T.Error) { confirmOpen = true } }
+                } else {
+                    null
+                },
+            )
+            ConfirmDialog(
+                open = confirmOpen,
+                title = "Удалить отчет?",
+                text = "Удалив отчет он пропадет у всех пользователей, включая чат",
+                busy = deleting,
+                onConfirm = { remove() },
+                onCancel = { confirmOpen = false },
+            )
+        },
     )
 }
 
+/** «Описание»: стекло, подпись и счётчик 12 сверху, многострочный ввод 14, высота от 101. */
 @Composable
-private fun RField(
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier,
-    placeholder: String = "Введите текст",
-    error: String? = null,
-    counter: String? = null,
-    singleLine: Boolean = true,
-    onValueChange: (String) -> Unit,
-) {
+private fun DescriptionInput(value: String, error: Boolean, onValueChange: (String) -> Unit) {
     Column(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(T.SurfaceMuted)
-            .border(1.dp, if (error != null) T.Error else Color(0x1FFFFFFF), RoundedCornerShape(20.dp))
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+            .heightIn(min = 101.dp)
+            .liquidGlass(T.ShapeInput)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(label, color = T.TextSecondary, fontSize = T.FsSm)
-            if (counter != null) Text(counter, color = T.TextSecondary, fontSize = T.FsSm)
+        Row(modifier = Modifier.fillMaxWidth()) {
+            Text("Описание", style = AppFont.sans(T.FsSm, color = T.TextSecondary), modifier = Modifier.weight(1f))
+            Text("${value.length}/$DESCRIPTION_MAX символов", style = AppFont.sans(T.FsSm, color = T.TextSecondary))
         }
-        Box {
-            if (value.isEmpty()) Text(placeholder, color = T.TextMuted, fontSize = T.FsBase)
-            BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
-                singleLine = singleLine,
-                textStyle = LocalTextStyle.current.copy(color = T.Text, fontSize = T.FsBase),
-                cursorBrush = SolidColor(T.Text),
-                modifier = Modifier.fillMaxWidth().then(if (singleLine) Modifier else Modifier.heightIn(min = 60.dp)),
-            )
-        }
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            textStyle = AppFont.sans(T.FsBase, color = if (error) T.Error else T.Text),
+            cursorBrush = SolidColor(T.Green),
+            maxLines = 6,
+            modifier = Modifier.fillMaxWidth(),
+            decorationBox = { inner ->
+                Box {
+                    if (value.isEmpty()) {
+                        Text("Введите текст", style = AppFont.sans(T.FsBase, color = T.TextMuted))
+                    }
+                    inner()
+                }
+            },
+        )
     }
 }
 
+/** Чип инструмента (14, отступ 24, высота 40, радиус 12): выбранный — «active». */
+@Composable
+private fun InstrumentOption(label: String, on: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .height(40.dp)
+            .liquidGlass(RoundedCornerShape(12.dp), if (on) Fills.Active else Fills.Glass)
+            .pressable(pressAlpha = 1f, onClick = onClick)
+            .padding(horizontal = 24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, style = AppFont.sans(T.FsBase), maxLines = 1)
+    }
+}
+
+/** Белая плашка 32 (радиус 8) с зелёным «+» 24. */
+@Composable
+private fun AddIcon() {
+    Box(
+        modifier = Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).background(Color.White),
+        contentAlignment = Alignment.Center,
+    ) {
+        AppIcon(AppIcons.plus, size = 24.dp, tint = T.Green)
+    }
+}
+
+/** Строка файла 64 (#25262A, радиус 24): иконка 32, имя 16, пурпурная «Добавить/Удалить». */
 @Composable
 private fun FileRow(
     name: String,
-    hasFile: Boolean,
-    preview: Any?,
-    iconHtml: Boolean,
+    has: Boolean,
+    icon: @Composable () -> Unit,
     onAdd: () -> Unit,
     onRemove: () -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().height(64.dp).clip(T.ShapeCard).background(T.Surface).padding(horizontal = 16.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(64.dp)
+            .clip(T.ShapeCard)
+            .background(T.Surface)
+            .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(
-            modifier = Modifier.size(32.dp).clip(RoundedCornerShape(6.dp))
-                .then(if (hasFile && !iconHtml) Modifier.background(Color.White) else if (!hasFile) Modifier.background(Color.White) else Modifier),
-            contentAlignment = Alignment.Center,
-        ) {
-            when {
-                hasFile && !iconHtml && preview != null ->
-                    AsyncImage(model = preview, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxWidth().height(32.dp))
-                hasFile && iconHtml -> AppIcon(AppIcons.Doc, size = 32.dp)
-                else -> AppIcon(AppIcons.Plus, size = 22.dp, tint = Color(0xFF6FBF1F))
-            }
-        }
-        Text(name, color = T.Text, fontSize = T.FsMd, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-        Box(
-            modifier = Modifier.height(32.dp).clip(T.ShapePill).background(T.GradientPurpleSolid)
-                .clickable { if (hasFile) onRemove() else onAdd() }
-                .padding(horizontal = 12.dp),
-            contentAlignment = Alignment.Center,
-        ) { Text(if (hasFile) "Удалить" else "Добавить", color = T.Text, fontSize = T.FsBase, fontWeight = FontWeight.Medium) }
+        icon()
+        Text(
+            name,
+            style = AppFont.sans(T.FsMd),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        PurplePillButton(if (has) "Удалить" else "Добавить") { if (has) onRemove() else onAdd() }
     }
-}
-
-@Composable
-private fun FormError(text: String?) {
-    if (text != null) Text(text, color = T.Error, fontSize = T.FsSm)
 }

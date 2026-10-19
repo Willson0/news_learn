@@ -63,6 +63,8 @@ Android-версия повторяет iOS-редизайн (`ios/KartaLikvidno
 | `MaterialChips` | `MaterialChips` |
 | `ConfirmDialog(open, …)` | `ConfirmDialog` |
 | `AuthScaffold`, `AuthField`, `AuthFieldError`, `AuthMessageView` | те же |
+| `InnerScreen(onBack, trailing, overlay)` — прокрутка + `GlassTopBar`, заголовок на y = 160 | `.glassTopBar()` внутренних экранов |
+| `PhoneMask` (`ui/screens/LoginScreen.kt`) | `PhoneMask` |
 | `FlowLayout` | `FlowLayout` |
 | `AppCalendar(start, end, onChange)`, `calendarPick` | `AppCalendar` |
 | `FiltersSheet`, `FiltersOverlay`, `FiltersResult` | те же |

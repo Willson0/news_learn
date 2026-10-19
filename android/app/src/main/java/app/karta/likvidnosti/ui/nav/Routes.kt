@@ -12,6 +12,7 @@ object Routes {
     const val LOGIN = "login"
     const val REGISTER_CONFIRM = "register-confirm/{email}"
     const val PASSWORD_RECOVERY = "password-recovery"
+    const val REGISTER_PROFILE = "register-profile"
 
     const val HOME = "home"
     const val ANALYTICS = "analytics"
@@ -42,7 +43,7 @@ object Routes {
     val WITH_NAV = setOf(HOME, ANALYTICS, COMMUNITY, PROFILE)
 
     /** Публичные маршруты (без авторизации). */
-    val PUBLIC = setOf(LOGIN, "register-confirm", PASSWORD_RECOVERY)
+    val PUBLIC = setOf(LOGIN, "register-confirm", PASSWORD_RECOVERY, REGISTER_PROFILE)
 
     /** Админские маршруты. */
     val ADMIN = setOf("report-create", "report-edit", "chat-edit", "admins")

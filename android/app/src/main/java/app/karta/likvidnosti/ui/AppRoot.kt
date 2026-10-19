@@ -51,6 +51,7 @@ import app.karta.likvidnosti.ui.screens.PasswordRecoveryScreen
 import app.karta.likvidnosti.ui.screens.ProfileEditScreen
 import app.karta.likvidnosti.ui.screens.ProfileScreen
 import app.karta.likvidnosti.ui.screens.RegisterConfirmScreen
+import app.karta.likvidnosti.ui.screens.RegisterProfileScreen
 import app.karta.likvidnosti.ui.screens.ReportDetailScreen
 import app.karta.likvidnosti.ui.screens.ReportFormScreen
 import app.karta.likvidnosti.ui.screens.SubscriptionScreen
@@ -130,6 +131,15 @@ fun AppRoot() {
         GlassNavBar(current = tab, onSelect = { selectTab(it) }, extra = extra)
     }
 
+    /** Вход в приложение после авторизации (iOS Router.enterApp): стек авторизации сбрасывается. */
+    fun enterApp() {
+        scope.launch {
+            runCatching { Session.load(force = true) }
+            scope.launch { AppData.preload() }
+            nav.navigate(Routes.HOME) { popUpTo(0) { inclusive = true } }
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize().background(T.Bg)) {
         NavHost(
             navController = nav,
@@ -143,13 +153,7 @@ fun AppRoot() {
             // --- Auth ---
             composable(Routes.LOGIN) {
                 LoginScreen(
-                    onAuthed = {
-                        scope.launch {
-                            runCatching { Session.load(force = true) }
-                            scope.launch { AppData.preload() }
-                            nav.navigate(Routes.HOME) { popUpTo(Routes.LOGIN) { inclusive = true } }
-                        }
-                    },
+                    onAuthed = { enterApp() },
                     onRecovery = { actions.toPasswordRecovery() },
                     onNeedConfirm = { email -> actions.toRegisterConfirm(email) },
                 )
@@ -161,12 +165,16 @@ fun AppRoot() {
                 val email = entry.arguments?.getString("email").orEmpty()
                 RegisterConfirmScreen(
                     email = email,
-                    onConfirmed = { nav.navigate(Routes.HOME) { popUpTo(Routes.LOGIN) { inclusive = true } } },
+                    // Шаг 2 регистрации: имя, тег и фото (iOS AuthRoute.registerProfile).
+                    onConfirmed = { nav.navigate(Routes.REGISTER_PROFILE) { popUpTo(Routes.LOGIN) { inclusive = true } } },
                     onBack = { actions.back() },
                 )
             }
+            composable(Routes.REGISTER_PROFILE) {
+                RegisterProfileScreen(onDone = { enterApp() })
+            }
             composable(Routes.PASSWORD_RECOVERY) {
-                PasswordRecoveryScreen(onDone = { actions.back() })
+                PasswordRecoveryScreen(onBack = { actions.back() }, onDone = { enterApp() })
             }
 
             // --- Tabs ---
@@ -268,7 +276,7 @@ fun AppRoot() {
             }
 
             // --- Profile section ---
-            composable(Routes.PROFILE_EDIT) { ProfileEditScreen(onDone = { actions.back() }) }
+            composable(Routes.PROFILE_EDIT) { ProfileEditScreen(onBack = { actions.back() }, onDone = { actions.back() }) }
             composable(Routes.NOTIFICATIONS) { NotificationsScreen(onBack = { actions.back() }) }
             composable(Routes.ACCOUNT_DATA) {
                 AccountDataScreen(

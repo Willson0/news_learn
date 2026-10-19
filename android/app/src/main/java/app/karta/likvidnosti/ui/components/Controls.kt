@@ -33,9 +33,11 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -103,6 +105,10 @@ fun AppInput(
 ) {
     var revealed by remember { mutableStateOf(false) }
     val textColor = if (error) T.Error else T.Text
+    // Своё состояние с курсором: если родитель переформатировал ввод (маска
+    // телефона, фильтр цифр), курсор ставится в конец, а не посреди текста.
+    var fieldValue by remember { mutableStateOf(TextFieldValue(value, TextRange(value.length))) }
+    val shown = if (fieldValue.text == value) fieldValue else TextFieldValue(value, TextRange(value.length))
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -117,8 +123,11 @@ fun AppInput(
                 Text(label, style = AppFont.sans(T.FsSm, color = T.TextSecondary))
             }
             BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
+                value = shown,
+                onValueChange = { next ->
+                    fieldValue = next
+                    if (next.text != value) onValueChange(next.text)
+                },
                 singleLine = singleLine,
                 textStyle = AppFont.sans(T.FsBase, color = textColor),
                 cursorBrush = SolidColor(T.Green),
