@@ -13,27 +13,50 @@ struct UserProfileView: View {
         return "\(at) (\(days) \(plural(days, ["день", "дня", "дней"])))"
     }
 
+    // «Чат Профиль пользователя» (Figma 337:30766): фон #3B5839 с размытой
+    // аватаркой (blur 50 + чёрный 50 %), «назад» на y=78; «Зарегистрирован»
+    // Kreadon 24 на y=274, дата 14 pt белый 65 % через 12, аватар 148 через
+    // 40, имя Kreadon 20 через 12, тег 14 pt через 4.
     var body: some View {
-        ZStack {
-            LinearGradient(colors: [Color(hex: "#4a5a54"), Color(hex: "#2a2d2e"), Color(hex: "#1a1b1d")],
-                           startPoint: .top, endPoint: .bottom)
-                .overlay(RadialGradient(colors: [Color(hex: "#78825a").opacity(0.5), .clear], center: .center, startRadius: 0, endRadius: 220))
-                .ignoresSafeArea()
+        ZStack(alignment: .top) {
+            Color(hex: "#3b5839")
+            if let url = fileURL(user?.avatarUrl) {
+                RemoteImage(url: url)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+            }
+            ZStack { BackdropBlur(radius: 50); Color.black.opacity(0.5) }
 
             if let u = user {
-                VStack(spacing: 6) {
+                VStack(spacing: 0) {
                     Text("Зарегистрирован").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
-                    Text(registered).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary).padding(.bottom, 20)
-                    AvatarCircle(url: fileURL(u.avatarUrl), size: 160, name: u.name ?? u.username).padding(.bottom, 14)
-                    Text(u.name ?? "").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
-                    if let un = u.username { Text(un).font(Theme.sans(Theme.fontMd)).foregroundStyle(Theme.textSecondary) }
-                    if let seen = u.seen { Text(seen).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textMuted).padding(.top, 4) }
+                    Text(registered).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
+                        .padding(.top, 12)
+                    AvatarCircle(url: fileURL(u.avatarUrl), size: 148, name: u.name ?? u.username)
+                        .padding(.top, 40)
+                    Text(u.name ?? "").font(Theme.heading(20)).foregroundStyle(Theme.text)
+                        .padding(.top, 12)
+                    if let un = u.username, !un.isEmpty {
+                        Text(un.hasPrefix("@") ? un : "@" + un)
+                            .font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
+                            .padding(.top, 4)
+                    }
                 }
                 .padding(.horizontal, Theme.screenX)
+                .padding(.top, 274)
             } else if !loading {
                 Text("Пользователь не найден").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
+                    .frame(maxHeight: .infinity)
             }
         }
+        .ignoresSafeArea()
+        .overlay(alignment: .topLeading) {
+            GlassBackButton()
+                .padding(.leading, Theme.screenX)
+                .padding(.top, Theme.topBarY)
+                .ignoresSafeArea(.container, edges: .top)
+        }
+        .toolbar(.hidden, for: .navigationBar)
         .task { await load() }
     }
 

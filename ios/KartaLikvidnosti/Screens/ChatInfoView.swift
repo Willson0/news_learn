@@ -21,61 +21,152 @@ struct ChatInfoView: View {
 
     private let tabs = [("members", "Участники"), ("media", "Медиа"), ("voice", "Голосовые"), ("files", "Файлы"), ("links", "Ссылки")]
 
+    @State private var muted = false
+    @State private var searchOpen = false
+    @State private var query = ""
+    @State private var reportId: Int? = nil
+
+    // «Чат Инфа» (Figma 337:36376 … 337:36561): шапка #383838 с размытой
+    // обложкой чата (blur 50 + чёрный 50 %, высота 376), «назад» и стеклянная
+    // кнопка-новость 42 на y=78, аватар 148 по центру с y=78, название Kreadon 20
+    // и «N участников» 14 pt белый 65 % слева на y=250. С y=321 — лист с
+    // радиусом 24 (градиент #1A1B1D → #161719): три стеклянные кнопки 60
+    // (звук, поиск, выход), сегменты-чипы 56 (выбранный — пурпур), ниже
+    // содержимое вкладки: блоки #25262A со строками 34 (иконка 30, имя
+    // SemiBold 12, подпись 12 белый 65 %), сетка медиа 3×131 во всю ширину.
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 0) {
-                hero
-                HStack(spacing: 12) {
-                    actionButton(AppIcons.bell); actionButton(AppIcons.search); actionButton(AppIcons.leave)
-                }
-                .padding(.horizontal, Theme.screenX).padding(.top, 16)
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 4) {
-                        ForEach(tabs, id: \.0) { t in
-                            Button { switchTab(t.0) } label: {
-                                Text(t.1).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
-                                    .padding(.horizontal, 18).frame(height: 40)
-                                    .background(tab == t.0 ? AnyShapeStyle(Theme.gradientAccentPurple) : AnyShapeStyle(Color.clear),
-                                                in: RoundedRectangle(cornerRadius: Theme.radiusChip, style: .continuous))
-                            }.buttonStyle(.plain)
-                        }
-                    }.padding(6)
-                }
-                .liquidGlass(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
-                .padding(.horizontal, Theme.screenX).padding(.vertical, 16)
-
-                content.padding(.horizontal, Theme.screenX).padding(.bottom, 24)
+                header
+                sheet
             }
         }
-        .screenBackground()
+        .ignoresSafeArea(.container, edges: .top)
+        .background(Color(hex: "#161719").ignoresSafeArea())
+        .overlay(alignment: .top) {
+            HStack {
+                GlassBackButton()
+                Spacer()
+                Button { newsTapped() } label: {
+                    Icon(AppIcons.news, size: 24, color: Theme.text)
+                        .frame(width: 42, height: 42)
+                        .liquidGlass(Circle(), interactive: true)
+                }
+                .buttonStyle(PressableStyle())
+            }
+            .padding(.horizontal, Theme.screenX)
+            .padding(.top, Theme.topBarY)
+            .ignoresSafeArea(.container, edges: .top)
+        }
+        .toolbar(.hidden, for: .navigationBar)
         .task { await load() }
+        .onAppear { muted = UserDefaults.standard.bool(forKey: "kl_muted_\(chatId)") }
     }
 
-    private var hero: some View {
-        VStack(spacing: 4) {
-            AvatarCircle(url: avatar, size: 150, name: title).padding(.top, 8)
-            Text(title).font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text).padding(.top, 10)
-            Text(members).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 16).padding(.bottom, 20).padding(.horizontal, Theme.screenX)
-        .background(
-            LinearGradient(colors: [Color(hex: "#343235"), Color(hex: "#1a1b1d")], startPoint: .top, endPoint: .bottom)
-        )
-        .overlay(alignment: .topTrailing) {
-            if session.isAdmin {
-                Button { router.push(.chatEdit(id: chatId)) } label: {
-                    Icon(AppIcons.gear, size: 22, color: Theme.text).frame(width: 42, height: 42).liquidGlass()
-                }.buttonStyle(.plain).padding(.trailing, Theme.screenX).padding(.top, 16)
+    private var header: some View {
+        ZStack(alignment: .topLeading) {
+            Color(hex: "#383838")
+            ZStack {
+                ReportCoverPlaceholder()
+                if let avatar { RemoteImage(url: avatar) }
             }
+            .frame(height: 376)
+            .clipped()
+            .overlay { ZStack { BackdropBlur(radius: 50); Color.black.opacity(0.5) } }
+
+            ZStack {
+                Circle().fill(Color(hex: "#d9d9d9"))
+                ReportCoverPlaceholder().clipShape(Circle())
+                if let avatar { RemoteImage(url: avatar).clipShape(Circle()) }
+            }
+            .frame(width: 148, height: 148)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 78)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(Theme.heading(20)).foregroundStyle(Theme.text).lineLimit(2)
+                Text(members).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
+            }
+            .padding(.horizontal, Theme.screenX)
+            .padding(.top, 250)
+        }
+        .frame(height: 345, alignment: .top)
+        .clipped()
+    }
+
+    private var sheet: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 4) {
+                actionButton(muted ? AppIcons.bellSlash : AppIcons.bell) {
+                    muted.toggle()
+                    UserDefaults.standard.set(muted, forKey: "kl_muted_\(chatId)")
+                }
+                actionButton(AppIcons.search) { searchOpen.toggle(); if !searchOpen { query = "" } }
+                actionButton(AppIcons.leave) { router.popToRoot() }
+            }
+            .padding(.top, 16)
+            .padding(.horizontal, Theme.screenX)
+
+            if searchOpen {
+                AppInput(text: $query, placeholder: "Поиск")
+                    .padding(.horizontal, Theme.screenX)
+                    .padding(.top, 12)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+
+            tabsBar
+                .padding(.top, 40)
+
+            content
+                .padding(.top, 24)
+                .padding(.bottom, 40)
+        }
+        .frame(maxWidth: .infinity, minHeight: 535, alignment: .top)
+        .background(
+            LinearGradient(stops: [.init(color: Color(hex: "#1a1b1d"), location: 0),
+                                   .init(color: Color(hex: "#1e1f21"), location: 0.48),
+                                   .init(color: Color(hex: "#161719"), location: 1)],
+                           startPoint: .top, endPoint: .bottom),
+            in: UnevenRoundedRectangle(topLeadingRadius: Theme.radiusCard, topTrailingRadius: Theme.radiusCard, style: .continuous)
+        )
+        .padding(.top, -24)
+        .animation(.easeOut(duration: 0.2), value: searchOpen)
+    }
+
+    private var tabsBar: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 0) {
+                    ForEach(tabs, id: \.0) { t in
+                        Button { switchTab(t.0); withAnimation { proxy.scrollTo(t.0, anchor: .center) } } label: {
+                            Text(t.1).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
+                                .padding(.horizontal, 12).frame(height: 48)
+                                .background {
+                                    if tab == t.0 {
+                                        Color.clear.liquidGlass(RoundedRectangle(cornerRadius: 20, style: .continuous),
+                                                                fill: PurpleFill())
+                                    }
+                                }
+                        }
+                        .buttonStyle(.plain)
+                        .id(t.0)
+                    }
+                }
+                .padding(4)
+            }
+            .liquidGlass(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+            .padding(.horizontal, Theme.screenX)
         }
     }
 
-    private func actionButton(_ icon: IconDef) -> some View {
-        Icon(icon, size: 22, color: Theme.text)
-            .frame(maxWidth: .infinity).frame(height: 52)
-            .background(Theme.surface).clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+    private func actionButton(_ icon: IconDef, action: @escaping () -> Void) -> some View {
+        Button { Haptics.light(); action() } label: {
+            Icon(icon, size: 24, color: Theme.text)
+                .frame(maxWidth: .infinity).frame(height: 60)
+                .contentShape(Rectangle())
+                .liquidGlass(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous), interactive: true)
+        }
+        .buttonStyle(PressableStyle())
     }
 
     @ViewBuilder private var content: some View {
@@ -88,24 +179,53 @@ struct ChatInfoView: View {
         }
     }
 
-    private var membersList: some View {
+    private func matches(_ parts: String?...) -> Bool {
+        let q = query.trimmed.lowercased()
+        guard !q.isEmpty else { return true }
+        return parts.contains { ($0 ?? "").lowercased().contains(q) }
+    }
+
+    /// Блок списка: #25262A, радиус 24, строки 34 через линию (12 + 1 + 16).
+    private func listBlock<Item: Identifiable, Row: View>(_ items: [Item], empty: String,
+                                                         @ViewBuilder row: @escaping (Item) -> Row) -> some View {
         VStack(spacing: 0) {
-            if participants.isEmpty { emptyRow("Пока нет участников") }
-            ForEach(participants) { m in
-                Button { router.push(.chatUser(id: chatId, uid: String(m.id))) } label: {
-                    HStack(spacing: 12) {
-                        AvatarCircle(url: fileURL(m.avatarUrl), size: 44, name: m.name ?? m.username)
-                        VStack(alignment: .leading) {
-                            Text(m.name ?? "").font(Theme.sans(Theme.fontMd, .bold))
-                            Text(m.seen ?? "").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
-                        }
-                        Spacer()
-                        Text(m.role ?? "").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
-                    }
-                    .foregroundStyle(Theme.text).padding(.vertical, 12)
-                    .overlay(Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1), alignment: .bottom)
-                }.buttonStyle(.plain)
+            if items.isEmpty { emptyRow(empty) }
+            ForEach(Array(items.enumerated()), id: \.element.id) { i, item in
+                if i > 0 {
+                    Rectangle().fill(Color.white.opacity(0.1)).frame(height: 1)
+                        .padding(.top, 15).padding(.bottom, 12)
+                }
+                row(item).padding(.horizontal, 16)
             }
+        }
+        .padding(.vertical, 16)
+        .frame(maxWidth: .infinity)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+        .padding(.horizontal, Theme.screenX)
+    }
+
+    private func twoLines(_ top: String, _ bottom: String) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(top).font(Theme.sans(Theme.fontSm, .semibold)).foregroundStyle(Theme.text).lineLimit(1)
+            Text(bottom).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary).lineLimit(1)
+        }
+    }
+
+    private var membersList: some View {
+        listBlock(participants.filter { matches($0.name, $0.username) }, empty: "Пока нет участников") { m in
+            Button { router.push(.chatUser(id: chatId, uid: String(m.id))) } label: {
+                HStack(spacing: 12) {
+                    AvatarCircle(url: fileURL(m.avatarUrl), size: 30, name: m.name ?? m.username)
+                    twoLines(m.name ?? "", m.seen ?? "")
+                    Spacer(minLength: 8)
+                    let role = m.role ?? ""
+                    Text(role).font(Theme.sans(Theme.fontSm))
+                        .foregroundStyle(role == "Автор" ? Theme.text : Theme.textSecondary)
+                }
+                .frame(height: 34)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -113,18 +233,15 @@ struct ChatInfoView: View {
         Group {
             if media.isEmpty { emptyRow("Нет медиа") }
             else {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 3), spacing: 2) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 1), count: 3), spacing: 1) {
                     ForEach(media) { a in
                         Button { open(a.url) } label: {
-                            AsyncImage(url: fileURL(a.url)) { phase in
-                                switch phase {
-                                case .success(let img): img.resizable().aspectRatio(contentMode: .fill)
-                                default: Color(hex: "#2c2d30")
-                                }
-                            }
-                            .aspectRatio(1, contentMode: .fill)
-                            .clipped()
-                        }.buttonStyle(.plain)
+                            Color(hex: "#d9d9d9")
+                                .aspectRatio(1, contentMode: .fill)
+                                .overlay { RemoteImage(url: fileURL(a.url)) }
+                                .clipped()
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -132,70 +249,86 @@ struct ChatInfoView: View {
     }
 
     private var voiceList: some View {
-        VStack(spacing: 0) {
-            if voices.isEmpty { emptyRow("Нет голосовых") }
-            ForEach(voices) { a in
-                HStack(spacing: 12) {
-                    Button { audio.togglePlay(id: a.id, url: fileURL(a.url)) } label: {
-                        ZStack {
-                            Circle().fill(Color(hex: "#4e8f10")).frame(width: 44, height: 44)
-                            Image(systemName: audio.playingId == a.id ? "pause.fill" : "play.fill")
-                                .font(Theme.sans(16, .bold)).foregroundStyle(.white)
+        listBlock(voices.filter { matches($0.author, $0.meta) }, empty: "Нет голосовых") { a in
+            HStack(spacing: 12) {
+                Button { audio.togglePlay(id: a.id, url: fileURL(a.url)) } label: {
+                    ZStack {
+                        Circle().fill(Theme.green)
+                        if audio.playingId == a.id {
+                            HStack(spacing: 3) {
+                                Capsule().fill(.white).frame(width: 3, height: 12)
+                                Capsule().fill(.white).frame(width: 3, height: 12)
+                            }
+                        } else {
+                            Icon(AppIcons.play, size: 16, color: .white).offset(x: 1)
                         }
-                    }.buttonStyle(.plain)
-                    VStack(alignment: .leading) {
-                        Text(a.author ?? "Участник").font(Theme.sans(Theme.fontMd, .bold))
-                        Text(a.meta ?? "").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
                     }
-                    Spacer()
+                    .frame(width: 30, height: 30)
                 }
-                .foregroundStyle(Theme.text).padding(.vertical, 12)
-                .overlay(Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1), alignment: .bottom)
+                .buttonStyle(.plain)
+                twoLines(a.author ?? "Участник", a.meta ?? "")
+                Spacer(minLength: 0)
             }
+            .frame(height: 34)
         }
     }
 
     private var filesList: some View {
-        VStack(spacing: 0) {
-            if files.isEmpty { emptyRow("Нет файлов") }
-            ForEach(files) { f in
-                Button { open(f.url) } label: {
-                    HStack(spacing: 12) {
-                        Text((f.ext ?? "").isEmpty ? "file" : (f.ext ?? "")).font(Theme.sans(Theme.fontSm, .bold)).foregroundStyle(.white)
-                            .frame(width: 44, height: 44).background(colorFor(f.ext)).clipShape(RoundedRectangle(cornerRadius: 10))
-                        VStack(alignment: .leading) {
-                            Text(f.name ?? "Файл").font(Theme.sans(Theme.fontMd, .bold)).lineLimit(1)
-                            Text(f.meta ?? "").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
-                        }
-                        Spacer()
-                        Icon(AppIcons.downloadCloud, size: 24, color: Theme.textSecondary)
-                    }
-                    .foregroundStyle(Theme.text).padding(.vertical, 12)
-                    .overlay(Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1), alignment: .bottom)
-                }.buttonStyle(.plain)
+        listBlock(files.filter { matches($0.name, $0.ext) }, empty: "Нет файлов") { f in
+            Button { open(f.url) } label: {
+                HStack(spacing: 12) {
+                    fileBadge(f.ext)
+                    twoLines(f.name ?? "Файл", f.meta ?? "")
+                    Spacer(minLength: 8)
+                    Icon(AppIcons.downloadCloud, size: 32, color: Theme.text)
+                }
+                .frame(height: 34)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
         }
     }
 
-    private var linksList: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if links.isEmpty { emptyRow("Нет ссылок") }
-            ForEach(links) { l in
-                Button { open(l.url) } label: {
-                    HStack(spacing: 12) {
-                        RoundedRectangle(cornerRadius: 10).fill(Color(hex: "#3a7be8")).frame(width: 44, height: 44)
-                            .overlay(Icon(AppIcons.link, size: 22, color: .white))
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(l.title ?? l.url).font(Theme.sans(Theme.fontMd, .bold)).lineLimit(1)
-                            if let t = l.text { Text(t).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary).lineLimit(2) }
-                            Text(l.url).font(Theme.sans(Theme.fontBase)).foregroundStyle(Color(hex: "#6ea8e0")).lineLimit(1)
-                        }
-                        Spacer()
-                    }
-                    .foregroundStyle(Theme.text).padding(12).background(Theme.surface).clipShape(RoundedRectangle(cornerRadius: 14))
-                }.buttonStyle(.plain)
+    /// Значок файла 30×30: цвет по расширению, подпись Bold 12 чёрным.
+    private func fileBadge(_ ext: String?) -> some View {
+        let e = (ext ?? "").lowercased()
+        return ZStack {
+            RoundedRectangle(cornerRadius: 6, style: .continuous).fill(colorFor(e))
+            if ["pdf", "zip", "rar", "7z", "exe", "dmg", "doc", "docx"].contains(e) {
+                Text(e).font(Theme.sans(Theme.fontSm, .bold)).foregroundStyle(.black)
+                    .minimumScaleFactor(0.6).lineLimit(1).padding(.horizontal, 2)
             }
         }
+        .frame(width: 30, height: 30)
+    }
+
+    private var linksList: some View {
+        listBlock(links.filter { matches($0.title, $0.text, $0.url) }, empty: "Нет ссылок") { l in
+            Button { open(l.url) } label: {
+                HStack(alignment: .top, spacing: 12) {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color(hex: "#d9d9d9"))
+                        .frame(width: 30, height: 30)
+                    VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(l.title ?? "Ссылка").font(Theme.sans(Theme.fontSm, .semibold)).foregroundStyle(Theme.text)
+                            if let t = l.text, !t.isEmpty {
+                                Text(t).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary).lineLimit(3)
+                            }
+                        }
+                        Text(l.url).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text).lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .multilineTextAlignment(.leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func newsTapped() {
+        if session.isAdmin { router.push(.chatEdit(id: chatId)) }
+        else if let r = reportId { router.push(.reportDetail(id: r)) }
     }
 
     private func emptyRow(_ text: String) -> some View {
@@ -205,10 +338,10 @@ struct ChatInfoView: View {
 
     private func colorFor(_ ext: String?) -> Color {
         switch (ext ?? "").lowercased() {
-        case "pdf": return Color(hex: "#e8503a")
-        case "zip", "rar", "7z": return Color(hex: "#7fbf1f")
-        case "exe", "dmg": return Color(hex: "#3a7be8")
-        default: return Color(hex: "#6b6f76")
+        case "pdf": return Color(hex: "#ff784e")
+        case "zip", "rar", "7z": return Color(hex: "#d4f04b")
+        case "exe", "dmg", "doc", "docx": return Color(hex: "#4ea6ff")
+        default: return Color(hex: "#d9d9d9")
         }
     }
 
@@ -229,6 +362,7 @@ struct ChatInfoView: View {
                 title = c.title
                 avatar = fileURL(c.avatarUrl)
                 members = c.subtitle ?? ""
+                reportId = c.report
             }
         } catch {}
         await loadTab(tab)

@@ -12,40 +12,51 @@ struct ChatEditView: View {
     @State private var error = ""
     @State private var saving = false
 
+    // «Чат Инфа Настройки для админа» (Figma 337:36498, 349:12314): как
+    // «Профиль изменить» — «назад» и стеклянная пилюля 72×42 на y=78, аватар
+    // 148 с y=78, «Изменить фотографию» 14 pt, поле «Имя» с подписью (64 pt).
     var body: some View {
-        VStack(spacing: 24) {
-            HStack {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 0) {
+                PhotosPicker(selection: $pickerItem, matching: .images) {
+                    VStack(spacing: 12) {
+                        avatarView.frame(width: 148, height: 148).clipShape(Circle())
+                        Text("Изменить фотографию").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
+                    }
+                }
+                .buttonStyle(.plain)
+
+                AuthField(error: error.isEmpty ? nil : error) {
+                    AppInput(text: $name, placeholder: "Название чата", label: "Имя", error: !error.isEmpty)
+                        .onChange(of: name) { _ in error = "" }
+                }
+                .padding(.top, 24)
+            }
+            .padding(.horizontal, Theme.screenX)
+            .padding(.top, 78)
+            .padding(.bottom, 40)
+        }
+        .ignoresSafeArea(.container, edges: .top)
+        .overlay(alignment: .top) {
+            HStack(alignment: .top) {
+                GlassBackButton()
                 Spacer()
                 Button { save() } label: {
-                    Text("Готово").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
-                        .padding(.horizontal, 14).padding(.vertical, 11)
-                        .background(Theme.surfaceMuted).overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 1)).clipShape(Capsule())
-                }.buttonStyle(.plain).opacity(saving ? 0.6 : 1)
-            }
-
-            VStack(spacing: 14) {
-                PhotosPicker(selection: $pickerItem, matching: .images) {
-                    avatarView.frame(width: 150, height: 150).clipShape(Circle())
+                    Text(saving ? "…" : "Готово")
+                        .font(Theme.sans(13)).tracking(0.52)
+                        .foregroundStyle(Theme.text)
+                        .frame(width: 72, height: 42)
+                        .liquidGlass(Capsule(), interactive: true)
                 }
-                PhotosPicker(selection: $pickerItem, matching: .images) {
-                    Text("Изменить фотографию").font(Theme.sans(Theme.fontMd)).foregroundStyle(Theme.text)
-                }
+                .buttonStyle(PressableStyle())
+                .disabled(saving)
             }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Название").font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
-                TextField("", text: $name).foregroundStyle(Theme.text).tint(Theme.green)
-                    .onChange(of: name) { _ in error = "" }
-            }
-            .padding(.horizontal, 16).padding(.vertical, 12)
-            .background(Theme.surfaceMuted).overlay(RoundedRectangle(cornerRadius: Theme.radiusInput).stroke(Color.white.opacity(0.12), lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusInput, style: .continuous))
-
-            if !error.isEmpty { Text(error).font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.error).frame(maxWidth: .infinity, alignment: .leading) }
-            Spacer()
+            .padding(.horizontal, Theme.screenX)
+            .padding(.top, Theme.topBarY)
+            .ignoresSafeArea(.container, edges: .top)
         }
-        .padding(.horizontal, Theme.screenX).padding(.top, 16).padding(.bottom, 40)
         .screenBackground()
+        .animation(.easeOut(duration: 0.2), value: error)
         .task { await load() }
         .onChange(of: pickerItem) { item in
             Task { if let data = try? await item?.loadTransferable(type: Data.self) { previewData = data; previewURL = nil } }
@@ -58,8 +69,7 @@ struct ChatEditView: View {
         } else if let url = previewURL {
             RemoteImage(url: url)
         } else {
-            Circle().fill(LinearGradient(colors: [Color(hex: "#d7cfe0"), Color(hex: "#a9adbd"), Color(hex: "#c4c7d2")],
-                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+            ReportCoverPlaceholder()
         }
     }
 
