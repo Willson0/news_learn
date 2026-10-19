@@ -94,8 +94,8 @@ struct ChatView: View {
         .overlay(alignment: .top) {
             if let toast {
                 GlassLabel(text: toast, height: 32, font: Theme.sans(Theme.fontBase))
-                    .padding(.top, 104)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .padding(.top, 132)
+                    .transition(.opacity)
             }
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: menuFor)
