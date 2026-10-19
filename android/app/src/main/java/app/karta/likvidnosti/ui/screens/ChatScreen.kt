@@ -1086,7 +1086,7 @@ fun ChatScreen(
             // MARK: Тост
             AnimatedVisibility(
                 visible = toast != null,
-                modifier = Modifier.align(Alignment.TopCenter).padding(top = statusBarTop() + 60.dp),
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = statusBarTop() + 104.dp),
                 enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
                 exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
             ) {
