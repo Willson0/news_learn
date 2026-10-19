@@ -1,40 +1,62 @@
 package app.karta.likvidnosti.ui.components
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import app.karta.likvidnosti.ui.icons.AppIcon
 import app.karta.likvidnosti.ui.icons.AppIcons
+import app.karta.likvidnosti.ui.theme.AppFont
 import app.karta.likvidnosti.ui.theme.T
+import app.karta.likvidnosti.ui.theme.designTop
+import app.karta.likvidnosti.ui.theme.hex
+import kotlinx.coroutines.launch
 import java.time.LocalDate
+import kotlin.math.max
+import kotlin.math.roundToInt
 
-data class FilterResult(
+/** Результат фильтров (iOS FiltersResult) + выбранный диапазон дат. */
+data class FiltersResult(
     val instruments: List<String>,
     val statuses: List<String>,
     val dateMode: String,
@@ -42,18 +64,24 @@ data class FilterResult(
     val dateEnd: LocalDate? = null,
 )
 
-private data class Toggleable(val key: String, val label: String, var on: Boolean)
+private data class Toggleable(val key: String, val label: String, val on: Boolean)
 
-/** Нижний лист фильтров (аналог FiltersSheet.vue). Размещается поверх экрана. */
-@OptIn(ExperimentalLayoutApi::class)
+private val SHORT_MONTHS = listOf("ЯНВ", "ФЕВ", "МАР", "АПР", "МАЙ", "ИЮН", "ИЮЛ", "АВГ", "СЕН", "ОКТ", "НОЯ", "ДЕК")
+
+private fun shortDate(d: LocalDate?): String? = d?.let { "${it.dayOfMonth} ${SHORT_MONTHS[it.monthValue - 1]}" }
+
+/**
+ * Лист фильтров «Аналитика фильтры» (iOS FiltersSheet): плашка «фон плашки»,
+ * радиус 24 сверху, полоска-хват 32 на 11; «Искать» справа сверху; заголовки
+ * Kreadon 24; блоки «Фон плашки 2» с чипами; календарь — стеклянный поп-ап
+ * над блоками. Тянется вниз, чтобы закрыть.
+ */
 @Composable
 fun FiltersSheet(
-    open: Boolean,
+    onApply: (FiltersResult) -> Unit,
     onClose: () -> Unit,
-    onApply: (FilterResult) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    if (!open) return
-
     val instruments = remember {
         mutableStateListOf(
             Toggleable("gold", "Золото", true),
@@ -75,176 +103,191 @@ fun FiltersSheet(
         )
     }
     var dateMode by remember { mutableStateOf("week") }
-    var startDate by remember { mutableStateOf<LocalDate?>(LocalDate.of(2026, 3, 17)) }
-    var endDate by remember { mutableStateOf<LocalDate?>(null) }
-    var calendarOpen by remember { mutableStateOf(true) }
+    var dateStart by remember { mutableStateOf<LocalDate?>(null) }
+    var dateEnd by remember { mutableStateOf<LocalDate?>(null) }
+    var calendarOpen by remember { mutableStateOf(false) }
 
-    // Диапазон: первый тап задаёт начало, второй — конец; третий начинает заново.
-    fun pickDate(d: LocalDate) {
-        val s = startDate
-        when {
-            s == null || endDate != null -> { startDate = d; endDate = null }
-            d.isBefore(s) -> { endDate = s; startDate = d }
-            d == s -> { /* повтор — оставляем как есть */ }
-            else -> endDate = d
-        }
-    }
+    val rangeLabel = shortDate(dateStart)?.let { s ->
+        shortDate(dateEnd)?.let { e -> "С $s - $e" } ?: "С $s"
+    } ?: ""
+
+    val density = LocalDensity.current
+    val scope = rememberCoroutineScope()
+    val dragY = remember { Animatable(0f) }
 
     fun apply() {
         onApply(
-            FilterResult(
+            FiltersResult(
                 instruments = instruments.filter { it.on }.map { it.key },
                 statuses = statuses.filter { it.on }.map { it.key },
                 dateMode = dateMode,
-                dateStart = startDate,
-                dateEnd = endDate,
+                dateStart = dateStart,
+                dateEnd = dateEnd,
             ),
         )
         onClose()
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0x80000000))
-            .clickable(onClick = onClose),
-        contentAlignment = Alignment.BottomCenter,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.88f)
-                .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
-                .background(Color(0xFF1C1D1F))
-                .clickable(enabled = false) {}
-                .padding(horizontal = T.ScreenX, vertical = 10.dp),
+    val sheetShape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+    CompositionLocalProvider(LocalBackdrop provides null) {
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .offset { IntOffset(0, max(dragY.value, 0f).roundToInt()) }
+                .background(T.Surface, sheetShape)
+                .pressable(pressAlpha = 1f) {}
+                .draggable(
+                    orientation = Orientation.Vertical,
+                    state = rememberDraggableState { delta ->
+                        scope.launch { dragY.snapTo(max(0f, dragY.value + delta)) }
+                    },
+                    onDragStopped = { velocity ->
+                        val closeBy = with(density) { 120.dp.toPx() }
+                        if (dragY.value > closeBy || velocity > 1800f) {
+                            onClose()
+                        } else {
+                            dragY.animateTo(0f, spring(dampingRatio = 0.85f))
+                        }
+                    },
+                ),
         ) {
-            Box(
-                modifier = Modifier
-                    .padding(vertical = 4.dp)
-                    .size(width = 40.dp, height = 4.dp)
-                    .clip(T.ShapePill)
-                    .background(Color(0x4DFFFFFF))
-                    .align(Alignment.CenterHorizontally),
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                ScreenTitle("Инструменты")
-                Box(
-                    modifier = Modifier
-                        .clip(T.ShapePill)
-                        .background(T.GradientAccent)
-                        .clickable { apply() }
-                        .padding(horizontal = 22.dp, vertical = 10.dp),
-                ) {
-                    Text("Искать", color = T.Text, fontSize = T.FsBase)
-                }
-            }
-
             Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = T.ScreenX)
+                    .padding(bottom = 60.dp),
             ) {
-                FilterCard {
+                Text("Инструменты", style = AppFont.heading(T.FsTitle), modifier = Modifier.padding(top = 35.dp))
+                ChipCard(Modifier.padding(top = 24.dp)) {
                     instruments.forEachIndexed { i, item ->
-                        InstrumentChip(label = item.label, checked = item.on, onToggle = {
-                            instruments[i] = item.copy(on = !item.on)
-                        })
+                        InstrumentChip(item.label, item.on, onToggle = { instruments[i] = item.copy(on = !item.on) })
                     }
                 }
 
-                ScreenTitle("По статусу")
-                FilterCard {
+                Text("По статусу", style = AppFont.heading(T.FsTitle), modifier = Modifier.padding(top = 40.dp))
+                ChipCard(Modifier.padding(top = 24.dp)) {
                     statuses.forEachIndexed { i, item ->
-                        InstrumentChip(label = item.label, checked = item.on, onToggle = {
-                            statuses[i] = item.copy(on = !item.on)
-                        })
+                        InstrumentChip(
+                            item.label, item.on,
+                            onToggle = { statuses[i] = item.copy(on = !item.on) },
+                            hPadding = 24.dp,
+                        )
                     }
                 }
 
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    ScreenTitle("По дате")
-                    Box(
-                        modifier = Modifier.size(32.dp).clickable { calendarOpen = !calendarOpen },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        AppIcon(AppIcons.Calendar, size = 24.dp)
+                    Text("По дате", style = AppFont.heading(T.FsTitle))
+                    Spacer(Modifier.weight(1f))
+                    AnimatedVisibility(visible = rangeLabel.isNotEmpty(), enter = fadeIn(), exit = fadeOut()) {
+                        // Выбранный диапазон (Figma 474:15508): крестик в области 38×32,
+                        // пилюля 32 со стеклом «active», 14 Regular.
+                        Row(
+                            modifier = Modifier.padding(end = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(width = 38.dp, height = 32.dp)
+                                    .pressable(pressAlpha = 1f) { dateStart = null; dateEnd = null },
+                                contentAlignment = Alignment.Center,
+                            ) { AppIcon(AppIcons.close, size = 24.dp) }
+                            Box(
+                                modifier = Modifier
+                                    .height(32.dp)
+                                    .liquidGlass(CapsuleShape, Fills.Active)
+                                    .padding(horizontal = 12.dp),
+                                contentAlignment = Alignment.Center,
+                            ) { Text(rangeLabel, style = AppFont.sans(T.FsBase)) }
+                        }
                     }
-                }
-
-                if (calendarOpen) {
-                    AppCalendar(start = startDate, end = endDate, onSelect = { pickDate(it) })
-                }
-
-                // Подпись выбранного диапазона дат.
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    DateField("С", startDate)
-                    DateField("По", endDate)
-                    if (startDate != null) {
-                        Box(
-                            modifier = Modifier
-                                .clip(T.ShapePill)
-                                .background(T.SurfaceMuted)
-                                .clickable { startDate = null; endDate = null }
-                                .padding(horizontal = 14.dp, vertical = 8.dp),
-                        ) { Text("Сброс", color = T.TextSecondary, fontSize = T.FsSm) }
-                    }
+                    AppIcon(
+                        AppIcons.calendarNumber,
+                        size = 32.dp,
+                        modifier = Modifier.pressable(pressAlpha = 1f) { calendarOpen = !calendarOpen },
+                    )
                 }
 
                 SegmentedControl(
                     value = dateMode,
                     options = listOf("week" to "Неделя", "month" to "Месяц", "year" to "Год"),
                     onSelect = { dateMode = it },
+                    modifier = Modifier.padding(top = 24.dp),
                 )
             }
+
+            AnimatedVisibility(
+                visible = calendarOpen,
+                enter = scaleIn(initialScale = 0.92f, transformOrigin = TransformOrigin(1f, 1f)) + fadeIn(),
+                exit = scaleOut(targetScale = 0.92f, transformOrigin = TransformOrigin(1f, 1f)) + fadeOut(),
+                modifier = Modifier.padding(horizontal = T.ScreenX).padding(top = 87.dp),
+            ) {
+                AppCalendar(start = dateStart, end = dateEnd, onChange = { s, e -> dateStart = s; dateEnd = e })
+            }
+
+            PillActionButton(
+                "Искать",
+                modifier = Modifier.align(Alignment.TopEnd).padding(end = T.ScreenX, top = 12.dp),
+                onClick = { apply() },
+            )
+
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 11.dp)
+                    .size(width = 32.dp, height = 1.5.dp)
+                    .background(Color.White, CapsuleShape),
+            )
         }
     }
 }
 
-private val DATE_FMT = java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy")
-
-/** Плашка одной границы диапазона дат. */
 @Composable
-private fun DateField(label: String, date: LocalDate?) {
-    Row(
-        modifier = Modifier
-            .clip(T.ShapePill)
-            .background(T.Surface)
-            .padding(horizontal = 14.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(label, color = T.TextMuted, fontSize = T.FsSm)
-        Text(date?.format(DATE_FMT) ?: "—", color = T.Text, fontSize = T.FsSm)
-    }
+private fun ChipCard(modifier: Modifier = Modifier, content: @Composable androidx.compose.foundation.layout.FlowRowScope.() -> Unit) {
+    FlowLayout(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(T.Surface2Plate, T.ShapeCard)
+            .padding(12.dp),
+        spacing = 4.dp,
+        lineSpacing = 4.dp,
+        content = content,
+    )
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+/**
+ * Затемнение rgba(7,7,7,0.71) с размытием 6.45 и лист фильтров от y = 172
+ * (iOS FiltersOverlay). Кладётся поверх экрана; размытие берётся из
+ * [LocalBackdrop] (см. BackdropBox).
+ */
 @Composable
-private fun FilterCard(content: @Composable androidx.compose.foundation.layout.FlowRowScope.() -> Unit) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(T.ShapeCard)
-            .background(T.Surface)
-            .padding(16.dp),
-    ) {
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            content = content,
-        )
+fun FiltersOverlay(
+    open: Boolean,
+    onClose: () -> Unit,
+    onApply: (FiltersResult) -> Unit,
+) {
+    BackHandler(enabled = open) { onClose() }
+    Box(modifier = Modifier.fillMaxSize()) {
+        AnimatedVisibility(visible = open, enter = fadeIn(), exit = fadeOut()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .backdropBlur(6.45.dp)
+                    .background(hex("#070707").copy(alpha = 0.71f))
+                    .pressable(pressAlpha = 1f) { onClose() },
+            )
+        }
+        AnimatedVisibility(
+            visible = open,
+            enter = slideInVertically(spring(dampingRatio = 0.9f)) { it },
+            exit = slideOutVertically(spring(dampingRatio = 0.9f)) { it },
+            modifier = Modifier.padding(top = designTop(172.dp)),
+        ) {
+            FiltersSheet(onApply = onApply, onClose = onClose)
+        }
     }
 }

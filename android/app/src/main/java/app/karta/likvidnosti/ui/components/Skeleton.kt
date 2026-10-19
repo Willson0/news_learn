@@ -73,8 +73,8 @@ fun ChatRowSkeleton() {
     ) {
         SkeletonBox(modifier = Modifier.size(56.dp), shape = CircleShape)
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            SkeletonBox(modifier = Modifier.fillMaxWidth(0.5f).height(14.dp))
-            SkeletonBox(modifier = Modifier.fillMaxWidth(0.8f).height(12.dp))
+            SkeletonBox(modifier = Modifier.width(140.dp).height(14.dp), shape = RoundedCornerShape(10.dp))
+            SkeletonBox(modifier = Modifier.width(220.dp).height(12.dp), shape = RoundedCornerShape(10.dp))
         }
     }
 }
@@ -90,30 +90,34 @@ fun ChatListSkeleton(rows: Int = 6) {
     }
 }
 
-/** Скелетон карточки отчёта (совпадает по форме с ReportCard). */
+/** Скелетон карточки отчёта (iOS ReportCardSkeleton — по форме ReportCard). */
 @Composable
 fun ReportCardSkeleton() {
     Column(
-        modifier = Modifier.fillMaxWidth().clip(T.ShapeCard).background(T.Surface),
+        modifier = Modifier.fillMaxWidth().clip(T.ShapeCard).background(T.Surface).padding(bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         SkeletonBox(modifier = Modifier.fillMaxWidth().height(162.dp), shape = T.ShapeCard)
         Column(
-            modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            SkeletonBox(modifier = Modifier.fillMaxWidth(0.6f).height(16.dp))
-            SkeletonBox(modifier = Modifier.fillMaxWidth(0.9f).height(12.dp))
-            SkeletonBox(modifier = Modifier.fillMaxWidth().height(12.dp))
-            SkeletonBox(modifier = Modifier.fillMaxWidth().height(48.dp), shape = T.ShapePill)
+            SkeletonBox(modifier = Modifier.width(220.dp).height(16.dp), shape = RoundedCornerShape(10.dp))
+            SkeletonBox(modifier = Modifier.width(90.dp).height(12.dp), shape = RoundedCornerShape(10.dp))
+            SkeletonBox(modifier = Modifier.width(280.dp).height(12.dp), shape = RoundedCornerShape(10.dp))
+            SkeletonBox(modifier = Modifier.width(240.dp).height(12.dp), shape = RoundedCornerShape(10.dp))
         }
+        SkeletonBox(
+            modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(48.dp),
+            shape = T.ShapeInput,
+        )
     }
 }
 
 /** Лента карточек-заглушек. */
 @Composable
-fun ReportListSkeleton(cards: Int = 3) {
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+fun ReportListSkeleton(cards: Int = 4) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         repeat(cards) { ReportCardSkeleton() }
     }
 }

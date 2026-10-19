@@ -42,7 +42,7 @@ fun Screen(
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val base = Modifier
         .fillMaxSize()
-        .background(T.Bg)
+        .screenBackground()
     val col = Modifier
         .fillMaxSize()
         .let { if (scroll) it.verticalScroll(rememberScrollState()) else it }
