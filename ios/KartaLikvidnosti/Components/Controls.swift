@@ -235,11 +235,12 @@ struct SegmentedControl: View {
 struct SelectionLens: View {
     var radius: CGFloat = Theme.radiusChip
     var body: some View {
+        // Без системного glassEffect: он рисуется поверх обрезки предков и вылезал
+        // за край ленты при прокрутке. Заливка и кромка стекла строго в форме.
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         Color.clear
-            .liquidGlass(shape, fill: PurpleFill())
-            .clipShape(shape)
-            .compositingGroup()
+            .background(PurpleFill().clipShape(shape))
+            .overlay(GlassRim(shape: shape).allowsHitTesting(false))
     }
 }
 

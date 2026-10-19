@@ -150,9 +150,7 @@ struct ChatInfoView: View {
                                 .padding(.horizontal, 12).frame(height: 48)
                                 .background {
                                     if tab == t.0 {
-                                        Color.clear.liquidGlass(RoundedRectangle(cornerRadius: 20, style: .continuous),
-                                                                fill: PurpleFill())
-                                            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                                        SelectionLens(radius: 20)
                                     }
                                 }
                         }
