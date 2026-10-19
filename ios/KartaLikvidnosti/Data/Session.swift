@@ -5,6 +5,12 @@ import SwiftUI
 final class Session: ObservableObject {
     @Published var user: UserDto?
     @Published var loaded: Bool = false
+    /// Активна ли подписка (nil — ещё не знаем).
+    @Published var subscriptionActive: Bool?
+
+    /// «Доступный экран профиля» из макета: без активной подписки (и не
+    /// админ) доступны только общий чат и профиль с оплатой.
+    var restricted: Bool { user != nil && !isAdmin && subscriptionActive == false }
 
     var isAdmin: Bool { user?.isAdmin == true }
     var isAuthenticated: Bool { TokenStore.isAuthenticated }
@@ -12,10 +18,17 @@ final class Session: ObservableObject {
     func setCurrent(_ u: UserDto?) {
         user = u
         loaded = true
+        Task { await loadSubscription() }
     }
 
     func clear() {
         user = nil
+        subscriptionActive = nil
+    }
+
+    func loadSubscription() async {
+        guard TokenStore.isAuthenticated else { subscriptionActive = nil; return }
+        if let s = try? await Api.fetchSubscription() { subscriptionActive = s.active }
     }
 
     /// Подгружает пользователя, если есть токен. Тихо гасит ошибки.
@@ -31,6 +44,7 @@ final class Session: ObservableObject {
         } catch {
             // оставляем прежнее значение
         }
+        await loadSubscription()
         loaded = true
     }
 }

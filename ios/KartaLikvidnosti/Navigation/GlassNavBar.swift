@@ -18,22 +18,32 @@ struct GlassNavBar: View {
     }
 
     @EnvironmentObject private var router: Router
+    @EnvironmentObject private var session: Session
     /// Положение линзы: при появлении стартует с прошлой вкладки и переезжает
     /// на текущую.
     @State private var lensTab: Tab?
     @Namespace private var ns
 
-    private static let items: [(tab: Tab, icon: IconDef, x: CGFloat)] = [
+    private static let allItems: [(tab: Tab, icon: IconDef, x: CGFloat)] = [
         (.home, AppIcons.navHome, 12),
         (.analytics, AppIcons.navAnalytics, 67),
         (.community, AppIcons.navCommunity, 122),
         (.profile, AppIcons.navProfile, 178),
     ]
+    /// Без подписки (Figma 474:11853): навбар 120 — «Сообщество» и «Профиль».
+    private static let restrictedItems: [(tab: Tab, icon: IconDef, x: CGFloat)] = [
+        (.community, AppIcons.navCommunity, 12),
+        (.profile, AppIcons.navProfile, 68),
+    ]
+    private var items: [(tab: Tab, icon: IconDef, x: CGFloat)] {
+        session.restricted ? Self.restrictedItems : Self.allItems
+    }
+    private var barWidth: CGFloat { session.restricted ? 120 : 230 }
 
     var body: some View {
         HStack(spacing: 13) {
             bar
-            if let extra {
+            if let extra, !session.restricted {
                 Button {
                     Haptics.light()
                     extra.action()
@@ -65,14 +75,14 @@ struct GlassNavBar: View {
 
     private var bar: some View {
         ZStack(alignment: .topLeading) {
-            Color.clear.frame(width: 230, height: 64)
-            if let lensTab, let item = Self.items.first(where: { $0.tab == lensTab }) {
+            Color.clear.frame(width: barWidth, height: 64)
+            if let lensTab, let item = items.first(where: { $0.tab == lensTab }) {
                 Color.clear
                     .frame(width: 40, height: 40)
                     .liquidGlass(Circle(), fill: ActiveFill())
                     .offset(x: item.x, y: 12)
             }
-            ForEach(Self.items, id: \.tab) { item in
+            ForEach(items, id: \.tab) { item in
                 Button {
                     guard router.tab != item.tab else {
                         router.popToRoot()
@@ -89,7 +99,7 @@ struct GlassNavBar: View {
                 .offset(x: item.x, y: 12)
             }
         }
-        .frame(width: 230, height: 64)
+        .frame(width: barWidth, height: 64)
         .liquidGlass(Capsule(), fill: ZStack { Theme.navbarBg; Theme.surfaceMuted })
     }
 }

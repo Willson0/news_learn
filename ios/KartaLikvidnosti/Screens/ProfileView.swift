@@ -38,6 +38,79 @@ struct ProfileView: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
                 header
+                if session.restricted {
+                    conditionsBlock
+                } else {
+                fullContent
+                }
+            }
+            .padding(.bottom, Theme.navBarClearance)
+        }
+        #if DEBUG
+        .onAppear {
+            // -kl_scroll instruments|history — для скриншотов длинного экрана.
+            if let id = UserDefaults.standard.string(forKey: "kl_scroll") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { proxy.scrollTo(id, anchor: .top) }
+            }
+        }
+        #endif
+        }
+        .ignoresSafeArea(.container, edges: .top)
+        .screenBackground()
+        .withGlassNavBar(extra: .init(icon: AppIcons.chat) { openAdminChat() })
+        .onAppear(perform: seed)
+        .task { await load() }
+    }
+
+    // MARK: Без подписки
+
+    /// «Доступный экран профиля» (Figma 474:11853, 484:13055): «Условия»
+    /// Kreadon 24 через 40 от шапки, пояснение 14 pt, блок подписки с кнопкой
+    /// «Привязать счет и оплатить»; без тарифа — «Не определен» и подпись
+    /// 14 pt белый 65 % под блоком.
+    private var conditionsBlock: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Условия").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
+            Text("Чтобы разблокировать доступ в приложение нужно оплатить ежемесячную подписку")
+                .font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
+                .frame(maxWidth: 325, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 12)
+            VStack(spacing: 24) {
+                VStack(spacing: 12) {
+                    HStack {
+                        Text("Подписка").font(Theme.sans(Theme.fontMd, .bold)).foregroundStyle(Theme.text)
+                        Spacer(minLength: 8)
+                        Text("Неактивна").font(Theme.sans(Theme.fontMd, .semibold)).foregroundStyle(Theme.error)
+                    }
+                    Rectangle().fill(Color.white.opacity(0.1)).frame(height: 1)
+                    HStack {
+                        Text("Тарифный план").font(Theme.sans(Theme.fontMd, .bold)).foregroundStyle(Theme.text)
+                        Spacer(minLength: 8)
+                        Text(subPlan.isEmpty ? "Не определен" : subPlan).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
+                    }
+                }
+                .padding(.horizontal, 16)
+                AppButton(title: "Привязать счет и оплатить", variant: .accent) { router.push(.subscription) }
+            }
+            .padding(.top, 16)
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+            .padding(.top, 24)
+            if subPlan.isEmpty {
+                Text("После определение тарифа Вам придет уведомление и стоимость")
+                    .font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
+                    .frame(maxWidth: 300, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 12)
+            }
+        }
+        .padding(.horizontal, Theme.screenX)
+        .padding(.top, 40)
+    }
+
+    // MARK: Полный профиль
+
+    @ViewBuilder private var fullContent: some View {
                 subscriptionBlock
                     .padding(.horizontal, Theme.screenX)
                     .padding(.top, 24)
@@ -71,23 +144,6 @@ struct ProfileView: View {
                 historyList
                     .padding(.horizontal, Theme.screenX)
                     .padding(.top, 14)
-            }
-            .padding(.bottom, Theme.navBarClearance)
-        }
-        #if DEBUG
-        .onAppear {
-            // -kl_scroll instruments|history — для скриншотов длинного экрана.
-            if let id = UserDefaults.standard.string(forKey: "kl_scroll") {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { proxy.scrollTo(id, anchor: .top) }
-            }
-        }
-        #endif
-        }
-        .ignoresSafeArea(.container, edges: .top)
-        .screenBackground()
-        .withGlassNavBar(extra: .init(icon: AppIcons.chat) { openAdminChat() })
-        .onAppear(perform: seed)
-        .task { await load() }
     }
 
     // MARK: Шапка
@@ -107,11 +163,20 @@ struct ProfileView: View {
             VStack(spacing: 0) {
                 AvatarCircle(url: avatar, size: 148, initial: avatarInitial)
                     .padding(.top, 78)
-                Text(displayTag)
-                    .font(Theme.sans(Theme.fontBase))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
-                    .padding(.top, 40)
+                if session.restricted {
+                    Text(session.user?.name ?? "")
+                        .font(Theme.heading(20)).foregroundStyle(Theme.text).lineLimit(1)
+                        .padding(.top, 12)
+                    Text(displayTag)
+                        .font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text).lineLimit(1)
+                        .padding(.top, 4)
+                } else {
+                    Text(displayTag)
+                        .font(Theme.sans(Theme.fontBase))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(1)
+                        .padding(.top, 40)
+                }
             }
             .frame(maxWidth: .infinity)
 

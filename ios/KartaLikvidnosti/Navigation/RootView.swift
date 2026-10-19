@@ -60,6 +60,17 @@ private struct MainFlow: View {
             stack(.profile) { ProfileView() }.tag(Tab.profile)
         }
         .tint(Theme.text)
+        .onChange(of: session.restricted) { _ in enforceRestriction() }
+        .onChange(of: router.tab) { _ in enforceRestriction() }
+        .onAppear(perform: enforceRestriction)
+    }
+
+    @EnvironmentObject private var session: Session
+
+    /// Без подписки главная и аналитика недоступны — открываем «Сообщество».
+    private func enforceRestriction() {
+        guard session.restricted, router.tab == .home || router.tab == .analytics else { return }
+        router.switchTab(.community)
     }
 
     private func stack<Content: View>(_ t: Tab, @ViewBuilder _ root: () -> Content) -> some View {

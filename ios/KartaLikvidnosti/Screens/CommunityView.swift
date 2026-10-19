@@ -26,6 +26,10 @@ struct CommunityView: View {
 
     private var visibleSections: [ChatSectionDto] {
         var result = sections
+        if session.restricted {
+            // Без подписки (Figma 474:12121): только общий чат под заголовком «Чаты».
+            return result.filter { $0.key == "main" }.map { ChatSectionDto(key: $0.key, title: "Чаты", items: $0.items) }
+        }
         if session.isAdmin {
             result = result.filter { tab == "direct" ? $0.key == "direct" : $0.key != "direct" }
         }
@@ -48,8 +52,10 @@ struct CommunityView: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
-                AppInput(text: $query, placeholder: placeholder)
-                    .padding(.horizontal, Theme.screenX)
+                if !session.restricted {
+                    AppInput(text: $query, placeholder: placeholder)
+                        .padding(.horizontal, Theme.screenX)
+                }
 
                 if session.isAdmin {
                     SegmentedControl(selection: $tab, options: [("all", "Все чаты"), ("direct", "Личные чаты")], glass: true)
@@ -83,7 +89,7 @@ struct CommunityView: View {
                             }
                         }
                     }
-                    .padding(.top, 24)
+                    .padding(.top, session.restricted ? 0 : 24)
 
                     if visibleSections.isEmpty {
                         Text(session.isAdmin && tab == "direct" ? "Личных сообщений пока нет" : "Ничего не найдено")
