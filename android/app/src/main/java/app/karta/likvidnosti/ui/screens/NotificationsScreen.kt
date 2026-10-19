@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -46,6 +47,7 @@ private data class NotifInstrument(val key: String, val label: String, val on: B
  * 12, шаг 4). «Только по инструментам» показывается, пока не включены все
  * уведомления; без них блок чипов приглушён.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun NotificationsScreen(onBack: () -> Unit) {
     var all by remember { mutableStateOf(true) }

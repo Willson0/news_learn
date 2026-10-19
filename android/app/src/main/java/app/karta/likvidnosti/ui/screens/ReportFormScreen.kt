@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -80,6 +81,7 @@ private val SHORT_LABELS = mapOf("gas" to "Нат. газ")
  * зелёным «+», пурпурная пилюля «Добавить/Удалить»); ошибки 12 красным 70 %
  * под полем; внизу кнопка (низ — 45).
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ReportFormScreen(
     reportId: Long?,
