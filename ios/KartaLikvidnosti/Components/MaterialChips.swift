@@ -58,8 +58,8 @@ struct MaterialChips: View {
                     }
                 }
                 .padding(4)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
             }
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
         }
         .frame(height: 56)
         .liquidGlass(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))

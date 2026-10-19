@@ -105,7 +105,7 @@ struct FiltersSheet: View {
                         }
                         .buttonStyle(.plain)
                         // Системный календарь во всплывающем окне у кнопки (не лист).
-                        .popover(isPresented: $calendarOpen, attachmentAnchor: .point(.bottom), arrowEdge: .top) {
+                        .popover(isPresented: $calendarOpen) {
                             DateRangePopover(start: $dateStart, end: $dateEnd)
                                 .popoverOnPhone()
                         }
@@ -168,13 +168,15 @@ struct FiltersSheet: View {
     }
 }
 
-/// Выбор периода двумя системными календарями (graphical DatePicker) во
-/// всплывающем окне у кнопки. Значения применяются сразу при выборе.
+/// Выбор периода системным календарём (graphical DatePicker) во всплывающем окне
+/// у кнопки. Переключатель «С / По» выбирает, какую дату менять. Значения
+/// записываются только после действия пользователя.
 struct DateRangePopover: View {
     @Binding var start: String?   // ISO yyyy-MM-dd
     @Binding var end: String?
     @State private var from = Date()
     @State private var to = Date()
+    @State private var editingEnd = false
 
     private static let isoFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -184,29 +186,48 @@ struct DateRangePopover: View {
         return f
     }()
 
+    private var fromPick: Binding<Date> {
+        Binding(get: { from }, set: { new in
+            from = new
+            if to < new { to = new }
+            commit()
+        })
+    }
+
+    private var toPick: Binding<Date> {
+        Binding(get: { to }, set: { new in
+            to = new
+            commit()
+        })
+    }
+
     var body: some View {
-        ScrollView {
-            VStack(spacing: 12) {
-                DatePicker("С", selection: $from, displayedComponents: .date)
-                    .datePickerStyle(.graphical)
-                DatePicker("По", selection: $to, in: from...Date.distantFuture, displayedComponents: .date)
-                    .datePickerStyle(.graphical)
+        VStack(spacing: 12) {
+            Picker("Граница", selection: $editingEnd) {
+                Text("С").tag(false)
+                Text("По").tag(true)
             }
-            .padding(12)
+            .pickerStyle(.segmented)
+
+            if editingEnd {
+                DatePicker("По", selection: toPick, in: from...Date.distantFuture, displayedComponents: .date)
+            } else {
+                DatePicker("С", selection: fromPick, displayedComponents: .date)
+            }
         }
-        .frame(width: 340, height: 560)
+        .datePickerStyle(.graphical)
+        .padding(12)
+        .frame(width: 340)
         .onAppear {
             let s = start.flatMap { Self.isoFormatter.date(from: $0) } ?? Date()
             from = s
             to = end.flatMap { Self.isoFormatter.date(from: $0) } ?? s
         }
-        .onChange(of: from) { _ in commit() }
-        .onChange(of: to) { _ in commit() }
     }
 
     private func commit() {
         start = Self.isoFormatter.string(from: from)
-        end = Self.isoFormatter.string(from: max(from, to))
+        end = Self.isoFormatter.string(from: to)
     }
 }
 
