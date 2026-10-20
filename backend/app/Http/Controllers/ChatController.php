@@ -124,12 +124,20 @@ class ChatController extends Controller
             'body' => ['nullable', 'string', 'max:4000'],
             'reply_to' => ['nullable', 'integer'],
             'attachment' => ['nullable', 'file', 'max:102400'],
-            'kind' => ['nullable', 'in:image,file,voice', 'required_with:attachment'],
+            // Несколько фото в одном сообщении (как в Телеграме): attachments[] одного вида.
+            'attachments' => ['nullable', 'array', 'max:10'],
+            'attachments.*' => ['file', 'max:102400'],
+            'kind' => ['nullable', 'in:image,file,voice', 'required_with:attachment,attachments'],
             'duration' => ['nullable', 'integer', 'min:0', 'max:36000'],
         ]);
 
+        $files = $request->file('attachments', []);
+        if ($request->hasFile('attachment')) {
+            $files[] = $request->file('attachment');
+        }
+
         $hasBody = isset($data['body']) && trim($data['body']) !== '';
-        if (! $hasBody && ! $request->hasFile('attachment')) {
+        if (! $hasBody && $files === []) {
             throw ValidationException::withMessages([
                 'body' => 'Сообщение пустое.',
             ]);
@@ -143,7 +151,7 @@ class ChatController extends Controller
             )->id;
         }
 
-        $message = DB::transaction(function () use ($chat, $user, $data, $hasBody, $replyToId, $request) {
+        $message = DB::transaction(function () use ($chat, $user, $data, $hasBody, $replyToId, $files) {
             $message = $chat->messages()->create([
                 'user_id' => $user->id,
                 'reply_to_id' => $replyToId,
@@ -152,8 +160,8 @@ class ChatController extends Controller
                 'body' => $hasBody ? trim($data['body']) : null,
             ]);
 
-            if ($request->hasFile('attachment')) {
-                $this->storeAttachment($message, $request->file('attachment'), $data['kind'], $data['duration'] ?? null);
+            foreach ($files as $file) {
+                $this->storeAttachment($message, $file, $data['kind'], $data['duration'] ?? null);
             }
 
             return $message;
