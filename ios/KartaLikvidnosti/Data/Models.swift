@@ -496,3 +496,16 @@ struct AdminDto: Decodable, Identifiable {
         case telegramId = "telegram_id"
     }
 }
+
+/// Привязанная карта YooKassa (GET /billing/card).
+struct CardDto: Decodable {
+    let bound: Bool
+    let brand: String?
+    let last4: String?
+}
+
+/// Ответ POST /billing/card/bind: ссылка на страницу оплаты.
+struct CardBindDto: Decodable {
+    let confirmationUrl: String
+    enum CodingKeys: String, CodingKey { case confirmationUrl = "confirmation_url" }
+}

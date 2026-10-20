@@ -10,7 +10,9 @@ struct SubscriptionView: View {
     @State private var active = false
     @State private var until = ""
     @State private var plan = ""
-    @State private var account: String? = nil
+    @State private var cardInfo: CardDto? = nil
+    @State private var cardBusy = false
+    @State private var cardError: String? = nil
     @State private var autoPay = false
 
     private let card = RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
@@ -47,16 +49,22 @@ struct SubscriptionView: View {
                 HStack(spacing: 12) {
                     ZStack {
                         Circle().fill(Color.white).frame(width: 32, height: 32)
-                        if account == nil { Icon(AppIcons.plus, size: 20, color: Theme.green) }
+                        if !isBound { Icon(AppIcons.plus, size: 20, color: Theme.green) }
                     }
-                    Text(account ?? "Новый счет").font(Theme.sans(Theme.fontMd)).foregroundStyle(Theme.text)
+                    Text(cardTitle).font(Theme.sans(Theme.fontMd)).foregroundStyle(Theme.text)
+                        .lineLimit(1)
                     Spacer(minLength: 8)
-                    PurplePillButton(title: account == nil ? "Привязать" : "Отвязать") { toggleAccount() }
+                    PurplePillButton(title: isBound ? "Отвязать" : "Привязать") { isBound ? unbindCard() : bindCard() }
+                        .disabled(cardBusy)
                 }
                 .padding(.horizontal, 16)
                 .frame(height: 64)
-                .background(Theme.surface, in: card)
+                .background(Theme.surface, in: self.card)
                 .padding(.top, 12)
+                if let cardError {
+                    Text(cardError).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.error)
+                        .padding(.top, 8)
+                }
 
                 HStack {
                     Text("Авто-платеж").font(Theme.sans(Theme.fontMd)).foregroundStyle(Theme.text)
@@ -73,7 +81,10 @@ struct SubscriptionView: View {
             .padding(.bottom, 40)
         }
         .screenBackground()
-        .task { await load() }
+        .task {
+            await load()
+            await reloadCard()
+        }
         .onChange(of: autoPay) { v in Task { try? await Api.updateSubscription(["auto_pay": v]) } }
     }
 
@@ -81,15 +92,56 @@ struct SubscriptionView: View {
         do {
             if let s = try await Api.fetchSubscription() {
                 active = s.active; until = s.until ?? ""; plan = s.plan ?? ""
-                autoPay = s.autoPay; account = s.paymentMethod
+                autoPay = s.autoPay
             }
         } catch {}
     }
 
-    private func toggleAccount() {
+    private var isBound: Bool { cardInfo?.bound == true }
+
+    private var cardTitle: String {
+        guard isBound, let info = cardInfo else { return "Новая карта" }
+        let last = info.last4.map { " •••• \($0)" } ?? ""
+        return (info.brand ?? "Карта") + last
+    }
+
+    private func reloadCard() async {
+        cardInfo = try? await Api.fetchCard()
+    }
+
+    private func bindCard() {
         Haptics.light()
-        account = account == nil ? "СБП 1488" : nil
-        let method = account
-        Task { try? await Api.updateSubscription(["payment_method": method]) }
+        cardError = nil
+        Task { @MainActor in
+            cardBusy = true
+            defer { cardBusy = false }
+            do {
+                try await CardBinding.run()
+                // Вебхук YooKassa сохраняет карту чуть позже возврата в приложение, поэтому опрашиваем.
+                for _ in 0..<5 {
+                    await reloadCard()
+                    if isBound { return }
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                }
+                cardError = "Карта ещё обрабатывается, обновите экран через минуту"
+            } catch {
+                cardError = (error as? ApiError)?.message ?? "Не удалось привязать карту"
+            }
+        }
+    }
+
+    private func unbindCard() {
+        Haptics.light()
+        cardError = nil
+        Task { @MainActor in
+            cardBusy = true
+            defer { cardBusy = false }
+            do {
+                try await Api.unbindCard()
+                await reloadCard()
+            } catch {
+                cardError = (error as? ApiError)?.message ?? "Не удалось отвязать карту"
+            }
+        }
     }
 }
