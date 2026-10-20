@@ -150,7 +150,6 @@ fun ProfileScreen(
     var subActive by remember { mutableStateOf(false) }
     var subUntil by remember { mutableStateOf("") }
     var subPlan by remember { mutableStateOf("") }
-    val scope = rememberCoroutineScope()
     val instruments = remember { mutableStateListOf<ProfInstrument>() }
     var history by remember { mutableStateOf(AppData.reports ?: emptyList<ReportDto>()) }
     var sortOpen by remember { mutableStateOf(false) }
