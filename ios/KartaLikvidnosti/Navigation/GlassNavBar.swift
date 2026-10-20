@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Нижний навбар из макета («navbar»): стеклянная капсула 230×64, четыре
 /// пункта 40×40 (x = 12/67/122/178), активный — стекло с заливкой «active»,
@@ -9,6 +10,15 @@ import SwiftUI
 /// Навбар рисуется внутри корневого экрана вкладки, поэтому при push/pop он
 /// уезжает и возвращается вместе с экраном (в т.ч. на интерактивном свайпе).
 struct GlassNavBar: View {
+    /// Высота зоны home indicator текущего окна (0 на устройствах без неё).
+    static var homeIndicatorInset: CGFloat {
+        let window = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first(where: { $0.isKeyWindow })
+        return window?.safeAreaInsets.bottom ?? 0
+    }
+
     var extra: Extra? = nil
 
     struct Extra {
@@ -59,10 +69,12 @@ struct GlassNavBar: View {
         .padding(.bottom, 45)
         .frame(maxWidth: .infinity)
         .background(alignment: .bottom) {
+            // Растушёвка доводится до самого низа экрана: высота и сдвиг на зону home indicator.
+            let inset = Self.homeIndicatorInset
             Rectangle()
                 .fill(Theme.bottomFade)
-                .frame(height: 79)
-                .ignoresSafeArea(edges: .bottom)
+                .frame(height: 79 + inset)
+                .offset(y: inset)
                 .allowsHitTesting(false)
         }
         .onAppear {

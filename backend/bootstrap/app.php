@@ -15,6 +15,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // nginx/Caddy на хосте терминирует HTTPS: доверяем X-Forwarded-Proto, иначе подписанные
+        // ссылки на вложения строятся как http, а iOS их не грузит (белые фото в чате).
+        $middleware->trustProxies(at: '*');
+
         $middleware->alias([
             'admin' => EnsureAdmin::class,
             'active' => TouchLastActive::class,
