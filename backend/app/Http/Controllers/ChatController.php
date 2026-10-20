@@ -507,12 +507,14 @@ class ChatController extends Controller
     private function toArray(Message $m, User $viewer, ?int $othersRead = null): array
     {
         $image = null;
+        $images = [];
         $file = null;
         $voice = null;
 
         foreach ($m->attachments as $a) {
             if ($a->kind === 'image') {
-                $image = ['url' => $this->fileUrl($a), 'width' => $a->width, 'height' => $a->height];
+                $image ??= ['url' => $this->fileUrl($a), 'width' => $a->width, 'height' => $a->height];
+                $images[] = ['url' => $this->fileUrl($a), 'width' => $a->width, 'height' => $a->height];
             } elseif ($a->kind === 'voice') {
                 $voice = ['url' => $this->fileUrl($a), 'duration' => self::formatDuration($a->duration)];
             } elseif ($a->kind === 'file') {
@@ -549,7 +551,9 @@ class ChatController extends Controller
             'time' => $m->created_at?->format('H:i'),
             'created_at' => $m->created_at?->toIso8601String(),
             'reply' => $m->replyTo ? $this->quoteOf($m->replyTo) : null,
+            // image — первое фото (совместимость), images — все фото сообщения-альбома.
             'image' => $image,
+            'images' => $images,
             'file' => $file,
             'voice' => $voice,
             'reactions' => $reactions,

@@ -119,7 +119,9 @@ struct PressableStyle: ButtonStyle {
 /// Фаза считается от времени в `TimelineView`, а не через
 /// `withAnimation(.repeatForever)`: бесконечная анимация в `onAppear` захватывала
 /// и удаление скелетона из иерархии — заглушки «зависали» поверх реального контента.
-struct Shimmer: ViewModifier {
+struct Shimmer<S: Shape>: ViewModifier {
+    /// Форма заглушки: блик режется по ней, а не по прямоугольнику (иначе выходит за скругления).
+    let shape: S
     private let period: Double = 1.2
 
     func body(content: Content) -> some View {
@@ -139,12 +141,12 @@ struct Shimmer: ViewModifier {
                 }
                 .allowsHitTesting(false)
             )
-            .clipped()
+            .clipShape(shape)
     }
 }
 
 extension View {
-    func shimmer() -> some View { modifier(Shimmer()) }
+    func shimmer<S: Shape>(_ shape: S) -> some View { modifier(Shimmer(shape: shape)) }
 }
 
 /// Прямоугольник-заглушка с лёгким shimmer.
@@ -154,10 +156,11 @@ struct SkeletonBlock: View {
     var radius: CGFloat = 10
 
     var body: some View {
-        RoundedRectangle(cornerRadius: radius, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        shape
             .fill(Color.white.opacity(0.07))
             .frame(width: width, height: height)
-            .shimmer()
+            .shimmer(shape)
     }
 }
 
@@ -185,7 +188,7 @@ struct ReportCardSkeleton: View {
 struct ChatRowSkeleton: View {
     var body: some View {
         HStack(spacing: 12) {
-            Circle().fill(Color.white.opacity(0.07)).frame(width: 56, height: 56).shimmer()
+            Circle().fill(Color.white.opacity(0.07)).frame(width: 56, height: 56).shimmer(Circle())
             VStack(alignment: .leading, spacing: 8) {
                 SkeletonBlock(width: 140, height: 14)
                 SkeletonBlock(width: 220, height: 12)
