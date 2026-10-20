@@ -46,6 +46,7 @@ class User extends Authenticatable
             'password' => 'hashed',
             'notify_all' => 'boolean',
             'notify_by_instrument' => 'boolean',
+            'card_bound_at' => 'datetime',
         ];
     }
 

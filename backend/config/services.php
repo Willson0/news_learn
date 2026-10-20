@@ -42,6 +42,15 @@ return [
         'app_scheme' => env('YANDEX_APP_SCHEME', 'karta'),
     ],
 
+    'yookassa' => [
+        'shop_id' => env('YOOKASSA_SHOP_ID'),
+        'secret_key' => env('YOOKASSA_SECRET_KEY'),
+        'api_base' => env('YOOKASSA_API_BASE', 'https://api.yookassa.ru/v3'),
+        'return_url' => env('YOOKASSA_RETURN_URL', 'https://wilflw.ru/api/billing/card/return'),
+        'bind_amount' => env('YOOKASSA_BIND_AMOUNT', '1.00'),
+        'app_scheme' => env('YOOKASSA_APP_SCHEME', 'karta'),
+    ],
+
     'telegram' => [
         'bot_token' => env('TELEGRAM_BOT_TOKEN'),
         'allow_insecure' => (bool) env('TELEGRAM_ALLOW_INSECURE', false),
