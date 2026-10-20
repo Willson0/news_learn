@@ -43,6 +43,9 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -92,6 +95,8 @@ fun ReportDetailScreen(
 ) {
     var report by remember { mutableStateOf(DEMO_REPORT) }
     var reportOpen by rememberSaveable { mutableStateOf(false) }
+    // HTML-отчёт открывается на весь экран; без html остаётся текстовый блок.
+    var htmlOpen by rememberSaveable { mutableStateOf(false) }
     var graphOpen by rememberSaveable { mutableStateOf(false) }
     val uriHandler = LocalUriHandler.current
     val isAdmin = Session.isAdmin
@@ -128,7 +133,7 @@ fun ReportDetailScreen(
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         ReportActionButton("Открыть отчет", AppIcons.doc, variant = ReportActionVariant.Accent) {
-                            reportOpen = !reportOpen
+                            if (fileUrl(report.htmlUrl) != null) htmlOpen = true else reportOpen = !reportOpen
                         }
                         ReportActionButton("Обсудить", AppIcons.chat, variant = ReportActionVariant.Pink) {
                             onDiscuss(report.chat)
@@ -152,6 +157,11 @@ fun ReportDetailScreen(
             }
         },
         overlay = {
+            if (htmlOpen) {
+                fileUrl(report.htmlUrl)?.let { url ->
+                    ReportHtmlScreen(url = url, onClose = { htmlOpen = false })
+                }
+            }
             val badge = report.badge
             GlassTopBar(
                 onBack = onBack,
@@ -210,11 +220,6 @@ private fun Hero(report: ReportDto, height: Dp) {
 
 @Composable
 private fun ReportBody(report: ReportDto, modifier: Modifier = Modifier) {
-    val html = fileUrl(report.htmlUrl)
-    if (html != null) {
-        ReportWebView(html, modifier.fillMaxWidth().heightIn(min = 500.dp).height(500.dp).clip(T.ShapeCard))
-        return
-    }
     val body = report.body
     Column(
         modifier = modifier
@@ -240,7 +245,28 @@ private fun ReportBody(report: ReportDto, modifier: Modifier = Modifier) {
     }
 }
 
-/** HTML-отчёт (iOS WebView). */
+/** HTML-отчёт на весь экран с кнопкой закрытия. Назад тоже закрывает. */
+@Composable
+private fun ReportHtmlScreen(url: String, onClose: () -> Unit) {
+    Dialog(
+        onDismissRequest = onClose,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+    ) {
+        Box(modifier = Modifier.fillMaxSize().background(T.Background)) {
+            ReportWebView(url, Modifier.fillMaxSize())
+            GlassCircleButton(
+                icon = AppIcons.close,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .statusBarsPadding()
+                    .padding(end = T.ScreenX, top = 12.dp),
+                onClick = onClose,
+            )
+        }
+    }
+}
+
+/** HTML-отчёт (WebView, JavaScript включён как в веб-версии). */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 private fun ReportWebView(url: String, modifier: Modifier = Modifier) {

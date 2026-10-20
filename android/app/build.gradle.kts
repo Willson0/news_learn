@@ -81,6 +81,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
 
     implementation(libs.coil.compose)
+    implementation(libs.androidx.browser)
 
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 }

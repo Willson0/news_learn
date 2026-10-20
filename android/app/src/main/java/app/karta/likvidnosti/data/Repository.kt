@@ -28,6 +28,7 @@ import app.karta.likvidnosti.data.api.RegisterBody
 import app.karta.likvidnosti.data.api.ReportDto
 import app.karta.likvidnosti.data.api.ResetBody
 import app.karta.likvidnosti.data.api.UserProfileDto
+import app.karta.likvidnosti.data.api.BillingCardDto
 import app.karta.likvidnosti.data.api.SubscriptionBody
 import app.karta.likvidnosti.data.api.SubscriptionDto
 import app.karta.likvidnosti.data.api.TokenResponse
@@ -118,6 +119,10 @@ object Repository {
 
     suspend fun updateSubscription(autoPay: Boolean? = null, paymentMethod: String? = null) =
         apiCall { api.updateSubscription(SubscriptionBody(autoPay, paymentMethod)) }
+
+    suspend fun billingCard(): BillingCardDto = apiCall { api.billingCard() }
+    suspend fun bindCard(): String = apiCall { api.bindCard().confirmationUrl }
+    suspend fun unbindCard() = apiCall { api.unbindCard() }
 
     suspend fun leaveChat(slug: String) = apiCall { api.leaveChat(slug) }
 

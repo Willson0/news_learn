@@ -12,6 +12,7 @@ import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -33,6 +34,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -42,6 +44,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -57,7 +60,9 @@ import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -126,6 +131,7 @@ import app.karta.likvidnosti.ui.components.GlassCircleButton
 import app.karta.likvidnosti.ui.components.MessageBubble
 import app.karta.likvidnosti.ui.components.Reaction
 import app.karta.likvidnosti.ui.components.RemoteImage
+import coil.compose.AsyncImage
 import app.karta.likvidnosti.ui.components.ReplyQuote
 import app.karta.likvidnosti.ui.components.ReportCover
 import app.karta.likvidnosti.ui.components.SkeletonBox
@@ -245,6 +251,8 @@ fun ChatScreen(
     val initialIds = remember { HashSet<Long>() }
 
     var draft by remember { mutableStateOf(TextFieldValue("")) }
+    // Фото, выбранные через системный Photo Picker, ждут «отправить».
+    val pendingImages = remember { mutableStateListOf<Uri>() }
     var replyTo by remember { mutableStateOf<ChatMessage?>(null) }
     var menuFor by remember { mutableStateOf<Long?>(null) }
     var deleteMenu by remember { mutableStateOf(false) }
@@ -274,7 +282,7 @@ fun ChatScreen(
 
     val isDirect = slug == "admin" || slug.startsWith("dm-") || chatType == "direct"
     val visible = messages.filter { it.id !in hiddenIds }
-    val showSend = draft.text.trim().isNotEmpty()
+    val showSend = draft.text.trim().isNotEmpty() || pendingImages.isNotEmpty()
     val mentionQuery = MentionRegex.find(draft.text)?.value?.drop(1)?.lowercase()
     val mentionMatches: List<ParticipantDto> = if (mentionQuery == null) emptyList() else participants.filter { p ->
         mentionQuery.isEmpty() ||
@@ -369,6 +377,10 @@ fun ChatScreen(
     // MARK: - Отправка
 
     fun send() {
+        if (pendingImages.isNotEmpty()) {
+            sendPendingPhotos()
+            return
+        }
         val body = draft.text.trim()
         if (body.isEmpty()) return
         val reply = replyTo?.id
@@ -379,39 +391,66 @@ fun ChatScreen(
         }
     }
 
+    /** Отправляет одно вложение. Возвращает текст ошибки или null, если всё прошло. */
+    suspend fun uploadAttachment(uri: Uri, kind: String, caption: String, reply: Long?, asJpeg: Boolean): String? {
+        val part = if (asJpeg) Uploads.jpegPart(context, "attachment", uri) else Uploads.filePart(context, "attachment", uri)
+            ?: return "Файл не прочитался, попробуйте ещё раз"
+        if (part.body.contentLength() > 100L * 1024 * 1024) return "Файл больше 100 МБ, выберите файл поменьше"
+        val parts = mutableListOf(part, Uploads.textPart("kind", kind))
+        if (caption.isNotEmpty()) parts.add(Uploads.textPart("body", caption))
+        reply?.let { parts.add(Uploads.textPart("reply_to", it.toString())) }
+        return runCatching { Repository.sendMessageAttachment(slug, parts) }
+            .fold(
+                onSuccess = { sent -> sent?.let { messages.add(it.toUi()) }; null },
+                onFailure = { "Не удалось отправить вложение" },
+            )
+    }
+
     fun sendAttachment(uri: Uri, kind: String) {
         val reply = replyTo?.id
-        // Текст из поля ввода становится подписью к фото и файлу (голосовое без подписи).
+        // Текст из поля ввода становится подписью к файлу (голосовое без подписи).
         val caption = if (kind == "voice") "" else draft.text.trim()
         replyTo = null
         attachOpen = false
+        if (caption.isNotEmpty()) draft = TextFieldValue("")
         scope.launch {
-            val part = Uploads.filePart(context, "attachment", uri)
-            if (part == null) {
-                showToast("Файл не прочитался, попробуйте ещё раз")
-                return@launch
+            val error = uploadAttachment(uri, kind, caption, reply, asJpeg = false)
+            if (error != null) {
+                if (caption.isNotEmpty()) draft = TextFieldValue(caption)
+                showToast(error)
             }
-            if (part.body.contentLength() > 100L * 1024 * 1024) {
-                showToast("Файл больше 100 МБ, выберите файл поменьше")
-                return@launch
-            }
-            val parts = mutableListOf(part, Uploads.textPart("kind", kind))
-            if (caption.isNotEmpty()) {
-                parts.add(Uploads.textPart("body", caption))
-                draft = TextFieldValue("")
-            }
-            reply?.let { parts.add(Uploads.textPart("reply_to", it.toString())) }
-            runCatching { Repository.sendMessageAttachment(slug, parts) }
-                .onSuccess { sent -> sent?.let { messages.add(it.toUi()) } }
-                .onFailure {
-                    if (caption.isNotEmpty()) draft = TextFieldValue(caption)
-                    showToast("Не удалось отправить вложение")
-                }
         }
     }
 
-    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) sendAttachment(uri, "image")
+    /** Отправляет выбранные фото по одному; подпись из поля уходит с первым фото. */
+    fun sendPendingPhotos() {
+        val uris = pendingImages.toList()
+        val caption = draft.text.trim()
+        val reply = replyTo?.id
+        pendingImages.clear()
+        draft = TextFieldValue("")
+        replyTo = null
+        attachOpen = false
+        scope.launch {
+            uris.forEachIndexed { i, uri ->
+                val error = uploadAttachment(
+                    uri, "image", if (i == 0) caption else "", if (i == 0) reply else null, asJpeg = true,
+                )
+                if (error != null) {
+                    // Не отправленные фото и подпись возвращаются в поле, чтобы их можно было отправить снова.
+                    pendingImages.addAll(0, uris.subList(i, uris.size))
+                    if (i == 0 && caption.isNotEmpty()) draft = TextFieldValue(caption)
+                    showToast(error)
+                    return@launch
+                }
+            }
+        }
+    }
+
+    val imagePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(maxItems = 20),
+    ) { uris ->
+        if (uris.isNotEmpty()) pendingImages.addAll(uris)
     }
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) sendAttachment(uri, "file")
@@ -858,10 +897,16 @@ fun ChatScreen(
                                             .padding(
                                                 start = 16.dp,
                                                 end = if (showSend) 0.dp else 12.dp,
-                                                top = if (replyTo != null) 12.dp else 0.dp,
+                                                top = if (replyTo != null || pendingImages.isNotEmpty()) 12.dp else 0.dp,
                                             ),
                                         verticalArrangement = Arrangement.spacedBy(8.dp),
                                     ) {
+                                        if (pendingImages.isNotEmpty()) {
+                                            PendingPhotosStrip(
+                                                uris = pendingImages,
+                                                onRemove = { pendingImages.remove(it) },
+                                            )
+                                        }
                                         replyTo?.let { reply ->
                                             ComposerQuote(
                                                 author = reply.author ?: Session.user?.name ?: "Вы",
@@ -982,7 +1027,7 @@ fun ChatScreen(
                         ) {
                             MenuLabel("Изображение", AppIcons.picture, iconSize = 24.dp) {
                                 attachOpen = false
-                                imagePicker.launch("image/*")
+                                imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                             }
                             MenuLabel("Файл", AppIcons.doc, iconSize = 20.dp) {
                                 attachOpen = false
@@ -1684,3 +1729,35 @@ private fun Modifier.chatBackdrop(): Modifier = this
         }
         onDrawBehind { triangles.forEach { (p, b) -> drawPath(p, b) } }
     }
+
+/** Превью выбранных фото над полем ввода: миниатюра и крестик для удаления. */
+@Composable
+private fun PendingPhotosStrip(uris: List<Uri>, onRemove: (Uri) -> Unit) {
+    LazyRow(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(end = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        items(uris, key = { it.toString() }) { uri ->
+            Box(modifier = Modifier.size(64.dp)) {
+                AsyncImage(
+                    model = uri,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.matchParentSize().clip(RoundedCornerShape(12.dp)),
+                )
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(3.dp)
+                        .size(20.dp)
+                        .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                        .clickable { onRemove(uri) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    AppIcon(AppIcons.close, size = 12.dp, tint = Color.White)
+                }
+            }
+        }
+    }
+}

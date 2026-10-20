@@ -73,6 +73,16 @@ class NotificationsDto(
 class InstrumentsResponse(val instruments: List<InstrumentDto> = emptyList())
 
 @Serializable
+class BillingCardDto(
+    val bound: Boolean = false,
+    val brand: String? = null,
+    val last4: String? = null,
+)
+
+@Serializable
+class BillingBindDto(@SerialName("confirmation_url") val confirmationUrl: String = "")
+
+@Serializable
 class SubscriptionDto(
     val active: Boolean = false,
     val plan: String? = null,

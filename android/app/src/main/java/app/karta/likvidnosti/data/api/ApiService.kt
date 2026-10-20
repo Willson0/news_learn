@@ -82,6 +82,17 @@ interface ApiService {
     @PUT("subscription")
     suspend fun updateSubscription(@Body body: SubscriptionBody): StatusResponse
 
+    /** Привязанная карта YooKassa (bound = false, если карты нет). */
+    @GET("billing/card")
+    suspend fun billingCard(): BillingCardDto
+
+    /** Ссылка подтверждения YooKassa, по которой открывается привязка карты. */
+    @POST("billing/card/bind")
+    suspend fun bindCard(): BillingBindDto
+
+    @DELETE("billing/card")
+    suspend fun unbindCard()
+
     // --- Аккаунт ---
     @PUT("account/email")
     suspend fun changeEmail(@Body body: ChangeEmailBody): StatusResponse

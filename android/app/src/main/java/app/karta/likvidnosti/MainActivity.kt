@@ -28,5 +28,6 @@ class MainActivity : ComponentActivity() {
     private fun handleYandexLink(intent: Intent?) {
         val uri = intent?.data ?: return
         if (uri.scheme == "karta" && uri.host == "auth") YandexSignIn.callbacks.tryEmit(uri)
+        if (uri.scheme == "karta" && uri.host == "billing") BillingReturn.results.tryEmit(uri)
     }
 }
