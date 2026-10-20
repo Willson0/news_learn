@@ -28,7 +28,9 @@ struct ChatView: View {
     @State private var selectMode = false
     @State private var selected: Set<Int> = []
     @State private var attachOpen = false
-    @State private var photoItem: PhotosPickerItem? = nil
+    @State private var photoItems: [PhotosPickerItem] = []
+    /// Выбранные фото, которые ещё не отправлены: показываются превью над полем ввода.
+    @State private var pendingPhotos: [PendingPhoto] = []
     @State private var fileImporterOpen = false
     @State private var photoViewerURL: URL? = nil
     @State private var loaded = false
@@ -73,7 +75,7 @@ struct ChatView: View {
         }
     }
 
-    private var showSend: Bool { !draft.trimmed.isEmpty }
+    private var showSend: Bool { !draft.trimmed.isEmpty || !pendingPhotos.isEmpty }
 
     /// Высота шапки (и закрепа), под которой начинаются сообщения.
     private var contentTop: CGFloat {
@@ -112,7 +114,7 @@ struct ChatView: View {
         .sheet(item: Binding(get: { shareText.map { ShareItem(text: $0) } }, set: { shareText = $0?.text })) { item in
             ShareSheet(items: [item.text])
         }
-        .onChange(of: photoItem) { _ in loadPickedPhoto() }
+        .onChange(of: photoItems) { _ in loadPickedPhotos() }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
             withAnimation(.easeOut(duration: 0.25)) { keyboardShown = true }
         }
@@ -411,6 +413,7 @@ struct ChatView: View {
             .zIndex(1)
 
             VStack(alignment: .leading, spacing: 8) {
+                if !pendingPhotos.isEmpty { pendingPhotosStrip }
                 if let reply = replyTo { composerQuote(reply) }
                 HStack(spacing: 10) {
                     TextField("", text: $draft, prompt: Text("Напишите что-нибудь").foregroundColor(Color.white.opacity(0.4)), axis: .vertical)
@@ -635,7 +638,7 @@ struct ChatView: View {
     /// popup/отправка: стекло «чёрный 2», радиус 24, 193 pt.
     private var attachMenu: some View {
         VStack(alignment: .leading, spacing: 12) {
-            PhotosPicker(selection: $photoItem, matching: .images) {
+            PhotosPicker(selection: $photoItems, maxSelectionCount: 10, matching: .images) {
                 menuLabel("Изображение", AppIcons.picture, iconSize: 24)
             }
             .buttonStyle(.plain)
@@ -856,6 +859,7 @@ struct ChatView: View {
     }
 
     private func send() {
+        if !pendingPhotos.isEmpty { sendPendingPhotos(); return }
         let body = draft.trimmed
         guard !body.isEmpty else { return }
         draft = ""
@@ -1019,15 +1023,80 @@ struct ChatView: View {
 
     // MARK: - Вложения
 
-    private func loadPickedPhoto() {
-        guard let item = photoItem else { return }
+    /// Фото из системного пикера сразу перекодируются в JPEG: HEIC с iPhone
+    /// браузер и часть клиентов не показывают (белые квадраты).
+    private func loadPickedPhotos() {
+        let items = photoItems
+        guard !items.isEmpty else { return }
+        photoItems = []
         attachOpen = false
         Task { @MainActor in
-            if let data = try? await item.loadTransferable(type: Data.self) {
-                sendAttachment(data: data, filename: "photo.jpg", mime: "image/jpeg", kind: "image")
+            for item in items {
+                guard let raw = try? await item.loadTransferable(type: Data.self),
+                      let image = UIImage(data: raw),
+                      let jpeg = image.jpegData(compressionQuality: 0.85) else {
+                    showAttachError("Не удалось открыть одно из фото")
+                    continue
+                }
+                pendingPhotos.append(PendingPhoto(image: image, jpeg: jpeg))
             }
-            photoItem = nil
         }
+    }
+
+    /// Отправка выбранных фото: подпись из поля ввода уходит с первым фото.
+    private func sendPendingPhotos() {
+        let photos = pendingPhotos
+        pendingPhotos = []
+        let caption = draft.trimmed
+        draft = ""
+        let reply = replyTo?.id
+        replyTo = nil
+        Task { @MainActor in
+            for (index, photo) in photos.enumerated() {
+                guard photo.jpeg.count <= Self.maxAttachmentBytes else {
+                    showAttachError("Фото больше 100 МБ, выберите фото поменьше")
+                    continue
+                }
+                do {
+                    let dto = try await Api.sendMessage(chatId,
+                                                        body: index == 0 && !caption.isEmpty ? caption : nil,
+                                                        replyTo: index == 0 ? reply : nil,
+                                                        attachment: (photo.jpeg, "photo.jpg", "image/jpeg"),
+                                                        kind: "image")
+                    if let dto { messages.append(ChatMessage(dto)) }
+                } catch {
+                    showAttachError("Не удалось отправить фото")
+                    break
+                }
+            }
+        }
+    }
+
+    /// Превью выбранных фото над полем ввода; крестик убирает фото до отправки.
+    private var pendingPhotosStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(pendingPhotos) { photo in
+                    Image(uiImage: photo.image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 64, height: 64)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(alignment: .topTrailing) {
+                            Button { pendingPhotos.removeAll { $0.id == photo.id } } label: {
+                                Icon(AppIcons.close, size: 10, color: .white)
+                                    .frame(width: 22, height: 22)
+                                    .background(Color.black.opacity(0.6), in: Circle())
+                            }
+                            .buttonStyle(.plain)
+                            .offset(x: 6, y: -6)
+                        }
+                }
+            }
+            .padding(.horizontal, 6)
+            .padding(.top, 6)
+        }
+        .frame(height: 76)
     }
 
     private func handleFileImport(_ result: Result<[URL], Error>) {
@@ -1134,4 +1203,12 @@ private extension View {
             .frame(height: 42)
             .liquidGlass(RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
+}
+
+
+/// Фото, выбранное в пикере и ещё не отправленное.
+struct PendingPhoto: Identifiable {
+    let id = UUID()
+    let image: UIImage
+    let jpeg: Data
 }

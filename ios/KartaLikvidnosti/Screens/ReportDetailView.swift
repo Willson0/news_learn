@@ -8,6 +8,8 @@ struct ReportDetailView: View {
     @State private var report = ReportModel.placeholder
     @State private var reportOpen = false
     @State private var graphOpen = false
+    /// html-отчёт открывается на весь экран, как отдельная страница.
+    @State private var htmlOpen = false
 
     struct ReportModel {
         var title: String
@@ -69,13 +71,16 @@ struct ReportDetailView: View {
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.88), value: graphOpen)
         .animation(.spring(response: 0.4, dampingFraction: 0.88), value: reportOpen)
+        .fullScreenCover(isPresented: $htmlOpen) {
+            if let url = report.htmlUrl { HtmlReportView(url: url) }
+        }
         .task { await load() }
     }
 
     private var actions: some View {
         VStack(spacing: 12) {
             ReportActionButton(label: "Открыть отчет", variant: .accent, icon: AppIcons.doc) {
-                reportOpen.toggle()
+                if report.htmlUrl != nil { htmlOpen = true } else { reportOpen.toggle() }
             }
             ReportActionButton(label: "Обсудить", variant: .pink, icon: AppIcons.chat) {
                 discuss()
@@ -122,10 +127,7 @@ struct ReportDetailView: View {
     }
 
     @ViewBuilder private var reportBody: some View {
-        if let html = report.htmlUrl {
-            WebView(url: html).frame(minHeight: 500)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
-        } else {
+        if report.htmlUrl == nil {
             VStack(alignment: .leading, spacing: 12) {
                 if let body = report.body, !body.isEmpty {
                     Text(body)
@@ -164,5 +166,19 @@ struct ReportDetailView: View {
                 body: d.body, material: d.material, chat: d.chat, chartUrl: d.chartUrl,
                 coverUrl: fileURL(d.coverUrl), htmlUrl: fileURL(d.htmlUrl))
         } catch {}
+    }
+}
+
+/// Полноэкранная html-страница отчёта: WebView и кнопка закрытия.
+struct HtmlReportView: View {
+    let url: URL
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            WebView(url: url).ignoresSafeArea()
+            GlassCircleButton(icon: AppIcons.close, iconSize: 20) { dismiss() }
+                .padding(16)
+        }
     }
 }
