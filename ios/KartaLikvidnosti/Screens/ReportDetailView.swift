@@ -95,13 +95,18 @@ struct ReportDetailView: View {
     @ViewBuilder private var hero: some View {
         let shape = UnevenRoundedRectangle(bottomLeadingRadius: Theme.radiusCard, bottomTrailingRadius: Theme.radiusCard, style: .continuous)
         ZStack(alignment: .bottomLeading) {
-            ZStack {
-                ReportCoverPlaceholder()
-                if let cover = report.coverUrl { RemoteImage(url: cover) }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .clipped()
-            .overlay { ZStack { BackdropBlur(radius: 25); Color.black.opacity(0.5) } }
+            // Обложка лежит в overlay у фиксированного Color.clear: размер картинки
+            // (например, вертикальной 1206×2622) не растягивает шапку и не выталкивает текст.
+            Color.clear
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay {
+                    ZStack {
+                        ReportCoverPlaceholder()
+                        if let cover = report.coverUrl { RemoteImage(url: cover) }
+                    }
+                }
+                .clipped()
+                .overlay { ZStack { BackdropBlur(radius: 25); Color.black.opacity(0.5) } }
 
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 0) {
@@ -176,6 +181,7 @@ struct HtmlReportView: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
+            Color.black.ignoresSafeArea()
             WebView(url: url).ignoresSafeArea()
             GlassCircleButton(icon: AppIcons.close, iconSize: 20) { dismiss() }
                 .padding(16)

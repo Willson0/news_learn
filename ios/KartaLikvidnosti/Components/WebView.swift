@@ -8,8 +8,10 @@ struct WebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let web = WKWebView()
         web.isOpaque = false
-        web.backgroundColor = .white
-        web.scrollView.backgroundColor = .white
+        web.backgroundColor = .clear
+        web.scrollView.backgroundColor = .clear
+        // Не добавлять отступы под статус-бар и home indicator: страница сама уходит под них.
+        web.scrollView.contentInsetAdjustmentBehavior = .never
         return web
     }
 
