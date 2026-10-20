@@ -83,6 +83,10 @@ fun AppRoot() {
     }
 
     val nav = rememberNavController()
+    val exitToLogin = {
+        Session.clear()
+        nav.navigate(Routes.LOGIN) { popUpTo(0) { inclusive = true } }
+    }
     val actions = remember(nav) { NavActions(nav) }
     val start = if (authed) Routes.HOME else Routes.LOGIN
 
@@ -195,6 +199,7 @@ fun AppRoot() {
                     onAccountData = { actions.toAccountData() },
                     onAdmins = { actions.toAdmins() },
                     onAgreement = { actions.toUserAgreement() },
+                    onLogout = { exitToLogin() },
                     onOpenReport = { actions.toReportDetail(it) },
                     navBar = { navBar(AppTab.Profile) },
                 )
@@ -289,10 +294,7 @@ fun AppRoot() {
                 AccountDataScreen(
                     onBack = { actions.back() },
                     onChange = { actions.toAccountChange(it) },
-                    onLogout = {
-                        Session.clear()
-                        nav.navigate(Routes.LOGIN) { popUpTo(0) { inclusive = true } }
-                    },
+                    onLogout = { exitToLogin() },
                 )
             }
             composable(

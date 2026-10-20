@@ -141,6 +141,7 @@ fun ProfileScreen(
     onAccountData: () -> Unit,
     onAdmins: () -> Unit,
     onAgreement: () -> Unit,
+    onLogout: () -> Unit,
     onOpenReport: (Long) -> Unit,
     navBar: @Composable () -> Unit,
 ) {
@@ -149,6 +150,7 @@ fun ProfileScreen(
     var subActive by remember { mutableStateOf(false) }
     var subUntil by remember { mutableStateOf("") }
     var subPlan by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
     val instruments = remember { mutableStateListOf<ProfInstrument>() }
     var history by remember { mutableStateOf(AppData.reports ?: emptyList<ReportDto>()) }
     var sortOpen by remember { mutableStateOf(false) }
@@ -194,6 +196,15 @@ fun ProfileScreen(
 
             if (restricted) {
                 ConditionsBlock(subPlan, onSubscription)
+                // Без подписки доступа к настройкам аккаунта нет: выход остаётся здесь.
+                Column(modifier = Modifier.padding(horizontal = T.ScreenX).padding(top = 24.dp)) {
+                    AppButton("Выйти из аккаунта", variant = ButtonVariant.Danger) {
+                        scope.launch {
+                            runCatching { Repository.logout() }
+                            onLogout()
+                        }
+                    }
+                }
             } else {
                 SubscriptionBlock(
                     subActive, subUntil, subPlan, onSubscription,
