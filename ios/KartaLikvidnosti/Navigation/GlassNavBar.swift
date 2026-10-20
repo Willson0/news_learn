@@ -119,7 +119,10 @@ struct GlassNavBar: View {
 extension View {
     /// Корневой экран вкладки: навбар поверх контента у нижнего края.
     func withGlassNavBar(extra: GlassNavBar.Extra? = nil) -> some View {
-        hidesBottomScrollEdge()
+        // Контент экрана заходит в зону home indicator: лента доходит до края экрана,
+        // а отступ под навбар даёт navBarClearance внутри прокрутки.
+        ignoresSafeArea(.container, edges: .bottom)
+            .hidesBottomScrollEdge()
             .overlay(alignment: .bottom) {
                 GlassNavBar(extra: extra).ignoresSafeArea(.container, edges: .bottom)
             }
