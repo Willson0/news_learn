@@ -408,6 +408,35 @@ fun ChatScreen(
     }
 
     /**
+     * Одно фото уходит как attachment, два и больше — одним запросом как альбом (attachments[]).
+     * Возвращает отправленное сообщение или текст ошибки.
+     */
+    suspend fun uploadPhotos(uris: List<Uri>, caption: String, reply: Long?): Pair<ChatMessage?, String?> {
+        val parts = mutableListOf<MultipartBody.Part>()
+        if (uris.size == 1) {
+            val part = Uploads.jpegPart(context, "attachment", uris[0])
+                ?: return null to "Файл не прочитался, попробуйте ещё раз"
+            parts.add(part)
+        } else {
+            uris.forEach { uri ->
+                val part = Uploads.jpegPart(context, "attachments[]", uri)
+                    ?: return null to "Одно из фото не прочиталось, попробуйте ещё раз"
+                parts.add(part)
+            }
+        }
+        if (parts.sumOf { it.body.contentLength() } > 100L * 1024 * 1024) {
+            return null to "Фото больше 100 МБ, выберите фото поменьше"
+        }
+        parts.add(Uploads.textPart("kind", "image"))
+        if (caption.isNotEmpty()) parts.add(Uploads.textPart("body", caption))
+        reply?.let { parts.add(Uploads.textPart("reply_to", it.toString())) }
+        return runCatching { Repository.sendMessageAttachment(slug, parts) }.fold(
+            onSuccess = { dto -> (dto?.toUi()) to null },
+            onFailure = { null to "Не удалось отправить фото" },
+        )
+    }
+
+    /**
      * Фото из поля ввода: сразу показываем сообщение с локальными превью и спиннером,
      * после ответа сервера оно заменяется настоящим, при ошибке убирается.
      */
@@ -443,35 +472,6 @@ fun ChatScreen(
                 showToast(error ?: "Не удалось отправить фото")
             }
         }
-    }
-
-    /**
-     * Одно фото уходит как attachment, два и больше — одним запросом как альбом (attachments[]).
-     * Возвращает отправленное сообщение или текст ошибки.
-     */
-    suspend fun uploadPhotos(uris: List<Uri>, caption: String, reply: Long?): Pair<ChatMessage?, String?> {
-        val parts = mutableListOf<MultipartBody.Part>()
-        if (uris.size == 1) {
-            val part = Uploads.jpegPart(context, "attachment", uris[0])
-                ?: return null to "Файл не прочитался, попробуйте ещё раз"
-            parts.add(part)
-        } else {
-            uris.forEach { uri ->
-                val part = Uploads.jpegPart(context, "attachments[]", uri)
-                    ?: return null to "Одно из фото не прочиталось, попробуйте ещё раз"
-                parts.add(part)
-            }
-        }
-        if (parts.sumOf { it.body.contentLength() } > 100L * 1024 * 1024) {
-            return null to "Фото больше 100 МБ, выберите фото поменьше"
-        }
-        parts.add(Uploads.textPart("kind", "image"))
-        if (caption.isNotEmpty()) parts.add(Uploads.textPart("body", caption))
-        reply?.let { parts.add(Uploads.textPart("reply_to", it.toString())) }
-        return runCatching { Repository.sendMessageAttachment(slug, parts) }.fold(
-            onSuccess = { dto -> (dto?.toUi()) to null },
-            onFailure = { null to "Не удалось отправить фото" },
-        )
     }
 
     fun send() {
