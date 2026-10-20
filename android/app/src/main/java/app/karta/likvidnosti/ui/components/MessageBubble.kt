@@ -24,8 +24,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -74,6 +76,11 @@ data class ChatMessage(
     val imageUrl: String? = null,
     val imageWidth: Int? = null,
     val imageHeight: Int? = null,
+    /** Все фото альбома (2 и больше — сетка 2 колонки). */
+    val imageUrls: List<String> = emptyList(),
+    /** Локальные фото, пока они загружаются (спиннер поверх превью). */
+    val localImageUris: List<Uri> = emptyList(),
+    val uploading: Boolean = false,
     val replyAuthor: String? = null,
     val replyText: String? = null,
     val reactions: List<Reaction> = emptyList(),
@@ -139,7 +146,19 @@ fun MessageBubble(
         if (!message.replyText.isNullOrEmpty() || !message.replyAuthor.isNullOrEmpty()) {
             ReplyQuote(message.replyAuthor ?: "", message.replyText ?: "")
         }
-        if (!message.imageUrl.isNullOrEmpty()) {
+        val gallery: List<Any> = when {
+            message.uploading -> message.localImageUris
+            message.imageUrls.size >= 2 -> message.imageUrls.mapNotNull { fileUrl(it) }
+            else -> emptyList()
+        }
+        if (gallery.isNotEmpty()) {
+            PhotoAlbum(
+                models = gallery,
+                uploading = message.uploading,
+                onOpen = { onOpenImage?.invoke() },
+                onLongPress = onLongPress,
+            )
+        } else if (!message.imageUrl.isNullOrEmpty()) {
             val w = MessageBubbleMaxWidth - 24.dp
             val iw = message.imageWidth
             val ih = message.imageHeight
@@ -148,25 +167,13 @@ fun MessageBubble(
             } else {
                 180.dp
             }
-            Box(
-                modifier = Modifier
-                    .size(w, h)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color.White.copy(alpha = 0.1f))
-                    .combinedClickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = { onOpenImage?.invoke() },
-                        onLongClick = onLongPress,
-                    ),
-            ) {
-                AsyncImage(
-                    model = fileUrl(message.imageUrl),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(w, h),
-                )
-            }
+            PhotoTile(
+                model = fileUrl(message.imageUrl) ?: message.imageUrl,
+                uploading = false,
+                modifier = Modifier.size(w, h).clip(RoundedCornerShape(16.dp)),
+                onOpen = { onOpenImage?.invoke() },
+                onLongPress = onLongPress,
+            )
         }
         if (!message.fileName.isNullOrEmpty() || !message.fileUrl.isNullOrEmpty()) {
             FileRow(message, onOpenFile, onLongPress)
@@ -178,6 +185,80 @@ fun MessageBubble(
             Text(message.text, style = AppFont.sans(T.FsBase))
         }
         Footer(message)
+    }
+}
+
+/** Альбом фото: одно фото — во всю ширину пузыря, два и больше — сетка 2 колонки с квадратами. */
+@Composable
+private fun PhotoAlbum(models: List<Any>, uploading: Boolean, onOpen: () -> Unit, onLongPress: (() -> Unit)?) {
+    val w = MessageBubbleMaxWidth - 24.dp
+    if (models.size == 1) {
+        PhotoTile(
+            model = models[0],
+            uploading = uploading,
+            modifier = Modifier.size(w, 180.dp).clip(RoundedCornerShape(16.dp)),
+            onOpen = onOpen,
+            onLongPress = onLongPress,
+        )
+        return
+    }
+    val gap = 4.dp
+    val cell = (w - gap) / 2
+    Column(verticalArrangement = Arrangement.spacedBy(gap)) {
+        models.chunked(2).forEach { pair ->
+            Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                pair.forEach { model ->
+                    PhotoTile(
+                        model = model,
+                        uploading = uploading,
+                        modifier = Modifier.size(cell).clip(RoundedCornerShape(12.dp)),
+                        onOpen = onOpen,
+                        onLongPress = onLongPress,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Одно фото; пока uploading, поверх превью крутится спиннер и нажатие отключено. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun PhotoTile(
+    model: Any,
+    uploading: Boolean,
+    modifier: Modifier,
+    onOpen: () -> Unit,
+    onLongPress: (() -> Unit)?,
+) {
+    Box(
+        modifier = modifier
+            .background(Color.White.copy(alpha = 0.1f))
+            .combinedClickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = { if (!uploading) onOpen() },
+                onLongClick = onLongPress,
+            ),
+    ) {
+        AsyncImage(
+            model = model,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
+        )
+        if (uploading) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(
+                    color = Color.White,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+        }
     }
 }
 

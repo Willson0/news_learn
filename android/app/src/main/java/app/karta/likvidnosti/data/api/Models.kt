@@ -133,6 +133,8 @@ class MessageDto(
     @SerialName("created_at") val createdAt: String? = null,
     val reply: MessageQuoteDto? = null,
     val image: MsgImageDto? = null,
+    /** Все фото сообщения-альбома (image — первое, для совместимости). */
+    val images: List<MsgImageDto> = emptyList(),
     val file: MsgFileDto? = null,
     val voice: MsgVoiceDto? = null,
     val reactions: List<ReactionDto> = emptyList(),

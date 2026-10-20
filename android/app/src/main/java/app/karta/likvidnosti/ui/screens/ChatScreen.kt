@@ -183,6 +183,7 @@ private fun MessageDto.toUi() = ChatMessage(
     imageUrl = image?.url,
     imageWidth = image?.width,
     imageHeight = image?.height,
+    imageUrls = if (images.isNotEmpty()) images.map { it.url } else listOfNotNull(image?.url),
     replyAuthor = reply?.author,
     replyText = reply?.text,
     reactions = reactions.map { Reaction(it.emoji, it.count, it.mine) },
@@ -406,29 +407,71 @@ fun ChatScreen(
         }
     }
 
-    /** Отправляет выбранные фото по одному; подпись из поля уходит с первым фото. */
+    /**
+     * Фото из поля ввода: сразу показываем сообщение с локальными превью и спиннером,
+     * после ответа сервера оно заменяется настоящим, при ошибке убирается.
+     */
     fun sendPendingPhotos() {
         val uris = pendingImages.toList()
+        if (uris.isEmpty()) return
         val caption = draft.text.trim()
         val reply = replyTo?.id
         pendingImages.clear()
         draft = TextFieldValue("")
         replyTo = null
         attachOpen = false
+        val tempId = -System.nanoTime()
+        messages.add(
+            ChatMessage(
+                id = tempId,
+                mine = true,
+                author = Session.user?.name,
+                text = caption.ifEmpty { null },
+                localImageUris = uris,
+                uploading = true,
+            ),
+        )
         scope.launch {
-            uris.forEachIndexed { i, uri ->
-                val error = uploadAttachment(
-                    uri, "image", if (i == 0) caption else "", if (i == 0) reply else null, asJpeg = true,
-                )
-                if (error != null) {
-                    // Не отправленные фото и подпись возвращаются в поле, чтобы их можно было отправить снова.
-                    pendingImages.addAll(0, uris.subList(i, uris.size))
-                    if (i == 0 && caption.isNotEmpty()) draft = TextFieldValue(caption)
-                    showToast(error)
-                    return@launch
-                }
+            val (sent, error) = uploadPhotos(uris, caption, reply)
+            val idx = messages.indexOfFirst { it.id == tempId }
+            if (sent != null) {
+                if (idx >= 0) messages[idx] = sent else messages.add(sent)
+            } else {
+                if (idx >= 0) messages.removeAt(idx)
+                pendingImages.addAll(0, uris)
+                if (caption.isNotEmpty()) draft = TextFieldValue(caption)
+                showToast(error ?: "Не удалось отправить фото")
             }
         }
+    }
+
+    /**
+     * Одно фото уходит как attachment, два и больше — одним запросом как альбом (attachments[]).
+     * Возвращает отправленное сообщение или текст ошибки.
+     */
+    suspend fun uploadPhotos(uris: List<Uri>, caption: String, reply: Long?): Pair<ChatMessage?, String?> {
+        val parts = mutableListOf<MultipartBody.Part>()
+        if (uris.size == 1) {
+            val part = Uploads.jpegPart(context, "attachment", uris[0])
+                ?: return null to "Файл не прочитался, попробуйте ещё раз"
+            parts.add(part)
+        } else {
+            uris.forEach { uri ->
+                val part = Uploads.jpegPart(context, "attachments[]", uri)
+                    ?: return null to "Одно из фото не прочиталось, попробуйте ещё раз"
+                parts.add(part)
+            }
+        }
+        if (parts.sumOf { it.body.contentLength() } > 100L * 1024 * 1024) {
+            return null to "Фото больше 100 МБ, выберите фото поменьше"
+        }
+        parts.add(Uploads.textPart("kind", "image"))
+        if (caption.isNotEmpty()) parts.add(Uploads.textPart("body", caption))
+        reply?.let { parts.add(Uploads.textPart("reply_to", it.toString())) }
+        return runCatching { Repository.sendMessageAttachment(slug, parts) }.fold(
+            onSuccess = { dto -> (dto?.toUi()) to null },
+            onFailure = { null to "Не удалось отправить фото" },
+        )
     }
 
     fun send() {
@@ -447,7 +490,7 @@ fun ChatScreen(
     }
 
     val imagePicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickMultipleVisualMedia(maxItems = 20),
+        ActivityResultContracts.PickMultipleVisualMedia(maxItems = 10),
     ) { uris ->
         if (uris.isNotEmpty()) pendingImages.addAll(uris)
     }
@@ -681,6 +724,7 @@ fun ChatScreen(
     }
 
     fun onLongPress(m: ChatMessage) {
+        if (m.uploading) return
         if (selectMode) { toggleSelect(m.id); return }
         focusManager.clearFocus()
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
