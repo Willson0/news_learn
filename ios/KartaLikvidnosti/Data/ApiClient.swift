@@ -175,6 +175,15 @@ private extension String {
 /// Полный URL файла, который бэкенд отдаёт относительной ссылкой.
 func fileURL(_ path: String?) -> URL? {
     guard let path = path, !path.isEmpty else { return nil }
-    if path.hasPrefix("http://") || path.hasPrefix("https://") { return URL(string: path) }
+    if path.hasPrefix("http://") || path.hasPrefix("https://") {
+        guard let url = URL(string: path) else { return nil }
+        // iOS (ATS) не грузит http с внешнего хоста: ссылки своего сервера переводим на https.
+        if url.scheme == "http", let base = URL(string: AppConfig.apiBaseURL), base.scheme == "https", url.host == base.host,
+           var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+            parts.scheme = "https"
+            return parts.url ?? url
+        }
+        return url
+    }
     return URL(string: AppConfig.apiBaseURL + (path.hasPrefix("/") ? String(path.dropFirst()) : path))
 }
