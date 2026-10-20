@@ -13,6 +13,12 @@ use RuntimeException;
  */
 class YookassaClient
 {
+    public function configured(): bool
+    {
+        return (string) config('services.yookassa.shop_id') !== ''
+            && (string) config('services.yookassa.secret_key') !== '';
+    }
+
     public function createPayment(array $payload): array
     {
         return $this->send('post', '/payments', $payload);

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Report;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
@@ -28,9 +29,12 @@ class ReportController extends Controller
 
         // Поиск по заголовку/описанию — экран аналитики.
         if ($search = $request->query('search')) {
-            $query->where(function ($q) use ($search) {
-                $q->where('title', 'like', "%{$search}%")
-                    ->orWhere('description', 'like', "%{$search}%");
+            // SQLite LIKE не понимает регистр кириллицы, поэтому сравниваем через mb_strtolower.
+            $this->registerLowercaseFunction();
+            $needle = '%'.mb_strtolower((string) $search).'%';
+            $query->where(function ($q) use ($needle) {
+                $q->whereRaw('mb_lower(title) LIKE ?', [$needle])
+                    ->orWhereRaw('mb_lower(description) LIKE ?', [$needle]);
             });
         }
 
@@ -103,5 +107,19 @@ class ReportController extends Controller
         }
 
         return $data;
+    }
+
+    /** Регистрирует в SQLite функцию mb_lower (регистронезависимо для кириллицы). */
+    private function registerLowercaseFunction(): void
+    {
+        $connection = DB::connection();
+        if ($connection->getDriverName() !== 'sqlite') {
+            return;
+        }
+        $connection->getPdo()->sqliteCreateFunction(
+            'mb_lower',
+            static fn ($value) => is_string($value) ? mb_strtolower($value) : $value,
+            1
+        );
     }
 }
