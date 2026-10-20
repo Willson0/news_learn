@@ -107,8 +107,24 @@ struct GlassNavBar: View {
 extension View {
     /// Корневой экран вкладки: навбар поверх контента у нижнего края.
     func withGlassNavBar(extra: GlassNavBar.Extra? = nil) -> some View {
-        overlay(alignment: .bottom) {
-            GlassNavBar(extra: extra).ignoresSafeArea(.container, edges: .bottom)
+        hidesBottomScrollEdge()
+            .overlay(alignment: .bottom) {
+                GlassNavBar(extra: extra).ignoresSafeArea(.container, edges: .bottom)
+            }
+    }
+
+    /// iOS 26 рисует системное затемнение у нижнего края прокрутки, оно видно полосой
+    /// над home indicator. Низ экрана уже закрыт нашей растушёвкой навбара, поэтому
+    /// системное затемнение отключаем.
+    @ViewBuilder func hidesBottomScrollEdge() -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            self.scrollEdgeEffectHidden(true, for: .bottom)
+        } else {
+            self
         }
+        #else
+        self
+        #endif
     }
 }
