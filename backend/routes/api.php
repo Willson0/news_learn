@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AccountController;
+use App\Http\Controllers\BillingController;
 use App\Http\Controllers\Admin;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\YandexAuthController;
@@ -33,6 +34,11 @@ Route::prefix('auth')->group(function () {
     Route::post('/recovery', [AuthController::class, 'requestRecovery']);
     Route::post('/recovery/reset', [AuthController::class, 'resetPassword']);
 });
+
+// Уведомления YooKassa о платежах (подпись не передаётся: событие перепроверяется запросом к API).
+Route::post('/yookassa/webhook', [BillingController::class, 'webhook']);
+// Возврат из страницы YooKassa: перенаправляет в приложение (karta://billing).
+Route::get('/billing/card/return', [BillingController::class, 'return']);
 
 // Публичные справочники (нужны и на экране входа).
 Route::get('/instruments', [InstrumentController::class, 'index']);
@@ -68,6 +74,11 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::delete('/profile/avatar', [ProfileController::class, 'deleteAvatar']);
     Route::put('/profile/instruments', [ProfileController::class, 'syncInstruments']);
     Route::put('/profile/notifications', [ProfileController::class, 'updateNotifications']);
+
+    // Привязка карты через YooKassa.
+    Route::get('/billing/card', [BillingController::class, 'card']);
+    Route::post('/billing/card/bind', [BillingController::class, 'bind']);
+    Route::delete('/billing/card', [BillingController::class, 'unbind']);
 
     // Подписка.
     Route::get('/subscription', [SubscriptionController::class, 'show']);
