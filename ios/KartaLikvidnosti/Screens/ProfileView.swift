@@ -41,6 +41,10 @@ struct ProfileView: View {
                 header
                 if session.restricted {
                     conditionsBlock
+                    // Без подписки доступа к настройкам аккаунта нет: выход оставляем здесь.
+                    AppButton(title: "Выйти из аккаунта", variant: .danger) { logoutRestricted() }
+                        .padding(.horizontal, Theme.screenX)
+                        .padding(.top, 24)
                 } else {
                 fullContent
                 }
@@ -69,6 +73,14 @@ struct ProfileView: View {
     /// Kreadon 24 через 40 от шапки, пояснение 14 pt, блок подписки с кнопкой
     /// «Привязать счет и оплатить»; без тарифа — «Не определен» и подпись
     /// 14 pt белый 65 % под блоком.
+    private func logoutRestricted() {
+        Task {
+            await Api.logout()
+            session.clear()
+            router.logout()
+        }
+    }
+
     private var conditionsBlock: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Условия").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
