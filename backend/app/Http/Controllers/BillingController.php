@@ -35,6 +35,12 @@ class BillingController extends Controller
         /** @var User $user */
         $user = $request->user();
 
+        if (! $this->yookassa->configured()) {
+            Log::error('YooKassa: не заданы YOOKASSA_SHOP_ID / YOOKASSA_SECRET_KEY');
+
+            return response()->json(['message' => 'Привязка карты временно недоступна'], 503);
+        }
+
         $payment = $this->yookassa->createPayment([
             'amount' => [
                 'value' => (string) config('services.yookassa.bind_amount'),
