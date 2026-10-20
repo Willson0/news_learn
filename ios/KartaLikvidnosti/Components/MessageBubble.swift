@@ -182,7 +182,9 @@ struct MessageBubble: View {
                 AsyncImage(url: message.images[index].url) { phase in
                     switch phase {
                     case .success(let img): img.resizable().scaledToFill()
-                    case .failure: Color(hex: "#d9d9d9")
+                    case .failure(let error):
+                        let _ = print("[chat image] load failed:", message.images[index].url?.absoluteString ?? "nil", error)
+                        Color(hex: "#d9d9d9")
                     default: ZStack { Color.white.opacity(0.1); ProgressView().tint(.white) }
                     }
                 }
@@ -203,7 +205,10 @@ struct MessageBubble: View {
         AsyncImage(url: image.url) { phase in
             switch phase {
             case .success(let img): img.resizable().aspectRatio(contentMode: .fill)
-            case .failure: Color(hex: "#d9d9d9")
+            case .failure(let error):
+                // Диагностика белых фото: ошибка видна в консоли Xcode.
+                let _ = print("[chat image] load failed:", image.url?.absoluteString ?? "nil", error)
+                Color(hex: "#d9d9d9")
             default: ZStack { Color.white.opacity(0.1); ProgressView().tint(.white) }
             }
         }
