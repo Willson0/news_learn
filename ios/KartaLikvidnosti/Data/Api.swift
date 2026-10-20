@@ -166,7 +166,17 @@ enum Api {
     /// Отправка сообщения: текст и/или вложение (image|file|voice), опционально ответ.
     static func sendMessage(_ slug: String, body: String? = nil, replyTo: Int? = nil,
                             attachment: (data: Data, filename: String, mime: String)? = nil,
+                            attachments: [(data: Data, filename: String, mime: String)]? = nil,
                             kind: String? = nil, duration: Int? = nil) async throws -> MessageDto? {
+        if let list = attachments, !list.isEmpty, let kind = kind {
+            // Несколько фото одним сообщением-альбомом: поле attachments[] на каждый файл.
+            var parts: [MultipartPart] = []
+            if let body = body, !body.isEmpty { parts.append(.text("body", body)) }
+            if let replyTo = replyTo { parts.append(.text("reply_to", String(replyTo))) }
+            parts.append(.text("kind", kind))
+            for a in list { parts.append(.file("attachments[]", filename: a.filename, mime: a.mime, data: a.data)) }
+            return try await ApiClient.multipart("chats/\(slug)/messages", parts: parts, as: DataWrapper<MessageDto>.self).data
+        }
         if let a = attachment, let kind = kind {
             var parts: [MultipartPart] = []
             if let body = body, !body.isEmpty { parts.append(.text("body", body)) }

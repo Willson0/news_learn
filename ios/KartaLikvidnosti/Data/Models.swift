@@ -340,6 +340,7 @@ struct MessageDto: Decodable, Identifiable {
     let createdAt: String?
     let reply: MessageQuoteDto?
     let image: MessageImageDto?
+    let images: [MessageImageDto]
     let file: MessageFileDto?
     let voice: MessageVoiceDto?
     let reactions: [ReactionDto]
@@ -359,6 +360,7 @@ struct MessageDto: Decodable, Identifiable {
         createdAt = try c.decodeIfPresent(String.self, forKey: .createdAt)
         reply = try c.decodeIfPresent(MessageQuoteDto.self, forKey: .reply)
         image = try c.decodeIfPresent(MessageImageDto.self, forKey: .image)
+        images = (try c.decodeIfPresent([MessageImageDto].self, forKey: .images)) ?? []
         file = try c.decodeIfPresent(MessageFileDto.self, forKey: .file)
         voice = try c.decodeIfPresent(MessageVoiceDto.self, forKey: .voice)
         reactions = (try c.decodeIfPresent([ReactionDto].self, forKey: .reactions)) ?? []
@@ -366,7 +368,7 @@ struct MessageDto: Decodable, Identifiable {
         read = (try c.decodeIfPresent(Bool.self, forKey: .read)) ?? false
     }
     enum CodingKeys: String, CodingKey {
-        case id, mine, author, role, text, time, reply, image, file, voice, reactions, pinned, read
+        case id, mine, author, role, text, time, reply, image, images, file, voice, reactions, pinned, read
         case userId = "user_id"
         case avatarUrl = "avatar_url"
         case createdAt = "created_at"

@@ -1043,7 +1043,8 @@ struct ChatView: View {
         }
     }
 
-    /// Отправка выбранных фото: подпись из поля ввода уходит с первым фото.
+    /// Отправка выбранных фото одним сообщением-альбомом. Сообщение сразу появляется
+    /// в ленте с индикатором загрузки, затем заменяется ответом сервера.
     private func sendPendingPhotos() {
         let photos = pendingPhotos
         pendingPhotos = []
@@ -1051,23 +1052,27 @@ struct ChatView: View {
         draft = ""
         let reply = replyTo?.id
         replyTo = nil
+        guard photos.allSatisfy({ $0.jpeg.count <= Self.maxAttachmentBytes }) else {
+            showAttachError("Фото больше 100 МБ, выберите фото поменьше")
+            pendingPhotos = photos
+            draft = caption
+            return
+        }
+        let localId = -Int(Date().timeIntervalSince1970 * 1000)
+        messages.append(ChatMessage(pendingId: localId, localImages: photos.map(\.image),
+                                    text: caption.isEmpty ? nil : caption))
         Task { @MainActor in
-            for (index, photo) in photos.enumerated() {
-                guard photo.jpeg.count <= Self.maxAttachmentBytes else {
-                    showAttachError("Фото больше 100 МБ, выберите фото поменьше")
-                    continue
+            do {
+                let dto = try await Api.sendMessage(chatId, body: caption.isEmpty ? nil : caption, replyTo: reply,
+                                                    attachments: photos.map { (data: $0.jpeg, filename: "photo.jpg", mime: "image/jpeg") },
+                                                    kind: "image")
+                if let index = messages.firstIndex(where: { $0.id == localId }) {
+                    if let dto { messages[index] = ChatMessage(dto) } else { messages.remove(at: index) }
                 }
-                do {
-                    let dto = try await Api.sendMessage(chatId,
-                                                        body: index == 0 && !caption.isEmpty ? caption : nil,
-                                                        replyTo: index == 0 ? reply : nil,
-                                                        attachment: (photo.jpeg, "photo.jpg", "image/jpeg"),
-                                                        kind: "image")
-                    if let dto { messages.append(ChatMessage(dto)) }
-                } catch {
-                    showAttachError("Не удалось отправить фото")
-                    break
-                }
+            } catch {
+                messages.removeAll { $0.id == localId }
+                if !caption.isEmpty { draft = caption }
+                showAttachError("Не удалось отправить фото")
             }
         }
     }

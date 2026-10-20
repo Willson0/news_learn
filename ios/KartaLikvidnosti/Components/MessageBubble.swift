@@ -14,6 +14,11 @@ struct ChatMessage: Identifiable {
     var pinned: Bool = false
     var reply: Reply? = nil
     var image: ImageAtt? = nil
+    /// Все фото сообщения (альбом); для одиночного фото совпадает с `image`.
+    var images: [ImageAtt] = []
+    /// Фото, которые ещё уходят на сервер: показываются сразу с индикатором загрузки.
+    var localImages: [UIImage] = []
+    var pending: Bool = false
     var file: FileAtt? = nil
     var voice: VoiceAtt? = nil
     var reactions: [Reaction] = []
@@ -37,11 +42,22 @@ struct ChatMessage: Identifiable {
         pinned = dto.pinned
         if let r = dto.reply { reply = Reply(author: r.author ?? "", text: r.text ?? "") }
         if let i = dto.image { image = ImageAtt(url: fileURL(i.url), width: i.width, height: i.height) }
+        images = dto.images.map { ImageAtt(url: fileURL($0.url), width: $0.width, height: $0.height) }
+        if images.isEmpty, let first = image { images = [first] }
         if let f = dto.file {
             file = FileAtt(url: fileURL(f.url), name: f.name ?? "Файл", ext: f.ext ?? "", size: f.size ?? "")
         }
         if let v = dto.voice { voice = VoiceAtt(url: fileURL(v.url), duration: v.duration ?? "0:00") }
         reactions = dto.reactions.map { Reaction(emoji: $0.emoji, count: $0.count, mine: $0.mine) }
+    }
+
+    /// Локальное сообщение с фото, которое ещё отправляется.
+    init(pendingId: Int, localImages: [UIImage], text: String?) {
+        id = pendingId
+        mine = true
+        pending = true
+        self.localImages = localImages
+        self.text = text
     }
 }
 
@@ -89,7 +105,11 @@ struct MessageBubble: View {
                 header(author)
             }
             if let reply = message.reply { replyQuote(reply) }
-            if let image = message.image { imageView(image) }
+            if !message.localImages.isEmpty || message.images.count > 1 {
+                albumView
+            } else if let image = message.image {
+                imageView(image)
+            }
             if let file = message.file { fileView(file) }
             if let voice = message.voice { voiceView(voice) }
             if let text = message.text, !text.isEmpty {
@@ -132,6 +152,51 @@ struct MessageBubble: View {
         .frame(height: 32)
         .background(Color.white.opacity(0.2),
                     in: UnevenRoundedRectangle(bottomTrailingRadius: 8, topTrailingRadius: 8, style: .continuous))
+    }
+
+    /// Альбом фото (2+ в одном сообщении, как в Телеграме): сетка 2 колонки.
+    /// Пока фото уходят, поверх каждого плашка с индикатором.
+    private var albumView: some View {
+        let count = message.localImages.isEmpty ? message.images.count : message.localImages.count
+        let full = Self.maxWidth - 24
+        let tile = (full - 4) / 2
+        let single = count == 1
+        let rows = stride(from: 0, to: count, by: 2).map { start in Array(start..<min(start + 2, count)) }
+        return VStack(spacing: 4) {
+            ForEach(rows, id: \.self) { row in
+                HStack(spacing: 4) {
+                    ForEach(row, id: \.self) { index in
+                        albumTile(index, width: single ? full : tile, height: single ? imageSize.height : tile)
+                    }
+                    if row.count == 1 && !single { Color.clear.frame(width: tile, height: tile) }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private func albumTile(_ index: Int, width: CGFloat, height: CGFloat) -> some View {
+        ZStack {
+            if !message.localImages.isEmpty {
+                Image(uiImage: message.localImages[index]).resizable().scaledToFill()
+            } else {
+                AsyncImage(url: message.images[index].url) { phase in
+                    switch phase {
+                    case .success(let img): img.resizable().scaledToFill()
+                    case .failure: Color(hex: "#d9d9d9")
+                    default: ZStack { Color.white.opacity(0.1); ProgressView().tint(.white) }
+                    }
+                }
+            }
+        }
+        .frame(width: width, height: height)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            if message.pending {
+                ZStack { Color.black.opacity(0.35); ProgressView().tint(.white) }
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { if !message.pending { onOpenImage?() } }
     }
 
     private func imageView(_ image: ChatMessage.ImageAtt) -> some View {
