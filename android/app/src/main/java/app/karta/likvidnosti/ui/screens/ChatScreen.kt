@@ -44,7 +44,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -376,24 +375,9 @@ fun ChatScreen(
 
     // MARK: - Отправка
 
-    fun send() {
-        if (pendingImages.isNotEmpty()) {
-            sendPendingPhotos()
-            return
-        }
-        val body = draft.text.trim()
-        if (body.isEmpty()) return
-        val reply = replyTo?.id
-        draft = TextFieldValue("")
-        replyTo = null
-        scope.launch {
-            runCatching { Repository.sendMessage(slug, body, reply) }.getOrNull()?.let { messages.add(it.toUi()) }
-        }
-    }
-
     /** Отправляет одно вложение. Возвращает текст ошибки или null, если всё прошло. */
     suspend fun uploadAttachment(uri: Uri, kind: String, caption: String, reply: Long?, asJpeg: Boolean): String? {
-        val part = if (asJpeg) Uploads.jpegPart(context, "attachment", uri) else Uploads.filePart(context, "attachment", uri)
+        val part = (if (asJpeg) Uploads.jpegPart(context, "attachment", uri) else Uploads.filePart(context, "attachment", uri))
             ?: return "Файл не прочитался, попробуйте ещё раз"
         if (part.body.contentLength() > 100L * 1024 * 1024) return "Файл больше 100 МБ, выберите файл поменьше"
         val parts = mutableListOf(part, Uploads.textPart("kind", kind))
@@ -444,6 +428,21 @@ fun ChatScreen(
                     return@launch
                 }
             }
+        }
+    }
+
+    fun send() {
+        if (pendingImages.isNotEmpty()) {
+            sendPendingPhotos()
+            return
+        }
+        val body = draft.text.trim()
+        if (body.isEmpty()) return
+        val reply = replyTo?.id
+        draft = TextFieldValue("")
+        replyTo = null
+        scope.launch {
+            runCatching { Repository.sendMessage(slug, body, reply) }.getOrNull()?.let { messages.add(it.toUi()) }
         }
     }
 
@@ -1744,7 +1743,7 @@ private fun PendingPhotosStrip(uris: List<Uri>, onRemove: (Uri) -> Unit) {
                     model = uri,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.matchParentSize().clip(RoundedCornerShape(12.dp)),
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)),
                 )
                 Box(
                     modifier = Modifier
