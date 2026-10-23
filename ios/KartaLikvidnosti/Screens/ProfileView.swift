@@ -10,6 +10,7 @@ struct ProfileView: View {
     @EnvironmentObject var appData: AppData
 
     @State private var tag = ""
+    @State private var loggingOut = false
     @State private var avatar: URL? = nil
     @State private var subActive = false
     @State private var subUntil = ""
@@ -42,7 +43,7 @@ struct ProfileView: View {
                 if session.restricted {
                     conditionsBlock
                     // Без подписки доступа к настройкам аккаунта нет: выход оставляем здесь.
-                    AppButton(title: "Выйти из аккаунта", variant: .danger) { logoutRestricted() }
+                    AppButton(title: "Выйти из аккаунта", variant: .danger, loading: loggingOut) { logoutRestricted() }
                         .padding(.horizontal, Theme.screenX)
                         .padding(.top, 24)
                 } else {
@@ -74,6 +75,7 @@ struct ProfileView: View {
     /// «Привязать счет и оплатить»; без тарифа — «Не определен» и подпись
     /// 14 pt белый 65 % под блоком.
     private func logoutRestricted() {
+        loggingOut = true
         Task {
             await Api.logout()
             session.clear()

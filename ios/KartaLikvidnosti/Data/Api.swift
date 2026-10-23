@@ -50,11 +50,20 @@ enum Api {
 
     // MARK: - Отчёты / материалы
 
-    static func fetchReports(instrument: String? = nil, search: String? = nil, status: [String]? = nil) async throws -> [ReportDto] {
+    static func fetchReports(instrument: String? = nil, instruments: [String]? = nil, period: String? = nil,
+                             from: String? = nil, to: String? = nil, search: String? = nil, status: [String]? = nil) async throws -> [ReportDto] {
         var query: [String] = []
         if let instrument = instrument, instrument != "all" {
             query.append("instrument=\(instrument.urlEncoded)")
         }
+        if let instruments = instruments, !instruments.isEmpty {
+            query.append("instruments=\(instruments.joined(separator: ",").urlEncoded)")
+        }
+        if let period = period, !period.isEmpty {
+            query.append("period=\(period.urlEncoded)")
+        }
+        if let from = from, !from.isEmpty { query.append("from=\(from.urlEncoded)") }
+        if let to = to, !to.isEmpty { query.append("to=\(to.urlEncoded)") }
         if let search = search, !search.isEmpty {
             query.append("search=\(search.urlEncoded)")
         }

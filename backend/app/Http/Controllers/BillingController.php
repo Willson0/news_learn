@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Services\SubscriptionBilling;
 use App\Services\YookassaClient;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -18,7 +19,7 @@ class BillingController extends Controller
 {
     public const PURPOSE = 'card_bind';
 
-    public function __construct(private YookassaClient $yookassa)
+    public function __construct(private YookassaClient $yookassa, private SubscriptionBilling $billing)
     {
     }
 
@@ -103,13 +104,30 @@ class BillingController extends Controller
     {
         $event = (string) $request->input('event');
         $paymentId = (string) $request->input('object.id');
-        if ($event !== 'payment.succeeded' || $paymentId === '') {
+        if (! in_array($event, ['payment.succeeded', 'payment.canceled'], true) || $paymentId === '') {
             return response()->noContent();
         }
 
         $payment = $this->yookassa->fetchPayment($paymentId);
-        if (($payment['status'] ?? null) !== 'succeeded'
-            || ($payment['metadata']['purpose'] ?? null) !== self::PURPOSE) {
+        $purpose = $payment['metadata']['purpose'] ?? null;
+
+        // Списание подписки: успех продлевает доступ, отказ (например, нет денег) — отключает.
+        if ($purpose === SubscriptionBilling::PURPOSE) {
+            $user = User::find((int) ($payment['metadata']['user_id'] ?? 0));
+            if ($user) {
+                if (($payment['status'] ?? null) === 'succeeded') {
+                    $this->billing->markPaid($user, $paymentId);
+                } elseif (($payment['status'] ?? null) === 'canceled') {
+                    $this->billing->markFailed($user);
+                }
+            }
+
+            return response()->noContent();
+        }
+
+        if ($event !== 'payment.succeeded'
+            || ($payment['status'] ?? null) !== 'succeeded'
+            || $purpose !== self::PURPOSE) {
             return response()->noContent();
         }
 
@@ -133,6 +151,16 @@ class BillingController extends Controller
         ])->save();
 
         $this->refundBindAmount($paymentId, $payment);
+
+        // Подписки ещё нет (или она отключена) — списываем её сразу с привязанной карты.
+        $subscription = $user->subscription;
+        if (! $subscription || ! $subscription->active) {
+            try {
+                $this->billing->charge($user, 'subscription-after-bind-'.$paymentId);
+            } catch (\Throwable $e) {
+                Log::warning('Подписка не списана после привязки карты', ['user_id' => $user->id, 'error' => $e->getMessage()]);
+            }
+        }
 
         return response()->noContent();
     }

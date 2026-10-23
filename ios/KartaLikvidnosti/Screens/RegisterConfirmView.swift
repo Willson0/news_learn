@@ -38,7 +38,7 @@ struct RegisterConfirmView: View {
             AppButton(title: resendIn > 0 ? String(format: "Повторное сообщение через %d:%02d", resendIn / 60, resendIn % 60)
                                           : "Отправить код повторно",
                       variant: .secondary, disabled: resendIn > 0) { resend() }
-            AppButton(title: "Далее", variant: .accent, disabled: submitting) { confirm() }
+            AppButton(title: "Далее", variant: .accent, loading: submitting) { confirm() }
         }
         .onAppear { startCooldown() }
         .onDisappear { timer?.invalidate() }

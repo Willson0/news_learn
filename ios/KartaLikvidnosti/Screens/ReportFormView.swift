@@ -77,7 +77,7 @@ struct ReportFormView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            AppButton(title: isEdit ? "Сохранить" : "Создать отчет", variant: .accent, disabled: saving) { submit() }
+            AppButton(title: isEdit ? "Сохранить" : "Создать отчет", variant: .accent, loading: saving) { submit() }
                 .padding(.horizontal, Theme.screenX)
                 .padding(.top, 12)
                 .padding(.bottom, 45)

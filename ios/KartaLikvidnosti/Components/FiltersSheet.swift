@@ -4,6 +4,9 @@ struct FiltersResult {
     let instruments: [String]
     let statuses: [String]
     let dateMode: String
+    /// Произвольный диапазон (YYYY-MM-DD); без него действует период `dateMode`.
+    let dateStart: String?
+    let dateEnd: String?
 }
 
 /// Лист фильтров «Аналитика фильтры». Показывается поверх экрана с
@@ -166,7 +169,9 @@ struct FiltersSheet: View {
         onApply(FiltersResult(
             instruments: instruments.filter { $0.on }.map { $0.key },
             statuses: statuses.filter { $0.on }.map { $0.key },
-            dateMode: dateMode
+            dateMode: dateMode,
+            dateStart: dateStart,
+            dateEnd: dateEnd
         ))
         onClose()
     }

@@ -1033,13 +1033,33 @@ struct ChatView: View {
         Task { @MainActor in
             for item in items {
                 guard let raw = try? await item.loadTransferable(type: Data.self),
-                      let image = UIImage(data: raw),
-                      let jpeg = image.jpegData(compressionQuality: 0.85) else {
+                      let original = UIImage(data: raw) else {
+                    showAttachError("Не удалось открыть одно из фото")
+                    continue
+                }
+                // Длинная сторона до 2048 px и JPEG 0.8: файл в разы меньше оригинала (3–4 МБ),
+                // поэтому чат грузится быстрее.
+                let image = Self.downscaled(original, maxSide: 2048)
+                guard let jpeg = image.jpegData(compressionQuality: 0.8) else {
                     showAttachError("Не удалось открыть одно из фото")
                     continue
                 }
                 pendingPhotos.append(PendingPhoto(image: image, jpeg: jpeg))
             }
+        }
+    }
+
+    /// Уменьшает фото так, чтобы длинная сторона не превышала maxSide (ориентация сохраняется).
+    private static func downscaled(_ image: UIImage, maxSide: CGFloat) -> UIImage {
+        let size = image.size
+        let longest = max(size.width, size.height)
+        guard longest > maxSide else { return image }
+        let scale = maxSide / longest
+        let target = CGSize(width: (size.width * scale).rounded(), height: (size.height * scale).rounded())
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: target, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: target))
         }
     }
 

@@ -42,14 +42,22 @@ struct AppCalendar: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 9) {
-                Button { prevMonth() } label: { Icon(AppIcons.monthPrev, size: 24, color: Theme.text) }
-                    .buttonStyle(.plain)
+                Button { prevMonth() } label: {
+                    Icon(AppIcons.monthPrev, size: 24, color: Theme.text)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
                 Text(Self.months[viewMonth])
                     .font(Theme.sans(20, .semibold))
                     .foregroundStyle(Theme.text)
                     .frame(maxWidth: .infinity)
-                Button { nextMonth() } label: { Icon(AppIcons.monthNext, size: 24, color: Theme.text) }
-                    .buttonStyle(.plain)
+                Button { nextMonth() } label: {
+                    Icon(AppIcons.monthNext, size: 24, color: Theme.text)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
             .padding(.horizontal, 16)
             .frame(height: 51)

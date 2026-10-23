@@ -233,7 +233,7 @@ class ChatController extends Controller
         $chat = self::resolve($slug, $user);
         $msg = $chat->messages()->whereKey($message)->firstOrFail();
 
-        abort_unless($msg->user_id === $user->id || $user->isAdmin(), 403);
+        abort_unless($msg->user_id === $user->id || $msg->chat->canBeManagedBy($user), 403);
 
         foreach ($msg->attachments as $att) {
             $this->deleteFile($att->path);
@@ -301,7 +301,10 @@ class ChatController extends Controller
     {
         abort_unless(Storage::disk(self::DISK)->exists($attachment->path), 404);
 
-        return response()->file(Storage::disk(self::DISK)->path($attachment->path));
+        // Вложение не меняется: кэшируем в браузере/приложении, чтобы фото не грузились заново.
+        return response()->file(Storage::disk(self::DISK)->path($attachment->path), [
+            'Cache-Control' => 'private, max-age=2592000, immutable',
+        ]);
     }
 
     /**
@@ -344,7 +347,7 @@ class ChatController extends Controller
         $user = $request->user();
         $chat = self::resolve($slug, $user);
 
-        abort_if($chat->type === 'direct', 422, 'Личный чат нельзя покинуть.');
+        abort_if($chat->isPermanent(), 422, 'Этот чат нельзя покинуть: он удаляется вместе с отчётом.');
 
         $user->leftChats()->syncWithoutDetaching([$chat->id]);
 
@@ -445,7 +448,11 @@ class ChatController extends Controller
 
     private function fileUrl(MessageAttachment $a): string
     {
-        return URL::temporarySignedRoute('chat.attachment', now()->addDay(), ['attachment' => $a->id]);
+        // Срок ссылки привязан к вложению, а не к текущему времени: адрес не меняется
+        // при каждом открытии чата, и кэш картинок работает.
+        $expires = ($a->created_at ?? now())->copy()->addDays(30);
+
+        return URL::temporarySignedRoute('chat.attachment', $expires, ['attachment' => $a->id]);
     }
 
     /**
@@ -470,6 +477,8 @@ class ChatController extends Controller
             'pinned' => $chat->pinned,
             'avatar_url' => $chat->avatar_path ? "/chats/{$chat->slug}/avatar?v={$chat->updated_at?->timestamp}" : null,
             'report' => $chat->report_id,
+            'can_manage' => $chat->canBeManagedBy($viewer),
+            'permanent' => $chat->isPermanent(),
             'sender' => $last ? ($last->user_id === $viewer->id ? 'Вы' : $last->author_name) : null,
             'preview' => $preview,
             'time' => $last?->created_at?->format('H:i'),

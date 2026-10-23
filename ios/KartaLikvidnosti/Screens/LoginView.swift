@@ -57,7 +57,7 @@ struct LoginView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 12) {
                 AppButton(title: "Войти с Yandex", variant: .secondary) { signInWithYandex() }
-                AppButton(title: mode == .login ? "Войти" : "Далее", variant: .accent, disabled: submitting) {
+                AppButton(title: mode == .login ? "Войти" : "Далее", variant: .accent, loading: submitting) {
                     submit()
                 }
             }

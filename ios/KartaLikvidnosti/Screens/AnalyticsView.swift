@@ -7,6 +7,9 @@ struct AnalyticsView: View {
     @State private var query = ""
     @State private var reports: [ReportDto] = []
     @State private var statusFilter: [String]? = nil
+    @State private var instrumentFilter: [String]? = nil
+    @State private var periodFilter: String? = nil
+    @State private var rangeFilter: (start: String, end: String)? = nil
     @State private var filtersOpen = false
     @State private var loaded = false
 
@@ -63,6 +66,14 @@ struct AnalyticsView: View {
         .overlay {
             FiltersOverlay(isOpen: $filtersOpen) { result in
                 statusFilter = result.statuses.isEmpty ? nil : result.statuses
+                instrumentFilter = result.instruments.isEmpty ? nil : result.instruments
+                if let s = result.dateStart, let e = result.dateEnd {
+                    rangeFilter = (s, e)
+                    periodFilter = nil
+                } else {
+                    rangeFilter = nil
+                    periodFilter = result.dateMode
+                }
             }
         }
         .onAppear {
@@ -71,18 +82,40 @@ struct AnalyticsView: View {
             if UserDefaults.standard.bool(forKey: "kl_filters") { filtersOpen = true }
             #endif
         }
-        .task(id: statusFilter ?? []) { await load() }
+        .task(id: filterKey) { await load() }
     }
 
     /// Мгновенно показываем предзагруженные материалы (без фильтра), чтобы без скелетона.
+    private var hasFilters: Bool {
+        statusFilter != nil || instrumentFilter != nil || periodFilter != nil || rangeFilter != nil
+    }
+
+    /// Ключ фильтров: при изменении любого из них список перезагружается.
+    private var filterKey: String {
+        [
+            (statusFilter ?? []).joined(separator: ","),
+            (instrumentFilter ?? []).joined(separator: ","),
+            periodFilter ?? "",
+            rangeFilter.map { "\($0.start)|\($0.end)" } ?? "",
+        ].joined(separator: ";")
+    }
+
     private func seed() {
-        guard !loaded, statusFilter == nil, !appData.reports.isEmpty else { return }
+        guard !loaded, !hasFilters, !appData.reports.isEmpty else { return }
         reports = appData.reports
         loaded = true
     }
 
     private func load() async {
-        do { reports = try await Api.fetchReports(status: statusFilter) }
+        do {
+            reports = try await Api.fetchReports(
+                instruments: instrumentFilter,
+                period: rangeFilter == nil ? periodFilter : nil,
+                from: rangeFilter?.start,
+                to: rangeFilter?.end,
+                status: statusFilter
+            )
+        }
         catch { /* при сбое обновления оставляем предзагруженные данные */ }
         loaded = true
     }

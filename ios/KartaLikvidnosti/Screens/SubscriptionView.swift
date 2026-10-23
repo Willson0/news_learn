@@ -54,8 +54,11 @@ struct SubscriptionView: View {
                     Text(cardTitle).font(Theme.sans(Theme.fontMd)).foregroundStyle(Theme.text)
                         .lineLimit(1)
                     Spacer(minLength: 8)
-                    PurplePillButton(title: isBound ? "Отвязать" : "Привязать") { isBound ? unbindCard() : bindCard() }
-                        .disabled(cardBusy)
+                    if cardBusy {
+                        ProgressView().frame(width: 96, height: 36)
+                    } else {
+                        PurplePillButton(title: isBound ? "Отвязать" : "Привязать") { isBound ? unbindCard() : bindCard() }
+                    }
                 }
                 .padding(.horizontal, 16)
                 .frame(height: 64)
@@ -120,7 +123,11 @@ struct SubscriptionView: View {
                 // Вебхук YooKassa сохраняет карту чуть позже возврата в приложение, поэтому опрашиваем.
                 for _ in 0..<5 {
                     await reloadCard()
-                    if isBound { return }
+                    if isBound {
+                        // Карта привязана: сразу списываем подписку (если её ещё нет), обновляем статус.
+                        await load()
+                        return
+                    }
                     try? await Task.sleep(nanoseconds: 2_000_000_000)
                 }
                 cardError = "Карта ещё обрабатывается, обновите экран через минуту"

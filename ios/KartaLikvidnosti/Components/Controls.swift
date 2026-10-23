@@ -12,24 +12,32 @@ struct AppButton: View {
     let title: String
     var variant: AppButtonVariant = .accent
     var disabled: Bool = false
+    /// Запрос выполняется: вместо подписи крутится индикатор, нажатие не срабатывает.
+    var loading: Bool = false
     let action: () -> Void
 
     private let shape = RoundedRectangle(cornerRadius: Theme.radiusInput, style: .continuous)
 
     var body: some View {
-        Button(action: { if !disabled { action() } }) {
-            Text(title)
-                .font(Theme.sans(Theme.fontBase))
-                .foregroundStyle(Theme.text)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity)
-                .frame(height: 48)
-                .contentShape(shape)
-                .modifier(Fill(variant: variant, shape: shape))
+        Button(action: { if !disabled && !loading { action() } }) {
+            Group {
+                if loading {
+                    ProgressView().tint(Theme.text)
+                } else {
+                    Text(title)
+                        .font(Theme.sans(Theme.fontBase))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 48)
+            .contentShape(shape)
+            .modifier(Fill(variant: variant, shape: shape))
         }
         .buttonStyle(PressableStyle())
         .opacity(disabled ? 0.5 : 1)
-        .disabled(disabled)
+        .disabled(disabled || loading)
     }
 
     private struct Fill: ViewModifier {

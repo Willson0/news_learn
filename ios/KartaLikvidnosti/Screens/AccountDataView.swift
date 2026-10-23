@@ -5,6 +5,7 @@ struct AccountDataView: View {
     @EnvironmentObject var session: Session
 
     @State private var email = ""
+    @State private var loggingOut = false
     @State private var phone = ""
     @State private var passwordRevealed = false
     private let passwordMask = "●●●●●●●"
@@ -56,7 +57,7 @@ struct AccountDataView: View {
 
                 VStack(spacing: 12) {
                     AppButton(title: "Сменить пароль", variant: .accent) { router.push(.accountChange(field: "password")) }
-                    AppButton(title: "Выйти из аккаунта", variant: .danger) { logout() }
+                    AppButton(title: "Выйти из аккаунта", variant: .danger, loading: loggingOut) { logout() }
                 }
                 .padding(.top, 24)
             }
@@ -91,6 +92,7 @@ struct AccountDataView: View {
     }
 
     private func logout() {
+        loggingOut = true
         Task { await Api.logout(); session.clear(); router.logout() }
     }
 }

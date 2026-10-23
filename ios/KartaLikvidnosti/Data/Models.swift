@@ -214,13 +214,19 @@ struct ChatItemDto: Decodable, Identifiable {
     let preview: String?
     let time: String?
     let unread: Int
+    /// Чат нельзя покинуть вручную (личный чат и чат отчёта).
+    let permanent: Bool
+    /// Может ли текущий пользователь управлять чатом (у чата отчёта — только создатель отчёта).
+    let canManage: Bool?
 
     init(id: String, type: String? = nil, title: String, subtitle: String? = nil,
          pinned: Bool = false, avatarUrl: String? = nil, report: Int? = nil,
-         sender: String? = nil, preview: String? = nil, time: String? = nil, unread: Int = 0) {
+         sender: String? = nil, preview: String? = nil, time: String? = nil, unread: Int = 0,
+         permanent: Bool = false, canManage: Bool? = nil) {
         self.id = id; self.type = type; self.title = title; self.subtitle = subtitle
         self.pinned = pinned; self.avatarUrl = avatarUrl; self.report = report
         self.sender = sender; self.preview = preview; self.time = time; self.unread = unread
+        self.permanent = permanent; self.canManage = canManage
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -235,10 +241,13 @@ struct ChatItemDto: Decodable, Identifiable {
         preview = try c.decodeIfPresent(String.self, forKey: .preview)
         time = try c.decodeIfPresent(String.self, forKey: .time)
         unread = (try c.decodeIfPresent(Int.self, forKey: .unread)) ?? 0
+        permanent = (try c.decodeIfPresent(Bool.self, forKey: .permanent)) ?? false
+        canManage = try c.decodeIfPresent(Bool.self, forKey: .canManage)
     }
     enum CodingKeys: String, CodingKey {
-        case id, type, title, subtitle, pinned, report, sender, preview, time, unread
+        case id, type, title, subtitle, pinned, report, sender, preview, time, unread, permanent
         case avatarUrl = "avatar_url"
+        case canManage = "can_manage"
     }
 }
 

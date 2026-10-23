@@ -70,7 +70,7 @@ struct RegisterProfileView: View {
             }
         } buttons: {
             legal
-            AppButton(title: "Зарегистрироваться", variant: .accent, disabled: saving || uploading) { submit() }
+            AppButton(title: "Зарегистрироваться", variant: .accent, loading: saving || uploading) { submit() }
         }
         .onChange(of: photoItem) { _ in loadPicked() }
         .animation(.easeOut(duration: 0.2), value: errors)

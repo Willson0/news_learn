@@ -25,6 +25,9 @@ struct ChatInfoView: View {
     @State private var searchOpen = false
     @State private var query = ""
     @State private var reportId: Int? = nil
+    @State private var permanent = false
+    @State private var canManage: Bool? = nil
+    @State private var leaving = false
 
     // «Чат Инфа» (Figma 337:36376 … 337:36561): шапка #383838 с размытой
     // обложкой чата (blur 50 + чёрный 50 %, высота 376), «назад» и стеклянная
@@ -102,12 +105,17 @@ struct ChatInfoView: View {
                     UserDefaults.standard.set(muted, forKey: "kl_muted_\(chatId)")
                 }
                 actionButton(AppIcons.search) { searchOpen.toggle(); if !searchOpen { query = "" } }
-                actionButton(AppIcons.leave) {
-                    Task {
-                        do {
-                            try await Api.leaveChat(slug: chatId)
-                            router.popToRoot()
-                        } catch {}
+                if !permanent {
+                    actionButton(AppIcons.leave) {
+                        guard !leaving else { return }
+                        leaving = true
+                        Task {
+                            defer { leaving = false }
+                            do {
+                                try await Api.leaveChat(slug: chatId)
+                                router.popToRoot()
+                            } catch {}
+                        }
                     }
                 }
             }
@@ -334,7 +342,7 @@ struct ChatInfoView: View {
     }
 
     private func newsTapped() {
-        if session.isAdmin { router.push(.chatEdit(id: chatId)) }
+        if canManage ?? session.isAdmin { router.push(.chatEdit(id: chatId)) }
         else if let r = reportId { router.push(.reportDetail(id: r)) }
     }
 
@@ -370,6 +378,8 @@ struct ChatInfoView: View {
                 avatar = fileURL(c.avatarUrl)
                 members = c.subtitle ?? ""
                 reportId = c.report
+                permanent = c.permanent
+                canManage = c.canManage
             }
         } catch {}
         await loadTab(tab)
