@@ -291,7 +291,7 @@ struct ProfileView: View {
             Spacer()
             Button {
                 Haptics.light()
-                withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) { sortOpen.toggle() }
+                withAnimation(.timingCurve(0.68, -0.55, 0.265, 1.55, duration: 0.8)) { sortOpen.toggle() }
             } label: {
                 Icon(AppIcons.filter, size: 16, color: Theme.text)
                     .frame(width: 48, height: 48)
@@ -305,7 +305,7 @@ struct ProfileView: View {
             if sortOpen {
                 sortPopup
                     .offset(y: 56)
-                    .transition(.scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity))
+                    .transition(.opacity)
             }
         }
     }

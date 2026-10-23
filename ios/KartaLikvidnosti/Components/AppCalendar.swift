@@ -115,6 +115,9 @@ struct AppCalendar: View {
                 .foregroundStyle(isEnd ? Theme.green : Theme.text)
                 .opacity(cell.out ? 0.4 : 1)
         }
+        .animation(.easeInOut(duration: 0.1), value: inRange)
+        .animation(.easeInOut(duration: 0.1), value: isStart)
+        .animation(.easeInOut(duration: 0.1), value: isEnd)
         .frame(maxWidth: .infinity)
         .frame(height: 50)
         .contentShape(Rectangle())

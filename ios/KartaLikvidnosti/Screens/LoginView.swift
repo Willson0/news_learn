@@ -68,7 +68,7 @@ struct LoginView: View {
         .ignoresSafeArea(.container, edges: [.top, .bottom])
         .background(ScreenBackdrop())
         .animation(.spring(response: 0.32, dampingFraction: 0.86), value: mode)
-        .animation(.easeOut(duration: 0.2), value: errors)
+        .animation(.timingCurve(0, 0, 0.58, 1, duration: 0.3), value: errors)
         #if DEBUG
         .onAppear {
             // `-kl_auth signup | loginErrors | signupErrors` — состояния для сверки с макетом.
