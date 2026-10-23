@@ -252,9 +252,9 @@ enum Api {
         try await ApiClient.get("admin/admins", as: DataWrapper<[AdminDto]>.self).data ?? []
     }
 
-    static func addAdmin(telegramId: String, name: String? = nil) async throws {
+    static func addAdmin(tag: String, name: String? = nil) async throws {
         _ = try await ApiClient.post("admin/admins",
-            body: ["telegram_id": telegramId, "name": name], as: DataWrapper<AdminDto>.self)
+            body: ["tag": tag, "name": name], as: DataWrapper<AdminDto>.self)
     }
 
     static func removeAdmin(telegramId: String) async throws {

@@ -5,7 +5,7 @@ struct AdminsView: View {
     @EnvironmentObject var session: Session
 
     @State private var admins: [AdminDto] = []
-    @State private var telegramId = ""
+    @State private var tag = ""
     @State private var error = ""
     @State private var adding = false
     @State private var confirmFor: AdminDto? = nil
@@ -17,12 +17,12 @@ struct AdminsView: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Администраторы").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
-                Text("Админы видят админ-панель: создают и редактируют отчёты, настраивают чаты и отвечают в личных чатах. Добавить нового админа можно по его Telegram ID.")
+                Text("Админы видят админ-панель: создают и редактируют отчёты, настраивают чаты и отвечают в личных чатах. Добавить нового админа можно по его тегу из профиля, например @ivan.")
                     .font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary).lineSpacing(2)
 
                 HStack(spacing: 8) {
-                    AppInput(text: $telegramId, placeholder: "Telegram ID", error: !error.isEmpty, keyboard: .numberPad)
-                        .onChange(of: telegramId) { _ in error = "" }
+                    AppInput(text: $tag, placeholder: "Тег, например @ivan", error: !error.isEmpty, keyboard: .asciiCapable)
+                        .onChange(of: tag) { _ in error = "" }
                     Button { add() } label: {
                         Text("Добавить").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
                             .padding(.horizontal, 20).frame(height: 48)
@@ -60,7 +60,7 @@ struct AdminsView: View {
                     Text(a.name ?? "Ещё не заходил").font(Theme.sans(Theme.fontSm, .semibold))
                     if a.telegramId == myTelegramId { Text("(вы)").font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary) }
                 }
-                Text("ID \(a.telegramId)" + (a.username.map { " · \($0)" } ?? ""))
+                Text(a.username ?? "ID \(a.telegramId)")
                     .font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
             }
             Spacer()
@@ -85,12 +85,12 @@ struct AdminsView: View {
     }
 
     private func add() {
-        let id = telegramId.trimmed
-        guard id.range(of: #"^\d+$"#, options: .regularExpression) != nil else { self.error = "Telegram ID состоит только из цифр"; return }
+        let value = tag.trimmed
+        guard value.range(of: #"^@?[\p{L}\p{N}_.]{1,64}$"#, options: .regularExpression) != nil else { self.error = "Укажите тег пользователя, например @ivan"; return }
         adding = true; error = ""
         Task {
-            do { try await Api.addAdmin(telegramId: id); telegramId = ""; Haptics.medium(); await load() }
-            catch let e as ApiError { self.error = e.fieldError("telegram_id") ?? e.message }
+            do { try await Api.addAdmin(tag: value); tag = ""; Haptics.medium(); await load() }
+            catch let e as ApiError { self.error = e.fieldError("tag") ?? e.message }
             catch { self.error = "Не удалось добавить" }
             adding = false
         }
