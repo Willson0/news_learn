@@ -40,8 +40,24 @@ enum Api {
     }
 
     static func logout() async {
+        await Push.unregisterCurrent()
         _ = try? await ApiClient.post("auth/logout", as: EmptyResponse.self)
         TokenStore.token = nil
+    }
+
+    // MARK: - Push и документы
+
+    static func registerDevice(_ token: String) async throws {
+        _ = try await ApiClient.post("devices", body: ["token": token, "platform": "ios"], as: StatusResponse.self)
+    }
+
+    static func unregisterDevice(_ token: String) async throws {
+        _ = try await ApiClient.delete("devices", body: ["token": token], as: StatusResponse.self)
+    }
+
+    /// Документы из админки (соглашение и др.). Пустой список — экран покажет встроенный текст.
+    static func fetchDocuments() async throws -> [DocumentDto] {
+        try await ApiClient.get("documents", as: DataWrapper<[DocumentDto]>.self).data ?? []
     }
 
     static func fetchMe() async throws -> MeResponse {

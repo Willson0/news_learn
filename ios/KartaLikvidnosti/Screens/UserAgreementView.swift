@@ -4,6 +4,8 @@ import SwiftUI
 struct UserAgreementView: View {
     private struct Section { let title: String; let body: String }
 
+    @State private var documents: [DocumentDto] = []
+
     private let sections: [Section] = [
         Section(title: "1. Общие положения",
                 body: "Настоящее Пользовательское соглашение регулирует отношения между администрацией приложения «Карта ликвидности» и пользователем. Используя приложение, вы подтверждаете согласие с условиями соглашения. Если вы не согласны с ними, прекратите использование приложения."),
@@ -32,20 +34,35 @@ struct UserAgreementView: View {
                 Text("Последнее обновление: 17.10.2026")
                     .font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textMuted)
 
-                ForEach(sections.indices, id: \.self) { i in
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(sections[i].title)
-                            .font(Theme.sans(Theme.fontMd, .bold)).foregroundStyle(Theme.text)
-                        Text(sections[i].body)
-                            .font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
-                            .lineSpacing(3)
-                            .fixedSize(horizontal: false, vertical: true)
+                if !documents.isEmpty {
+                    ForEach(documents) { doc in
+                        Button {
+                            if let url = URL(string: doc.url) { InAppBrowser.open(url) }
+                        } label: {
+                            Text(doc.title)
+                                .font(Theme.sans(Theme.fontMd, .medium)).foregroundStyle(Theme.text)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.vertical, 8)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    ForEach(sections.indices, id: \.self) { i in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(sections[i].title)
+                                .font(Theme.sans(Theme.fontMd, .bold)).foregroundStyle(Theme.text)
+                            Text(sections[i].body)
+                                .font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
+                                .lineSpacing(3)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
             }
             .padding(.horizontal, Theme.screenX).padding(.top, 32).padding(.bottom, 40)
         }
+        .task { documents = (try? await Api.fetchDocuments()) ?? [] }
         .screenBackground()
     }
 }

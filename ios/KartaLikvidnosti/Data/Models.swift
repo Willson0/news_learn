@@ -520,3 +520,11 @@ struct CardBindDto: Decodable {
     let confirmationUrl: String
     enum CodingKeys: String, CodingKey { case confirmationUrl = "confirmation_url" }
 }
+
+/// Документ из админки: открывается по ссылке внутри приложения.
+struct DocumentDto: Decodable, Identifiable, Equatable {
+    let title: String
+    let url: String
+
+    var id: String { url }
+}

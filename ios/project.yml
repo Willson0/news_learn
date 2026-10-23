@@ -18,12 +18,22 @@ settings:
     CODE_SIGNING_ALLOWED: "NO"
     CODE_SIGN_IDENTITY: ""
 
+packages:
+  Firebase:
+    url: https://github.com/firebase/firebase-ios-sdk
+    from: "11.6.0"
+
 targets:
   KartaLikvidnosti:
     type: application
     platform: iOS
     sources:
       - path: KartaLikvidnosti
+    dependencies:
+      - package: Firebase
+        product: FirebaseCore
+      - package: Firebase
+        product: FirebaseMessaging
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.karta.likvidnosti
@@ -32,3 +42,5 @@ targets:
         INFOPLIST_FILE: KartaLikvidnosti/Info.plist
         ENABLE_USER_SCRIPT_SANDBOXING: "YES"
         GENERATE_INFOPLIST_FILE: "NO"
+        # Push-уведомления (APNs). Файл лежит рядом с project.yml, а не в исходниках.
+        CODE_SIGN_ENTITLEMENTS: KartaLikvidnosti.entitlements

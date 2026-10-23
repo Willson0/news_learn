@@ -124,6 +124,10 @@ enum ApiClient {
         try await send(makeRequest("DELETE", path), as: type)
     }
 
+    static func delete<T: Decodable>(_ path: String, body: [String: Any?], as type: T.Type) async throws -> T {
+        try await send(jsonRequest("DELETE", path, body: body), as: type)
+    }
+
     private static func jsonRequest(_ method: String, _ path: String, body: [String: Any?]?) throws -> URLRequest {
         var req = try makeRequest(method, path)
         if let body = body {

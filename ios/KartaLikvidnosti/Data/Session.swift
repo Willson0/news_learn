@@ -18,6 +18,7 @@ final class Session: ObservableObject {
     func setCurrent(_ u: UserDto?) {
         user = u
         loaded = true
+        if u != nil { Push.activate() }
         Task { await loadSubscription() }
     }
 

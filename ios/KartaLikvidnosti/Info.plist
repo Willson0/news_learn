@@ -70,5 +70,10 @@
 			</array>
 		</dict>
 	</array>
+	<!-- Тихие и обычные push от FCM. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 </dict>
 </plist>

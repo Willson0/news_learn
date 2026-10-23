@@ -1,7 +1,9 @@
 import SwiftUI
+import UIKit
 
 @main
 struct KartaLikvidnostiApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var session = Session()
     @StateObject private var router = Router()
     @StateObject private var appData = AppData()
