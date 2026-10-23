@@ -9,10 +9,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -146,15 +144,14 @@ fun AppCalendar(
                             contentAlignment = Alignment.Center,
                         ) {
                             val capsule = Modifier.size(width = 37.dp, height = 42.dp)
-                            AnimatedVisibility(visible = inRange, enter = fadeIn(tween(100)), exit = fadeOut(tween(100))) {
-                                Box(capsule.fillShape(GlassFill(T.Green.copy(alpha = 0.3f)), CapsuleShape))
-                            }
-                            AnimatedVisibility(visible = isStart, enter = fadeIn(tween(100)), exit = fadeOut(tween(100))) {
-                                Box(capsule.fillShape(GlassFill(T.Green), CapsuleShape))
-                            }
-                            AnimatedVisibility(visible = isEnd, enter = fadeIn(tween(100)), exit = fadeOut(tween(100))) {
-                                Box(capsule.fillShape(GlassFill(Color.White), CapsuleShape))
-                            }
+                            // Подсветка плавно меняет прозрачность. AnimatedVisibility здесь не используем:
+                            // внешний Row даёт RowScope-перегрузку, которая не подходит внутри Box.
+                            val inRangeAlpha by animateFloatAsState(if (inRange) 1f else 0f, tween(100), label = "inRange")
+                            val startAlpha by animateFloatAsState(if (isStart) 1f else 0f, tween(100), label = "start")
+                            val endAlpha by animateFloatAsState(if (isEnd) 1f else 0f, tween(100), label = "end")
+                            Box(capsule.alpha(inRangeAlpha).fillShape(GlassFill(T.Green.copy(alpha = 0.3f)), CapsuleShape))
+                            Box(capsule.alpha(startAlpha).fillShape(GlassFill(T.Green), CapsuleShape))
+                            Box(capsule.alpha(endAlpha).fillShape(GlassFill(Color.White), CapsuleShape))
                             Text(
                                 cell.day.toString(),
                                 style = AppFont.sans(18.sp, FontWeight.Medium, color = if (isEnd) T.Green else T.Text),
