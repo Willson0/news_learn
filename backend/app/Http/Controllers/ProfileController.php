@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AppSetting;
 use App\Models\Instrument;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -158,21 +159,19 @@ class ProfileController extends Controller
     }
 
     /**
-     * @return array<string, mixed>|null
+     * @return array<string, mixed>
      */
-    private function subscriptionPayload($user): ?array
+    private function subscriptionPayload($user): array
     {
         $sub = $user->subscription;
-        if (! $sub) {
-            return null;
-        }
 
         return [
-            'active' => $sub->active,
-            'plan' => $sub->plan,
-            'until' => $sub->until?->format('d.m.Y'),
-            'auto_pay' => $sub->auto_pay,
-            'payment_method' => $sub->payment_method,
+            'active' => (bool) $sub?->active,
+            'plan' => $sub?->plan,
+            'until' => $sub?->until?->format('d.m.Y'),
+            'auto_pay' => (bool) $sub?->auto_pay,
+            'payment_method' => $sub?->payment_method,
+            'price' => AppSetting::subscriptionPriceLabel($sub),
         ];
     }
 }

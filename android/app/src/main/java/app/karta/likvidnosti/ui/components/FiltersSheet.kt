@@ -57,16 +57,37 @@ import java.time.LocalDate
 import kotlin.math.max
 import kotlin.math.roundToInt
 
-/** Результат фильтров (iOS FiltersResult) + выбранный диапазон дат. */
+/**
+ * Результат фильтров (iOS FiltersResult) + выбранный диапазон дат.
+ * Пустой список / `null` означает «по этому фильтру ничего не фильтруем».
+ */
 data class FiltersResult(
-    val instruments: List<String>,
-    val statuses: List<String>,
-    val dateMode: String,
+    val instruments: List<String> = emptyList(),
+    val statuses: List<String> = emptyList(),
+    val dateMode: String? = null,
     val dateStart: LocalDate? = null,
     val dateEnd: LocalDate? = null,
 )
 
 private data class Toggleable(val key: String, val label: String, val on: Boolean)
+
+private val INSTRUMENT_OPTIONS = listOf(
+    "gold" to "Золото",
+    "silver" to "Серебро",
+    "platinum" to "Платина",
+    "wti" to "Нефть WTI",
+    "brent" to "Нефть Brent",
+    "eurusd" to "EUR/USD",
+    "gas" to "Нат. газ",
+    "btc" to "Биткоин",
+)
+
+private val STATUS_OPTIONS = listOf(
+    "hot" to "С пылу с жару",
+    "actual" to "Актуальное",
+    "inactual" to "Не актуально",
+    "archive" to "Архивное",
+)
 
 private val SHORT_MONTHS = listOf("ЯНВ", "ФЕВ", "МАР", "АПР", "МАЙ", "ИЮН", "ИЮЛ", "АВГ", "СЕН", "ОКТ", "НОЯ", "ДЕК")
 
@@ -80,33 +101,25 @@ private fun shortDate(d: LocalDate?): String? = d?.let { "${it.dayOfMonth} ${SHO
  */
 @Composable
 fun FiltersSheet(
+    initial: FiltersResult,
     onApply: (FiltersResult) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // Стартовое состояние — уже применённые фильтры (при первом открытии все пустые).
     val instruments = remember {
-        mutableStateListOf(
-            Toggleable("gold", "Золото", true),
-            Toggleable("silver", "Серебро", false),
-            Toggleable("platinum", "Платина", true),
-            Toggleable("wti", "Нефть WTI", false),
-            Toggleable("brent", "Нефть Brent", true),
-            Toggleable("eurusd", "EUR/USD", false),
-            Toggleable("gas", "Нат. газ", false),
-            Toggleable("btc", "Биткоин", false),
-        )
+        mutableStateListOf<Toggleable>().apply {
+            addAll(INSTRUMENT_OPTIONS.map { (key, label) -> Toggleable(key, label, key in initial.instruments) })
+        }
     }
     val statuses = remember {
-        mutableStateListOf(
-            Toggleable("hot", "С пылу с жару", true),
-            Toggleable("actual", "Актуальное", true),
-            Toggleable("inactual", "Не актуально", true),
-            Toggleable("archive", "Архивное", false),
-        )
+        mutableStateListOf<Toggleable>().apply {
+            addAll(STATUS_OPTIONS.map { (key, label) -> Toggleable(key, label, key in initial.statuses) })
+        }
     }
-    var dateMode by remember { mutableStateOf("week") }
-    var dateStart by remember { mutableStateOf<LocalDate?>(null) }
-    var dateEnd by remember { mutableStateOf<LocalDate?>(null) }
+    var dateMode by remember { mutableStateOf(initial.dateMode) }
+    var dateStart by remember { mutableStateOf(initial.dateStart) }
+    var dateEnd by remember { mutableStateOf(initial.dateEnd) }
     var calendarOpen by remember { mutableStateOf(false) }
 
     val rangeLabel = shortDate(dateStart)?.let { s ->
@@ -215,7 +228,7 @@ fun FiltersSheet(
                 }
 
                 SegmentedControl(
-                    value = dateMode,
+                    value = dateMode.orEmpty(),
                     options = listOf("week" to "Неделя", "month" to "Месяц", "year" to "Год"),
                     onSelect = { dateMode = it },
                     modifier = Modifier.padding(top = 24.dp),
@@ -269,6 +282,7 @@ private fun ChipCard(modifier: Modifier = Modifier, content: @Composable android
 @Composable
 fun FiltersOverlay(
     open: Boolean,
+    applied: FiltersResult,
     onClose: () -> Unit,
     onApply: (FiltersResult) -> Unit,
 ) {
@@ -289,7 +303,7 @@ fun FiltersOverlay(
             exit = slideOutVertically(spring(dampingRatio = 0.9f)) { it },
             modifier = Modifier.padding(top = designTop(172.dp)),
         ) {
-            FiltersSheet(onApply = onApply, onClose = onClose)
+            FiltersSheet(initial = applied, onApply = onApply, onClose = onClose)
         }
     }
 }

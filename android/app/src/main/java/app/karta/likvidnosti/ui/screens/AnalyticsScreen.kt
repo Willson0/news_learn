@@ -11,23 +11,29 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.PullToRefreshBox
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
+import java.time.LocalDate
 import app.karta.likvidnosti.data.AppData
 import app.karta.likvidnosti.data.Repository
 import app.karta.likvidnosti.data.api.ReportDto
 import app.karta.likvidnosti.ui.components.AppInput
 import app.karta.likvidnosti.ui.components.Fills
+import app.karta.likvidnosti.ui.components.FiltersResult
 import app.karta.likvidnosti.ui.components.FiltersOverlay
 import app.karta.likvidnosti.ui.components.ReportCard
 import app.karta.likvidnosti.ui.components.ReportListSkeleton
@@ -47,6 +53,7 @@ import app.karta.likvidnosti.ui.theme.navBarClearance
  * круглая кнопка фильтров 48 («active»), карточки отчётов; лист фильтров
  * поверх с затемнением. У админа справа от навбара — «+» (создать отчёт).
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AnalyticsScreen(onOpenReport: (Long) -> Unit, navBar: @Composable () -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
@@ -58,8 +65,19 @@ fun AnalyticsScreen(onOpenReport: (Long) -> Unit, navBar: @Composable () -> Unit
     var rangeTo by rememberSaveable { mutableStateOf<String?>(null) }
     var reports by remember { mutableStateOf(AppData.reports ?: emptyList<ReportDto>()) }
     var loaded by remember { mutableStateOf(AppData.reports != null) }
+    var refreshing by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
-    LaunchedEffect(statusFilter, instrumentFilter, periodFilter, rangeFrom, rangeTo) {
+    // Применённые фильтры: лист получает их при каждом открытии, поэтому не сбрасывается.
+    val applied = FiltersResult(
+        instruments = instrumentFilter?.split(",").orEmpty(),
+        statuses = statusFilter?.split(",").orEmpty(),
+        dateMode = periodFilter,
+        dateStart = rangeFrom?.let { LocalDate.parse(it) },
+        dateEnd = rangeTo?.let { LocalDate.parse(it) },
+    )
+
+    suspend fun fetch() {
         runCatching {
             Repository.reports(
                 instruments = instrumentFilter,
@@ -69,6 +87,10 @@ fun AnalyticsScreen(onOpenReport: (Long) -> Unit, navBar: @Composable () -> Unit
                 status = statusFilter,
             )
         }.onSuccess { reports = it }
+    }
+
+    LaunchedEffect(statusFilter, instrumentFilter, periodFilter, rangeFrom, rangeTo) {
+        fetch()
         // при сбое обновления оставляем предзагруженные данные
         loaded = true
     }
@@ -84,6 +106,7 @@ fun AnalyticsScreen(onOpenReport: (Long) -> Unit, navBar: @Composable () -> Unit
         overlay = {
             FiltersOverlay(
                 open = filtersOpen,
+                applied = applied,
                 onClose = { filtersOpen = false },
                 onApply = { result ->
                     statusFilter = result.statuses.joinToString(",").ifEmpty { null }
@@ -103,47 +126,58 @@ fun AnalyticsScreen(onOpenReport: (Long) -> Unit, navBar: @Composable () -> Unit
             )
         },
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = T.ScreenX)
-                .padding(top = designTop(T.TitleTop), bottom = navBarClearance()),
-            verticalArrangement = Arrangement.spacedBy(24.dp),
-        ) {
-            ScreenTitle("Список материалов")
-
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                AppInput(
-                    query, { query = it },
-                    placeholder = "Нужный отчет или материал",
-                    modifier = Modifier.weight(1f),
-                )
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .liquidGlass(CircleShape, Fills.Active)
-                        .pressable { filtersOpen = true },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    AppIcon(AppIcons.filter, size = 16.dp)
+        PullToRefreshBox(
+            isRefreshing = refreshing,
+            onRefresh = {
+                scope.launch {
+                    refreshing = true
+                    try { fetch() } finally { refreshing = false }
                 }
-            }
+            },
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = T.ScreenX)
+                    .padding(top = designTop(T.TitleTop), bottom = navBarClearance()),
+                verticalArrangement = Arrangement.spacedBy(24.dp),
+            ) {
+                ScreenTitle("Список материалов")
 
-            if (!loaded) {
-                ReportListSkeleton(cards = 4)
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    visible.forEach { report ->
-                        ReportCard(report = report, onOpen = { onOpenReport(report.id) })
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    AppInput(
+                        query, { query = it },
+                        placeholder = "Нужный отчет или материал",
+                        modifier = Modifier.weight(1f),
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .liquidGlass(CircleShape, Fills.Active)
+                            .pressable { filtersOpen = true },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        AppIcon(AppIcons.filter, size = 16.dp)
                     }
-                    if (visible.isEmpty()) {
-                        Text(
-                            "Ничего не найдено",
-                            style = AppFont.sans(T.FsBase, color = T.TextSecondary),
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
-                        )
+                }
+
+                if (!loaded) {
+                    ReportListSkeleton(cards = 4)
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        visible.forEach { report ->
+                            ReportCard(report = report, onOpen = { onOpenReport(report.id) })
+                        }
+                        if (visible.isEmpty()) {
+                            Text(
+                                "Ничего не найдено",
+                                style = AppFont.sans(T.FsBase, color = T.TextSecondary),
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
+                            )
+                        }
                     }
                 }
             }

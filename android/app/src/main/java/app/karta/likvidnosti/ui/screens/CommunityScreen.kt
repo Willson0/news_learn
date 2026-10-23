@@ -15,9 +15,13 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.PullToRefreshBox
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -83,6 +87,7 @@ private val Caption = Color.White.copy(alpha = 0.6f)
  * разделителями во всю ширину экрана (белый 10 %). Без подписки — только
  * общий чат под заголовком «Чаты», без поиска.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CommunityScreen(onOpenChat: (String) -> Unit, navBar: @Composable () -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
@@ -93,7 +98,10 @@ fun CommunityScreen(onOpenChat: (String) -> Unit, navBar: @Composable () -> Unit
     val isAdmin = Session.isAdmin
     val restricted = Session.restricted
 
-    LaunchedEffect(Unit) {
+    var refreshing by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    suspend fun fetch() {
         val fetched = runCatching { Repository.chats() }.getOrNull()
         if (!fetched.isNullOrEmpty()) {
             AppData.chats = fetched
@@ -101,6 +109,8 @@ fun CommunityScreen(onOpenChat: (String) -> Unit, navBar: @Composable () -> Unit
         }
         loaded = true
     }
+
+    LaunchedEffect(Unit) { fetch() }
 
     val visible = remember(query, tab, sections, isAdmin, restricted) {
         if (restricted) {
@@ -119,61 +129,72 @@ fun CommunityScreen(onOpenChat: (String) -> Unit, navBar: @Composable () -> Unit
     }
 
     TabScaffold(navBar = navBar) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(top = designTop(T.TopBarY), bottom = navBarClearance()),
-        ) {
-            if (!restricted) {
-                AppInput(
-                    query, { query = it },
-                    placeholder = if (isAdmin && tab == "direct") "Нужный чат" else "Нужный отчет или материал",
-                    modifier = Modifier.padding(horizontal = T.ScreenX),
-                )
-            }
-            if (isAdmin) {
-                SegmentedControl(
-                    value = tab,
-                    options = listOf("all" to "Все чаты", "direct" to "Личные чаты"),
-                    onSelect = { tab = it },
-                    glass = true,
-                    modifier = Modifier.padding(horizontal = T.ScreenX).padding(top = 12.dp),
-                )
-            }
-
-            if (!loaded) {
-                Column(modifier = Modifier.padding(horizontal = T.ScreenX).padding(top = 24.dp)) {
-                    repeat(6) { ChatRowSkeleton() }
+        PullToRefreshBox(
+            isRefreshing = refreshing,
+            onRefresh = {
+                scope.launch {
+                    refreshing = true
+                    try { fetch() } finally { refreshing = false }
                 }
-            } else {
-                Column(
-                    modifier = Modifier.padding(top = if (restricted) 0.dp else 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(40.dp),
-                ) {
-                    visible.forEach { section ->
-                        Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
-                            Text(
-                                section.title,
-                                style = AppFont.heading(20.sp),
-                                modifier = Modifier.padding(horizontal = T.ScreenX),
-                            )
-                            Column {
-                                section.items.forEachIndexed { idx, item ->
-                                    if (idx > 0) HairlineDivider(Modifier.padding(vertical = 12.dp))
-                                    ChatRow(item, Modifier.padding(horizontal = T.ScreenX)) { onOpenChat(item.id) }
+            },
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(top = designTop(T.TopBarY), bottom = navBarClearance()),
+            ) {
+                if (!restricted) {
+                    AppInput(
+                        query, { query = it },
+                        placeholder = if (isAdmin && tab == "direct") "Нужный чат" else "Нужный отчет или материал",
+                        modifier = Modifier.padding(horizontal = T.ScreenX),
+                    )
+                }
+                if (isAdmin) {
+                    SegmentedControl(
+                        value = tab,
+                        options = listOf("all" to "Все чаты", "direct" to "Личные чаты"),
+                        onSelect = { tab = it },
+                        glass = true,
+                        modifier = Modifier.padding(horizontal = T.ScreenX).padding(top = 12.dp),
+                    )
+                }
+
+                if (!loaded) {
+                    Column(modifier = Modifier.padding(horizontal = T.ScreenX).padding(top = 24.dp)) {
+                        repeat(6) { ChatRowSkeleton() }
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier.padding(top = if (restricted) 0.dp else 24.dp),
+                        verticalArrangement = Arrangement.spacedBy(40.dp),
+                    ) {
+                        visible.forEach { section ->
+                            Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
+                                Text(
+                                    section.title,
+                                    style = AppFont.heading(20.sp),
+                                    modifier = Modifier.padding(horizontal = T.ScreenX),
+                                )
+                                Column {
+                                    section.items.forEachIndexed { idx, item ->
+                                        if (idx > 0) HairlineDivider(Modifier.padding(vertical = 12.dp))
+                                        ChatRow(item, Modifier.padding(horizontal = T.ScreenX)) { onOpenChat(item.id) }
+                                    }
                                 }
                             }
                         }
                     }
-                }
-                if (visible.isEmpty()) {
-                    Text(
-                        if (isAdmin && tab == "direct") "Личных сообщений пока нет" else "Ничего не найдено",
-                        style = AppFont.sans(T.FsBase, color = T.TextSecondary),
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
-                    )
+                    if (visible.isEmpty()) {
+                        Text(
+                            if (isAdmin && tab == "direct") "Личных сообщений пока нет" else "Ничего не найдено",
+                            style = AppFont.sans(T.FsBase, color = T.TextSecondary),
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
+                        )
+                    }
                 }
             }
         }

@@ -60,7 +60,7 @@ fun SubscriptionScreen(onBack: () -> Unit) {
     val lifecycleOwner = LocalLifecycleOwner.current
     var active by remember { mutableStateOf(false) }
     var until by remember { mutableStateOf("") }
-    var plan by remember { mutableStateOf("") }
+    var price by remember { mutableStateOf("") }
     var autoPay by remember { mutableStateOf(false) }
     var card by remember { mutableStateOf<BillingCardDto?>(null) }
     var cardError by remember { mutableStateOf<String?>(null) }
@@ -74,7 +74,7 @@ fun SubscriptionScreen(onBack: () -> Unit) {
         runCatching { Repository.subscription() }.getOrNull()?.let {
             active = it.active
             until = it.until ?: ""
-            plan = it.plan ?: ""
+            price = it.price ?: ""
             autoPay = it.autoPay
         }
         refreshCard()
@@ -124,7 +124,7 @@ fun SubscriptionScreen(onBack: () -> Unit) {
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("Тарифный план", style = AppFont.sans(T.FsMd, FontWeight.Bold))
                 Spacer(Modifier.weight(1f).width(8.dp))
-                Text(plan.ifEmpty { "—" }, style = AppFont.sans(T.FsBase, color = T.TextSecondary))
+                Text(price.ifEmpty { "—" }, style = AppFont.sans(T.FsBase, color = T.TextSecondary))
             }
         }
 

@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.PullToRefreshBox
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -132,6 +134,7 @@ private fun historyGroups(history: List<ReportDto>, sort: String): List<HistoryG
  * Без подписки («Доступный экран профиля», 474:11853) — имя, тег и «Условия».
  * В навбаре справа — круглая кнопка чата с админом (задаёт AppRoot).
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
     onSettings: () -> Unit,
@@ -148,7 +151,7 @@ fun ProfileScreen(
     var avatar by remember { mutableStateOf(Session.user?.avatarUrl) }
     var subActive by remember { mutableStateOf(false) }
     var subUntil by remember { mutableStateOf("") }
-    var subPlan by remember { mutableStateOf("") }
+    var subPrice by remember { mutableStateOf("") }
     val instruments = remember { mutableStateListOf<ProfInstrument>() }
     var history by remember { mutableStateOf(AppData.reports ?: emptyList<ReportDto>()) }
     var sortOpen by remember { mutableStateOf(false) }
@@ -157,15 +160,21 @@ fun ProfileScreen(
     val isAdmin = Session.isAdmin
     val restricted = Session.restricted
 
-    LaunchedEffect(Unit) {
-        Session.user?.let { u -> tag = u.username ?: tag; avatar = u.avatarUrl ?: avatar }
+    var refreshing by remember { mutableStateOf(false) }
+
+    suspend fun fetch() {
         runCatching { Repository.profile() }.getOrNull()?.let { p ->
             p.user?.let { tag = it.username ?: tag; avatar = it.avatarUrl ?: avatar }
-            p.subscription?.let { subActive = it.active; subUntil = it.until ?: ""; subPlan = it.plan ?: "" }
+            p.subscription?.let { subActive = it.active; subUntil = it.until ?: ""; subPrice = it.price ?: "" }
             instruments.clear()
             instruments.addAll(p.instruments.map { ProfInstrument(it.key, it.label, it.on) })
         }
         runCatching { Repository.reports() }.onSuccess { history = it }
+    }
+
+    LaunchedEffect(Unit) {
+        Session.user?.let { u -> tag = u.username ?: tag; avatar = u.avatarUrl ?: avatar }
+        fetch()
     }
 
     fun saveInstruments() {
@@ -177,121 +186,132 @@ fun ProfileScreen(
     val displayTag = if (tag.isEmpty()) "" else if (tag.startsWith("@")) tag else "@$tag"
 
     TabScaffold(navBar = navBar) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(bottom = navBarClearance()),
+        PullToRefreshBox(
+            isRefreshing = refreshing,
+            onRefresh = {
+                scope.launch {
+                    refreshing = true
+                    try { fetch() } finally { refreshing = false }
+                }
+            },
+            modifier = Modifier.fillMaxSize(),
         ) {
-            Header(
-                avatarUrl = fileUrl(avatar),
-                initial = avatarInitial,
-                tag = displayTag,
-                name = Session.user?.name ?: "",
-                restricted = restricted,
-                onSettings = onSettings,
-            )
-
-            if (restricted) {
-                ConditionsBlock(subPlan, onSubscription)
-                // Без подписки доступа к настройкам аккаунта нет: выход остаётся здесь.
-                Column(modifier = Modifier.padding(horizontal = T.ScreenX).padding(top = 24.dp)) {
-                    var loggingOut by remember { mutableStateOf(false) }
-                    AppButton("Выйти из аккаунта", variant = ButtonVariant.Danger, loading = loggingOut) {
-                        loggingOut = true
-                        scope.launch {
-                            runCatching { Repository.logout() }
-                            onLogout()
-                        }
-                    }
-                }
-            } else {
-                SubscriptionBlock(
-                    subActive, subUntil, subPlan, onSubscription,
-                    Modifier.padding(horizontal = T.ScreenX).padding(top = 24.dp),
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(bottom = navBarClearance()),
+            ) {
+                Header(
+                    avatarUrl = fileUrl(avatar),
+                    initial = avatarInitial,
+                    tag = displayTag,
+                    name = Session.user?.name ?: "",
+                    restricted = restricted,
+                    onSettings = onSettings,
                 )
 
-                ScreenTitle(
-                    "Отслеживаемые инструменты",
-                    modifier = Modifier.padding(horizontal = T.ScreenX).padding(top = 40.dp).widthIn(max = 196.dp),
-                )
-                FlowLayout(
-                    modifier = Modifier
-                        .padding(horizontal = T.ScreenX)
-                        .padding(top = 24.dp)
-                        .fillMaxWidth()
-                        .background(T.Surface, T.ShapeCard)
-                        .padding(12.dp),
-                    spacing = 4.dp,
-                    lineSpacing = 4.dp,
-                ) {
-                    instruments.forEachIndexed { i, item ->
-                        InstrumentChip(label = item.label, checked = item.on, onToggle = {
-                            instruments[i] = item.copy(on = !item.on)
-                            saveInstruments()
-                        })
-                    }
-                }
-
-                ScreenTitle("Настройки", modifier = Modifier.padding(horizontal = T.ScreenX).padding(top = 40.dp))
-                Column(
-                    modifier = Modifier
-                        .padding(horizontal = T.ScreenX)
-                        .padding(top = 24.dp)
-                        .fillMaxWidth()
-                        .background(T.Surface, T.ShapeCard)
-                        .padding(vertical = 12.dp, horizontal = 16.dp),
-                ) {
-                    if (isAdmin) SettingRow("Администраторы", onAdmins)
-                    SettingRow("Push-уведомления", onNotifications)
-                    SettingRow("Данные аккаунта", onAccountData)
-                    SettingRow("Пользовательское соглашение", onAgreement)
-                }
-
-                // История: заголовок с кнопкой сортировки; попап поверх списка
-                // (в границах общего Box, чтобы пункты попапа принимали нажатия).
-                Box(
-                    modifier = Modifier
-                        .padding(horizontal = T.ScreenX)
-                        .padding(top = 40.dp)
-                        .fillMaxWidth()
-                        .heightIn(min = 180.dp),
-                ) {
-                    Column {
-                        Row(modifier = Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
-                            ScreenTitle("История")
-                            Spacer(Modifier.weight(1f))
-                            Box(
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .liquidGlass(CircleShape, Fills.Active)
-                                    .pressable { sortOpen = !sortOpen },
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                AppIcon(AppIcons.filter, size = 16.dp)
+                if (restricted) {
+                    ConditionsBlock(subPrice, onSubscription)
+                    // Без подписки доступа к настройкам аккаунта нет: выход остаётся здесь.
+                    Column(modifier = Modifier.padding(horizontal = T.ScreenX).padding(top = 24.dp)) {
+                        var loggingOut by remember { mutableStateOf(false) }
+                        AppButton("Выйти из аккаунта", variant = ButtonVariant.Danger, loading = loggingOut) {
+                            loggingOut = true
+                            scope.launch {
+                                runCatching { Repository.logout() }
+                                onLogout()
                             }
                         }
-                        Column(
-                            modifier = Modifier.padding(top = 14.dp),
-                            verticalArrangement = Arrangement.spacedBy(24.dp),
-                        ) {
-                            historyGroups(history, sort).forEach { group ->
-                                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    if (group.title.isNotEmpty()) {
-                                        Text(group.title, style = AppFont.sans(T.FsBase, color = Caption))
-                                    }
-                                    group.items.forEach { report ->
-                                        ReportCard(report = report, onOpen = { onOpenReport(report.id) })
+                    }
+                } else {
+                    SubscriptionBlock(
+                        subActive, subUntil, subPrice, onSubscription,
+                        Modifier.padding(horizontal = T.ScreenX).padding(top = 24.dp),
+                    )
+
+                    ScreenTitle(
+                        "Отслеживаемые инструменты",
+                        modifier = Modifier.padding(horizontal = T.ScreenX).padding(top = 40.dp).widthIn(max = 196.dp),
+                    )
+                    FlowLayout(
+                        modifier = Modifier
+                            .padding(horizontal = T.ScreenX)
+                            .padding(top = 24.dp)
+                            .fillMaxWidth()
+                            .background(T.Surface, T.ShapeCard)
+                            .padding(12.dp),
+                        spacing = 4.dp,
+                        lineSpacing = 4.dp,
+                    ) {
+                        instruments.forEachIndexed { i, item ->
+                            InstrumentChip(label = item.label, checked = item.on, onToggle = {
+                                instruments[i] = item.copy(on = !item.on)
+                                saveInstruments()
+                            })
+                        }
+                    }
+
+                    ScreenTitle("Настройки", modifier = Modifier.padding(horizontal = T.ScreenX).padding(top = 40.dp))
+                    Column(
+                        modifier = Modifier
+                            .padding(horizontal = T.ScreenX)
+                            .padding(top = 24.dp)
+                            .fillMaxWidth()
+                            .background(T.Surface, T.ShapeCard)
+                            .padding(vertical = 12.dp, horizontal = 16.dp),
+                    ) {
+                        if (isAdmin) SettingRow("Администраторы", onAdmins)
+                        SettingRow("Push-уведомления", onNotifications)
+                        SettingRow("Данные аккаунта", onAccountData)
+                        SettingRow("Пользовательское соглашение", onAgreement)
+                    }
+
+                    // История: заголовок с кнопкой сортировки; попап поверх списка
+                    // (в границах общего Box, чтобы пункты попапа принимали нажатия).
+                    Box(
+                        modifier = Modifier
+                            .padding(horizontal = T.ScreenX)
+                            .padding(top = 40.dp)
+                            .fillMaxWidth()
+                            .heightIn(min = 180.dp),
+                    ) {
+                        Column {
+                            Row(modifier = Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
+                                ScreenTitle("История")
+                                Spacer(Modifier.weight(1f))
+                                Box(
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .liquidGlass(CircleShape, Fills.Active)
+                                        .pressable { sortOpen = !sortOpen },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    AppIcon(AppIcons.filter, size = 16.dp)
+                                }
+                            }
+                            Column(
+                                modifier = Modifier.padding(top = 14.dp),
+                                verticalArrangement = Arrangement.spacedBy(24.dp),
+                            ) {
+                                historyGroups(history, sort).forEach { group ->
+                                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                        if (group.title.isNotEmpty()) {
+                                            Text(group.title, style = AppFont.sans(T.FsBase, color = Caption))
+                                        }
+                                        group.items.forEach { report ->
+                                            ReportCard(report = report, onOpen = { onOpenReport(report.id) })
+                                        }
                                     }
                                 }
                             }
                         }
+                        AnimatedSortPopup(
+                            visible = sortOpen,
+                            sort = sort,
+                            modifier = Modifier.align(Alignment.TopEnd).padding(top = 56.dp),
+                        ) { sort = it; sortOpen = false }
                     }
-                    AnimatedSortPopup(
-                        visible = sortOpen,
-                        sort = sort,
-                        modifier = Modifier.align(Alignment.TopEnd).padding(top = 56.dp),
-                    ) { sort = it; sortOpen = false }
                 }
             }
         }
@@ -357,7 +377,7 @@ private fun Header(
 private fun SubscriptionBlock(
     active: Boolean,
     until: String,
-    plan: String,
+    price: String,
     onSubscription: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -386,7 +406,7 @@ private fun SubscriptionBlock(
             Row(modifier = Modifier.fillMaxWidth().height(20.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Тарифный план", style = AppFont.sans(T.FsMd, FontWeight.Bold))
                 Spacer(Modifier.weight(1f).widthIn(min = 8.dp))
-                Text(plan.ifEmpty { "—" }, style = AppFont.sans(T.FsBase, color = Caption))
+                Text(price.ifEmpty { "—" }, style = AppFont.sans(T.FsBase, color = Caption))
             }
         }
         AppButton("Управление подпиской", variant = ButtonVariant.Accent) { onSubscription() }
@@ -399,7 +419,7 @@ private fun SubscriptionBlock(
  * оплатить»; без тарифа — «Не определен» и подпись 14 белый 65 % под блоком.
  */
 @Composable
-private fun ConditionsBlock(plan: String, onSubscription: () -> Unit) {
+private fun ConditionsBlock(price: String, onSubscription: () -> Unit) {
     Column(modifier = Modifier.padding(horizontal = T.ScreenX).padding(top = 40.dp)) {
         ScreenTitle("Условия")
         Text(
@@ -425,12 +445,12 @@ private fun ConditionsBlock(plan: String, onSubscription: () -> Unit) {
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("Тарифный план", style = AppFont.sans(T.FsMd, FontWeight.Bold))
                     Spacer(Modifier.weight(1f).widthIn(min = 8.dp))
-                    Text(plan.ifEmpty { "Не определен" }, style = AppFont.sans(T.FsBase, color = T.TextSecondary))
+                    Text(price.ifEmpty { "Не определен" }, style = AppFont.sans(T.FsBase, color = T.TextSecondary))
                 }
             }
             AppButton("Привязать счет и оплатить", variant = ButtonVariant.Accent) { onSubscription() }
         }
-        if (plan.isEmpty()) {
+        if (price.isEmpty()) {
             Text(
                 "После определение тарифа Вам придет уведомление и стоимость",
                 style = AppFont.sans(T.FsBase, color = T.TextSecondary),

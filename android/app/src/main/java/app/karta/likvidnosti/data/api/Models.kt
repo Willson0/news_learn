@@ -89,6 +89,8 @@ class SubscriptionDto(
     val until: String? = null,
     @SerialName("auto_pay") val autoPay: Boolean = false,
     @SerialName("payment_method") val paymentMethod: String? = null,
+    /** Стоимость для отображения, например «990 ₽ / 1 мес.». */
+    val price: String? = null,
 )
 
 @Serializable
