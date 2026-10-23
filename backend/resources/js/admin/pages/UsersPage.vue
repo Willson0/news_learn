@@ -38,7 +38,6 @@
                     <td>{{ u.reports }}</td>
                     <td class="actions">
                         <button class="btn btn-secondary" @click="openDetail(u.id)">Подробнее</button>
-                        <button v-if="u.group !== 'active'" class="btn btn-primary" @click="invoiceFor(u)">Выставить счёт</button>
                     </td>
                 </tr>
                 <tr v-if="!loading && users.length === 0">
