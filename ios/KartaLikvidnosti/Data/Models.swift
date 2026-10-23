@@ -492,21 +492,27 @@ struct UserProfileDto: Decodable {
 }
 
 struct AdminDto: Decodable, Identifiable {
-    var id: String { telegramId }
-    let telegramId: String
+    var id: String { adminId.map { String($0) } ?? telegramId ?? "root" }
+    /// id записи админа для DELETE admin/admins/{id}; у главного админа его нет.
+    let adminId: Int?
+    let telegramId: String?
     let name: String?
+    let email: String?
     let username: String?
     let root: Bool
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        telegramId = (try c.decodeIfPresent(String.self, forKey: .telegramId)) ?? ""
+        adminId = try c.decodeIfPresent(Int.self, forKey: .adminId)
+        telegramId = try c.decodeIfPresent(String.self, forKey: .telegramId)
         name = try c.decodeIfPresent(String.self, forKey: .name)
+        email = try c.decodeIfPresent(String.self, forKey: .email)
         username = try c.decodeIfPresent(String.self, forKey: .username)
         root = (try c.decodeIfPresent(Bool.self, forKey: .root)) ?? false
     }
     enum CodingKeys: String, CodingKey {
-        case name, username, root
+        case name, email, username, root
+        case adminId = "id"
         case telegramId = "telegram_id"
     }
 }

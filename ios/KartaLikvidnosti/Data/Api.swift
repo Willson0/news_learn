@@ -257,8 +257,8 @@ enum Api {
             body: ["email": email, "name": name], as: DataWrapper<AdminDto>.self)
     }
 
-    static func removeAdmin(telegramId: String) async throws {
-        _ = try await ApiClient.delete("admin/admins/\(telegramId)", as: EmptyResponse.self)
+    static func removeAdmin(id: Int) async throws {
+        _ = try await ApiClient.delete("admin/admins/\(id)", as: EmptyResponse.self)
     }
 
     static func createReport(_ payload: ReportFormPayload) async throws -> ReportDto? {
