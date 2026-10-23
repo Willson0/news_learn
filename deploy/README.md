@@ -111,7 +111,7 @@ curl http://127.0.0.1:8095/api/ping
 Первый раз создайте учётку (после первого запуска контейнера):
 
 ```bash
-docker compose -f deploy/docker-compose.yml exec app php artisan panel:create ЛОГИН ПАРОЛЬ
+docker compose -f deploy/docker-compose.yml exec -w /app/backend app php artisan panel:create ЛОГИН ПАРОЛЬ
 ```
 
 Пароль не короче 8 символов. Логин и пароль потом меняются в разделе «Настройки».
@@ -145,7 +145,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
 docker compose -f deploy/docker-compose.yml logs -f
 
 # artisan внутри контейнера
-docker compose -f deploy/docker-compose.yml exec app php artisan <команда>
+docker compose -f deploy/docker-compose.yml exec -w /app/backend app php artisan <команда>
 
 # резервная копия базы
 docker compose -f deploy/docker-compose.yml cp app:/app/backend/database/data/database.sqlite ./backup.sqlite
