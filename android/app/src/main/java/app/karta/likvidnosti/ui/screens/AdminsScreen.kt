@@ -61,7 +61,7 @@ fun AdminsScreen(onBack: () -> Unit, onLeftAdmin: () -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     var adding by remember { mutableStateOf(false) }
     var confirmFor by remember { mutableStateOf<AdminDto?>(null) }
-    var removing by remember { mutableStateOf<String?>(null) }
+    var removing by remember { mutableStateOf<Long?>(null) }
     val scope = rememberCoroutineScope()
     val myId = Session.user?.telegramId
 
@@ -104,10 +104,11 @@ fun AdminsScreen(onBack: () -> Unit, onLeftAdmin: () -> Unit) {
 
     fun confirmRemove() {
         val admin = confirmFor ?: return
-        removing = admin.telegramId
+        val adminId = admin.id ?: return
+        removing = adminId
         scope.launch {
             try {
-                Repository.removeAdmin(admin.telegramId)
+                Repository.removeAdmin(adminId)
                 confirmFor = null
                 if (admin.telegramId == myId) {
                     runCatching { Session.load(force = true) }
@@ -173,7 +174,7 @@ fun AdminsScreen(onBack: () -> Unit, onLeftAdmin: () -> Unit) {
         error?.let { AuthFieldError(it) }
 
         Column(modifier = Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            admins.forEach { a -> AdminRow(a, isMe = a.telegramId == myId, removing = removing == a.telegramId) { confirmFor = a } }
+            admins.forEach { a -> AdminRow(a, isMe = a.telegramId == myId, removing = removing == a.id) { confirmFor = a } }
         }
     }
 }
@@ -203,7 +204,7 @@ private fun AdminRow(a: AdminDto, isMe: Boolean, removing: Boolean, onRemove: ()
                 if (isMe) Text("(вы)", style = AppFont.sans(T.FsSm, color = T.TextSecondary))
             }
             Text(
-                a.username ?: "ID ${a.telegramId}",
+                a.username ?: "Без тега",
                 style = AppFont.sans(T.FsSm, color = T.TextSecondary),
             )
         }

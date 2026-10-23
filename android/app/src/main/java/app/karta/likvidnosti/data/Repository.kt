@@ -169,7 +169,7 @@ object Repository {
     suspend fun admins(): List<AdminDto> = apiCall { api.admins().data ?: emptyList() }
     suspend fun addAdmin(tag: String, name: String? = null): AdminDto? =
         apiCall { api.addAdmin(AddAdminBody(tag, name)).data }
-    suspend fun removeAdmin(telegramId: String) = apiCall { api.removeAdmin(telegramId) }
+    suspend fun removeAdmin(id: Long) = apiCall { api.removeAdmin(id) }
 
     suspend fun createReport(parts: List<MultipartBody.Part>): ReportDto? =
         apiCall { api.createReport(parts).data }

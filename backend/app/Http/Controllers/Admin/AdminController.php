@@ -10,28 +10,27 @@ use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Управление списком админов. Добавлять и удалять админов могут только админы;
- * главного админа (config/admin.php) удалить нельзя.
+ * Управление списком админов. Админа назначают по тегу пользователя (username из профиля).
+ * Добавлять и удалять админов могут только админы; главного админа (config/admin.php) удалить нельзя.
  */
 class AdminController extends Controller
 {
     public function index(): JsonResponse
     {
         $rootId = Admin::rootTelegramId();
-        $users = User::whereNotNull('telegram_id')->get()->keyBy('telegram_id');
+        $list = [$this->toArray(null, $rootId, null, User::where('telegram_id', $rootId)->first(), true)];
 
-        $list = [$this->toArray($rootId, null, $users->get($rootId), true)];
-
-        Admin::orderBy('created_at')->get()->each(function (Admin $admin) use (&$list, $users) {
-            $list[] = $this->toArray($admin->telegram_id, $admin->name, $users->get($admin->telegram_id), false);
+        Admin::with('user')->orderBy('created_at')->get()->each(function (Admin $admin) use (&$list) {
+            $user = $admin->user ?? ($admin->telegram_id !== null ? User::where('telegram_id', $admin->telegram_id)->first() : null);
+            $list[] = $this->toArray($admin->id, $admin->telegram_id, $admin->name, $user, false);
         });
 
         return response()->json(['data' => $list]);
     }
 
     /**
-     * Назначает админа по тегу (username из профиля, например @ivan). Старый вариант с telegram_id
-     * оставлен, чтобы уже установленные приложения продолжали работать.
+     * Назначает админа по тегу. Старый вариант с telegram_id принимается, чтобы уже установленные
+     * приложения продолжали работать.
      */
     public function store(Request $request): JsonResponse
     {
@@ -51,44 +50,40 @@ class AdminController extends Controller
             throw ValidationException::withMessages(['tag' => 'Укажите тег пользователя']);
         }
 
-        $field = $tag !== '' ? 'tag' : 'telegram_id';
         if ($tag !== '') {
-            $found = $this->findByTag($tag);
-            if (! $found) {
+            $target = $this->findByTag($tag);
+            if (! $target) {
                 throw ValidationException::withMessages([
                     'tag' => 'Пользователь с тегом '.$this->normalizeTag($tag).' не найден. Тег указан в профиле в приложении.',
                 ]);
             }
-            if ($found->telegram_id === null) {
-                throw ValidationException::withMessages([
-                    'tag' => 'У этого пользователя нет Telegram-аккаунта, назначить его админом нельзя.',
-                ]);
-            }
-            $telegramId = (string) $found->telegram_id;
+        } else {
+            $target = User::where('telegram_id', $telegramId)->first();
         }
 
-        if (Admin::hasTelegramId($telegramId)) {
-            throw ValidationException::withMessages([$field => 'Этот пользователь уже админ']);
+        if ($target ? Admin::grantsAccess($target) : Admin::hasTelegramRow($telegramId)) {
+            throw ValidationException::withMessages([$tag !== '' ? 'tag' : 'telegram_id' => 'Этот пользователь уже админ']);
         }
 
         $admin = Admin::create([
-            'telegram_id' => $telegramId,
+            'user_id' => $target?->id,
+            'telegram_id' => $target?->telegram_id ?? ($telegramId !== '' ? $telegramId : null),
             'name' => $data['name'] ?? null,
             'added_by' => $request->user() instanceof User ? $request->user()->id : null,
         ]);
 
-        $user = User::where('telegram_id', $admin->telegram_id)->first();
-
-        return response()->json(['data' => $this->toArray($admin->telegram_id, $admin->name, $user, false)], 201);
+        return response()->json([
+            'data' => $this->toArray($admin->id, $admin->telegram_id, $admin->name, $target, false),
+        ], 201);
     }
 
-    public function destroy(string $telegramId): JsonResponse
+    public function destroy(Admin $admin): JsonResponse
     {
-        if (Admin::isRoot($telegramId)) {
+        if (Admin::isRoot($admin->telegram_id)) {
             return response()->json(['message' => 'Главного админа удалить нельзя.'], 403);
         }
 
-        Admin::where('telegram_id', $telegramId)->firstOrFail()->delete();
+        $admin->delete();
 
         return response()->json(['status' => 'ok']);
     }
@@ -112,10 +107,11 @@ class AdminController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function toArray(int|string $telegramId, ?string $name, ?User $user, bool $root): array
+    private function toArray(?int $id, int|string|null $telegramId, ?string $name, ?User $user, bool $root): array
     {
         return [
-            'telegram_id' => (string) $telegramId,
+            'id' => $id,
+            'telegram_id' => $telegramId !== null ? (string) $telegramId : null,
             'name' => $user?->name ?? $name,
             'username' => $user?->username,
             'root' => $root,

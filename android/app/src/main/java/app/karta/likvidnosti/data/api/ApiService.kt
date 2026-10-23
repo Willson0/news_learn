@@ -148,7 +148,7 @@ interface ApiService {
     suspend fun addAdmin(@Body body: AddAdminBody): DataWrapper<AdminDto>
 
     @DELETE("admin/admins/{id}")
-    suspend fun removeAdmin(@Path("id") telegramId: String): StatusResponse
+    suspend fun removeAdmin(@Path("id") id: Long): StatusResponse
 
     @Multipart
     @POST("admin/reports")

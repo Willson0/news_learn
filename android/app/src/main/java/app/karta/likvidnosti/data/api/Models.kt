@@ -216,7 +216,8 @@ class UserProfileDto(
 
 @Serializable
 class AdminDto(
-    @SerialName("telegram_id") val telegramId: String = "",
+    val id: Long? = null,
+    @SerialName("telegram_id") val telegramId: String? = null,
     val name: String? = null,
     val username: String? = null,
     val root: Boolean = false,
