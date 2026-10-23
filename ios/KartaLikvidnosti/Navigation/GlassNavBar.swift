@@ -105,6 +105,7 @@ struct GlassNavBar: View {
                 } label: {
                     Icon(item.icon, size: 24, color: router.tab == item.tab ? Theme.text : Theme.textMuted)
                         .frame(width: 40, height: 40)
+                        .animation(item.tab == .community ? .timingCurve(0.68, -0.55, 0.265, 1.55, duration: 0.8) : nil, value: router.tab == item.tab)
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
