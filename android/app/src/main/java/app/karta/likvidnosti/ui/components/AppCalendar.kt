@@ -9,6 +9,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -142,9 +146,15 @@ fun AppCalendar(
                             contentAlignment = Alignment.Center,
                         ) {
                             val capsule = Modifier.size(width = 37.dp, height = 42.dp)
-                            if (inRange) Box(capsule.fillShape(GlassFill(T.Green.copy(alpha = 0.3f)), CapsuleShape))
-                            if (isStart) Box(capsule.fillShape(GlassFill(T.Green), CapsuleShape))
-                            else if (isEnd) Box(capsule.fillShape(GlassFill(Color.White), CapsuleShape))
+                            AnimatedVisibility(visible = inRange, enter = fadeIn(tween(100)), exit = fadeOut(tween(100))) {
+                                Box(capsule.fillShape(GlassFill(T.Green.copy(alpha = 0.3f)), CapsuleShape))
+                            }
+                            AnimatedVisibility(visible = isStart, enter = fadeIn(tween(100)), exit = fadeOut(tween(100))) {
+                                Box(capsule.fillShape(GlassFill(T.Green), CapsuleShape))
+                            }
+                            AnimatedVisibility(visible = isEnd, enter = fadeIn(tween(100)), exit = fadeOut(tween(100))) {
+                                Box(capsule.fillShape(GlassFill(Color.White), CapsuleShape))
+                            }
                             Text(
                                 cell.day.toString(),
                                 style = AppFont.sans(18.sp, FontWeight.Medium, color = if (isEnd) T.Green else T.Text),

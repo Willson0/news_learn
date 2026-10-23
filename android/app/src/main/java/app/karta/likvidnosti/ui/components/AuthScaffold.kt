@@ -3,6 +3,7 @@ package app.karta.likvidnosti.ui.components
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -119,7 +120,11 @@ fun AuthFieldError(text: String, modifier: Modifier = Modifier) {
 fun AuthField(error: String?, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         content()
-        AnimatedVisibility(visible = error != null, enter = fadeIn(), exit = fadeOut()) {
+        AnimatedVisibility(
+            visible = error != null,
+            enter = fadeIn(tween(300, easing = EaseOutFigma)),
+            exit = fadeOut(tween(300, easing = EaseOutFigma)),
+        ) {
             AuthFieldError(error ?: "")
         }
     }

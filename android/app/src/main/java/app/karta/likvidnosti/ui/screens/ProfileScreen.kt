@@ -5,8 +5,7 @@ package app.karta.likvidnosti.ui.screens
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -40,7 +39,6 @@ import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -65,6 +63,7 @@ import app.karta.likvidnosti.ui.components.TabScaffold
 import app.karta.likvidnosti.ui.components.liquidGlass
 import app.karta.likvidnosti.ui.components.pressable
 import app.karta.likvidnosti.ui.icons.AppIcon
+import app.karta.likvidnosti.ui.components.EaseInOutBack
 import app.karta.likvidnosti.ui.icons.AppIcons
 import app.karta.likvidnosti.ui.theme.AppFont
 import app.karta.likvidnosti.ui.theme.T
@@ -460,8 +459,8 @@ private fun SettingRow(label: String, onClick: () -> Unit) {
 private fun AnimatedSortPopup(visible: Boolean, sort: String, modifier: Modifier, onSelect: (String) -> Unit) {
     AnimatedVisibility(
         visible = visible,
-        enter = scaleIn(initialScale = 0.9f, transformOrigin = TransformOrigin(1f, 0f)) + fadeIn(),
-        exit = scaleOut(targetScale = 0.9f, transformOrigin = TransformOrigin(1f, 0f)) + fadeOut(),
+        enter = fadeIn(tween(800, easing = EaseInOutBack)),
+        exit = fadeOut(tween(800, easing = EaseInOutBack)),
         modifier = modifier,
     ) {
         SortPopup(sort, onSelect)
