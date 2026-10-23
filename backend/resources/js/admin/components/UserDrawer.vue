@@ -58,9 +58,6 @@
                 </section>
 
                 <div class="drawer-foot">
-                    <button v-if="user.group !== 'active'" class="btn btn-primary" @click="$emit('invoice', { id: user.id, name: user.name, email: user.email })">
-                        Выставить счёт
-                    </button>
                     <button class="btn btn-secondary" @click="$emit('close')">Закрыть</button>
                 </div>
             </template>
