@@ -53,6 +53,12 @@ return [
         'app_scheme' => env('YOOKASSA_APP_SCHEME', 'karta'),
     ],
 
+    // Firebase Cloud Messaging (push в мобильных приложениях).
+    'fcm' => [
+        'project_id' => env('FCM_PROJECT_ID'),
+        'credentials' => env('FCM_CREDENTIALS'),   // путь к JSON сервисного аккаунта
+    ],
+
     'telegram' => [
         'bot_token' => env('TELEGRAM_BOT_TOKEN'),
         'allow_insecure' => (bool) env('TELEGRAM_ALLOW_INSECURE', false),

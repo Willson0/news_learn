@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Models\AppSetting;
+use App\Models\Payment;
 use App\Models\Subscription;
 use App\Models\User;
 use Illuminate\Support\Carbon;
@@ -10,14 +12,13 @@ use Illuminate\Support\Facades\Log;
 /**
  * Списание подписки с сохранённой карты YooKassa и продление/отключение доступа.
  * Списание идёт без участия пользователя (recurring по payment_method_id).
+ * Сумма и срок берутся из индивидуальных условий подписки, а если их нет — из настроек.
  */
 class SubscriptionBilling
 {
     public const PURPOSE = 'subscription';
 
-    public function __construct(private YookassaClient $yookassa)
-    {
-    }
+    public function __construct(private YookassaClient $yookassa) {}
 
     /** Есть ли у пользователя сохранённая карта и настроено ли списание. */
     public function canCharge(User $user): bool
@@ -33,9 +34,11 @@ class SubscriptionBilling
      */
     public function charge(User $user, string $idempotenceKey): array
     {
+        [$amount] = $this->terms($user);
+
         return $this->yookassa->createPayment([
             'amount' => [
-                'value' => (string) config('services.yookassa.subscription_amount'),
+                'value' => number_format($amount, 2, '.', ''),
                 'currency' => 'RUB',
             ],
             'capture' => true,
@@ -48,7 +51,9 @@ class SubscriptionBilling
         ], $idempotenceKey);
     }
 
-    /** Успешная оплата: подписка активна ещё на один период (от текущего окончания или от сегодня). */
+    /**
+     * Успешная оплата: подписка активна ещё на один период (от текущего окончания или от сегодня).
+     */
     public function markPaid(User $user, string $paymentId): void
     {
         $sub = Subscription::firstOrCreate(['user_id' => $user->id]);
@@ -56,7 +61,7 @@ class SubscriptionBilling
             return;
         }
 
-        $months = (int) config('services.yookassa.subscription_months', 1);
+        [$amount, $months] = $this->terms($user);
         $base = $sub->until && $sub->until->gte(today()) ? $sub->until : today();
 
         $sub->fill([
@@ -67,6 +72,14 @@ class SubscriptionBilling
             'payment_method' => 'card',
             'last_payment_id' => $paymentId,
         ])->save();
+
+        Payment::firstOrCreate(['yookassa_payment_id' => $paymentId], [
+            'user_id' => $user->id,
+            'kind' => 'renewal',
+            'amount' => $amount,
+            'months' => $months,
+            'paid_at' => now(),
+        ]);
     }
 
     /** Списание не прошло (например, не хватает денег): доступ по подписке отключаем. */
@@ -113,5 +126,20 @@ class SubscriptionBilling
             });
 
         return $count;
+    }
+
+    /**
+     * Сумма и срок периода для пользователя: индивидуальные условия или значения по умолчанию.
+     *
+     * @return array{0: int, 1: int}
+     */
+    public function terms(User $user): array
+    {
+        $sub = $user->subscription;
+
+        return [
+            $sub?->amount ?? AppSetting::defaultPrice(),
+            $sub?->months ?? AppSetting::defaultMonths(),
+        ];
     }
 }

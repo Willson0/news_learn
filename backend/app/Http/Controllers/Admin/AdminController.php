@@ -51,7 +51,7 @@ class AdminController extends Controller
         $admin = Admin::create([
             'telegram_id' => $data['telegram_id'],
             'name' => $data['name'] ?? null,
-            'added_by' => $request->user()->id,
+            'added_by' => $request->user() instanceof User ? $request->user()->id : null,
         ]);
 
         $user = User::where('telegram_id', $admin->telegram_id)->first();

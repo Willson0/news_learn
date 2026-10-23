@@ -13,7 +13,8 @@ class ReportController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $query = Report::with('instrument')->latest('published_at');
+        // Черновики видны только в админке, пользователям не показываем.
+        $query = Report::with('instrument')->where('status', '!=', 'draft')->latest('published_at');
 
         // Фильтр по инструменту (ключ: gold, wti, btc …) — главный экран.
         if ($instrument = $request->query('instrument')) {
