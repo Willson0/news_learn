@@ -57,7 +57,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun AdminsScreen(onBack: () -> Unit, onLeftAdmin: () -> Unit) {
     val admins = remember { mutableStateListOf<AdminDto>() }
-    var tag by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var adding by remember { mutableStateOf(false) }
     var confirmFor by remember { mutableStateOf<AdminDto?>(null) }
@@ -79,9 +79,9 @@ fun AdminsScreen(onBack: () -> Unit, onLeftAdmin: () -> Unit) {
     LaunchedEffect(Unit) { reload() }
 
     fun add() {
-        val value = tag.trim()
-        if (!value.matches(Regex("^@?[\\p{L}\\p{N}_.]{1,64}$"))) {
-            error = "Укажите тег пользователя, например @ivan"
+        val value = email.trim()
+        if (!value.matches(Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"))) {
+            error = "Укажите почту пользователя"
             return
         }
         if (adding) return
@@ -90,10 +90,10 @@ fun AdminsScreen(onBack: () -> Unit, onLeftAdmin: () -> Unit) {
         scope.launch {
             try {
                 Repository.addAdmin(value)
-                tag = ""
+                email = ""
                 reload()
             } catch (ex: ApiException) {
-                error = ex.fieldError("tag") ?: ex.message
+                error = ex.fieldError("email") ?: ex.message
             } catch (ex: Exception) {
                 error = "Не удалось добавить"
             } finally {
@@ -145,17 +145,17 @@ fun AdminsScreen(onBack: () -> Unit, onLeftAdmin: () -> Unit) {
     ) {
         Text("Администраторы", style = AppFont.heading(T.FsTitle))
         Text(
-            "Админы видят админ-панель: создают и редактируют отчёты, настраивают чаты и отвечают в личных чатах. Добавить нового админа можно по его тегу из профиля, например @ivan.",
+            "Админы видят админ-панель: создают и редактируют отчёты, настраивают чаты и отвечают в личных чатах. Добавить нового админа можно по его почте, с которой он зарегистрирован.",
             style = AppFont.sans(T.FsBase, color = T.TextSecondary).copy(lineHeight = 19.sp),
         )
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             AppInput(
-                tag,
-                { tag = it; error = null },
-                placeholder = "Тег, например @ivan",
+                email,
+                { email = it; error = null },
+                placeholder = "Почта пользователя",
                 error = error != null,
-                keyboardType = KeyboardType.Ascii,
+                keyboardType = KeyboardType.Email,
                 modifier = Modifier.weight(1f),
             )
             Box(
@@ -204,7 +204,7 @@ private fun AdminRow(a: AdminDto, isMe: Boolean, removing: Boolean, onRemove: ()
                 if (isMe) Text("(вы)", style = AppFont.sans(T.FsSm, color = T.TextSecondary))
             }
             Text(
-                a.username ?: "Без тега",
+                a.email ?: a.username ?: "Без почты",
                 style = AppFont.sans(T.FsSm, color = T.TextSecondary),
             )
         }
