@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 class Report extends Model
 {
     protected $fillable = [
-        'instrument_id', 'title', 'description', 'body',
+        'instrument_id', 'created_by', 'title', 'description', 'body',
         'badge', 'status', 'published_at',
         'chart_url', 'cover_path', 'cover_name', 'html_path', 'html_name',
     ];
@@ -21,6 +21,11 @@ class Report extends Model
     public function instrument(): BelongsTo
     {
         return $this->belongsTo(Instrument::class);
+    }
+
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
     }
 
     public function chat(): HasOne

@@ -31,4 +31,7 @@ php artisan config:cache
 php artisan route:cache
 php artisan view:cache
 
+# Планировщик Laravel (продление подписок): раз в минуту проверяет расписание в фоне.
+(while true; do php artisan schedule:run >/dev/null 2>&1; sleep 60; done) &
+
 exec "$@"

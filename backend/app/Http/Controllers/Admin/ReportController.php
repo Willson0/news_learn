@@ -32,6 +32,7 @@ class ReportController extends Controller
                 'body' => $data['description'],
                 'chart_url' => $data['chart_url'] ?? null,
                 'instrument_id' => $this->instrumentId($data['instrument']),
+                'created_by' => $request->user()->id,
                 'badge' => 'Актуальный',
                 'status' => 'actual',
                 'published_at' => now()->toDateString(),

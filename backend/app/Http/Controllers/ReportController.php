@@ -22,9 +22,38 @@ class ReportController extends Controller
             }
         }
 
+        // Несколько инструментов через запятую — панель фильтров аналитики.
+        if ($instruments = $request->query('instruments')) {
+            $keys = array_filter(explode(',', (string) $instruments));
+            if ($keys !== []) {
+                $query->whereHas('instrument', fn ($q) => $q->whereIn('key', $keys));
+            }
+        }
+
         // Фильтр по статусу — панель фильтров аналитики.
         if ($statuses = $request->query('status')) {
             $query->whereIn('status', is_array($statuses) ? $statuses : explode(',', $statuses));
+        }
+
+        // Период: произвольный диапазон (from/to, даты YYYY-MM-DD) или week|month|year от сегодня.
+        $from = $request->query('from');
+        $to = $request->query('to');
+        if (is_string($from) && $from !== '') {
+            $query->whereDate('published_at', '>=', $from);
+        }
+        if (is_string($to) && $to !== '') {
+            $query->whereDate('published_at', '<=', $to);
+        }
+        if (! $from && ! $to && ($period = $request->query('period'))) {
+            $since = match ($period) {
+                'week' => now()->subWeek(),
+                'month' => now()->subMonth(),
+                'year' => now()->subYear(),
+                default => null,
+            };
+            if ($since) {
+                $query->whereDate('published_at', '>=', $since->toDateString());
+            }
         }
 
         // Поиск по заголовку/описанию — экран аналитики.

@@ -48,6 +48,8 @@ return [
         'api_base' => env('YOOKASSA_API_BASE', 'https://api.yookassa.ru/v3'),
         'return_url' => env('YOOKASSA_RETURN_URL', 'https://wilflw.ru/api/billing/card/return'),
         'bind_amount' => env('YOOKASSA_BIND_AMOUNT', '1.00'),
+        'subscription_amount' => env('YOOKASSA_SUBSCRIPTION_AMOUNT', '299.00'),
+        'subscription_months' => (int) env('YOOKASSA_SUBSCRIPTION_MONTHS', 1),
         'app_scheme' => env('YOOKASSA_APP_SCHEME', 'karta'),
     ],
 

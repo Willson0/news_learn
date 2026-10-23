@@ -16,6 +16,7 @@ class ChatController extends Controller
     public function update(Request $request, string $slug): JsonResponse
     {
         $chat = PublicChatController::resolve($slug, $request->user());
+        abort_unless($chat->canBeManagedBy($request->user()), 403);
 
         $data = $request->validate([
             'title' => ['required', 'string', 'max:255'],
