@@ -23,8 +23,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.PullToRefreshBox
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -66,6 +64,7 @@ import app.karta.likvidnosti.ui.components.liquidGlass
 import app.karta.likvidnosti.ui.components.pressable
 import app.karta.likvidnosti.ui.icons.AppIcon
 import app.karta.likvidnosti.ui.components.EaseInOutBack
+import app.karta.likvidnosti.ui.components.PullToRefreshBox
 import app.karta.likvidnosti.ui.icons.AppIcons
 import app.karta.likvidnosti.ui.theme.AppFont
 import app.karta.likvidnosti.ui.theme.T
@@ -134,7 +133,6 @@ private fun historyGroups(history: List<ReportDto>, sort: String): List<HistoryG
  * Без подписки («Доступный экран профиля», 474:11853) — имя, тег и «Условия».
  * В навбаре справа — круглая кнопка чата с админом (задаёт AppRoot).
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
     onSettings: () -> Unit,
@@ -161,6 +159,7 @@ fun ProfileScreen(
     val restricted = Session.restricted
 
     var refreshing by remember { mutableStateOf(false) }
+    val scrollState = rememberScrollState()
 
     suspend fun fetch() {
         runCatching { Repository.profile() }.getOrNull()?.let { p ->
@@ -188,6 +187,7 @@ fun ProfileScreen(
     TabScaffold(navBar = navBar) {
         PullToRefreshBox(
             isRefreshing = refreshing,
+            scrollState = scrollState,
             onRefresh = {
                 scope.launch {
                     refreshing = true
@@ -199,7 +199,7 @@ fun ProfileScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(scrollState)
                     .padding(bottom = navBarClearance()),
             ) {
                 Header(

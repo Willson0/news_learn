@@ -15,8 +15,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.PullToRefreshBox
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -51,6 +49,7 @@ import app.karta.likvidnosti.ui.components.SegmentedControl
 import app.karta.likvidnosti.ui.components.TabScaffold
 import app.karta.likvidnosti.ui.components.liquidGlass
 import app.karta.likvidnosti.ui.components.pressable
+import app.karta.likvidnosti.ui.components.PullToRefreshBox
 import app.karta.likvidnosti.ui.icons.AppIcon
 import app.karta.likvidnosti.ui.icons.AppIcons
 import app.karta.likvidnosti.ui.theme.AppFont
@@ -87,7 +86,6 @@ private val Caption = Color.White.copy(alpha = 0.6f)
  * разделителями во всю ширину экрана (белый 10 %). Без подписки — только
  * общий чат под заголовком «Чаты», без поиска.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CommunityScreen(onOpenChat: (String) -> Unit, navBar: @Composable () -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
@@ -99,6 +97,7 @@ fun CommunityScreen(onOpenChat: (String) -> Unit, navBar: @Composable () -> Unit
     val restricted = Session.restricted
 
     var refreshing by remember { mutableStateOf(false) }
+    val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
 
     suspend fun fetch() {
@@ -131,6 +130,7 @@ fun CommunityScreen(onOpenChat: (String) -> Unit, navBar: @Composable () -> Unit
     TabScaffold(navBar = navBar) {
         PullToRefreshBox(
             isRefreshing = refreshing,
+            scrollState = scrollState,
             onRefresh = {
                 scope.launch {
                     refreshing = true
@@ -142,7 +142,7 @@ fun CommunityScreen(onOpenChat: (String) -> Unit, navBar: @Composable () -> Unit
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(scrollState)
                     .padding(top = designTop(T.TopBarY), bottom = navBarClearance()),
             ) {
                 if (!restricted) {

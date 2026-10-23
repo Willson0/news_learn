@@ -7,8 +7,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.PullToRefreshBox
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -30,6 +28,7 @@ import app.karta.likvidnosti.ui.components.ReportCard
 import app.karta.likvidnosti.ui.components.ReportListSkeleton
 import app.karta.likvidnosti.ui.components.ScreenTitle
 import app.karta.likvidnosti.ui.components.TabScaffold
+import app.karta.likvidnosti.ui.components.PullToRefreshBox
 import app.karta.likvidnosti.ui.theme.AppFont
 import app.karta.likvidnosti.ui.theme.T
 import app.karta.likvidnosti.ui.theme.designTop
@@ -39,7 +38,6 @@ import app.karta.likvidnosti.ui.theme.navBarClearance
  * «Лента материалов» (iOS HomeView): заголовок Kreadon 24 на y = 94, чипы
  * материалов, карточки отчётов через 12; навбар поверх.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(onOpenReport: (Long) -> Unit, navBar: @Composable () -> Unit) {
     var filter by rememberSaveable { mutableStateOf("all") }
@@ -47,6 +45,7 @@ fun HomeScreen(onOpenReport: (Long) -> Unit, navBar: @Composable () -> Unit) {
     var reports by remember { mutableStateOf(AppData.reports ?: emptyList<ReportDto>()) }
     var loaded by remember { mutableStateOf(AppData.reports != null) }
     var refreshing by remember { mutableStateOf(false) }
+    val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
 
     suspend fun fetch() {
@@ -70,6 +69,7 @@ fun HomeScreen(onOpenReport: (Long) -> Unit, navBar: @Composable () -> Unit) {
     TabScaffold(navBar = navBar) {
         PullToRefreshBox(
             isRefreshing = refreshing,
+            scrollState = scrollState,
             onRefresh = {
                 scope.launch {
                     refreshing = true
@@ -81,7 +81,7 @@ fun HomeScreen(onOpenReport: (Long) -> Unit, navBar: @Composable () -> Unit) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(scrollState)
                     .padding(horizontal = T.ScreenX)
                     .padding(top = designTop(T.TitleTop), bottom = navBarClearance()),
                 verticalArrangement = Arrangement.spacedBy(24.dp),

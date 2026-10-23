@@ -11,8 +11,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.PullToRefreshBox
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -41,6 +39,7 @@ import app.karta.likvidnosti.ui.components.ScreenTitle
 import app.karta.likvidnosti.ui.components.TabScaffold
 import app.karta.likvidnosti.ui.components.liquidGlass
 import app.karta.likvidnosti.ui.components.pressable
+import app.karta.likvidnosti.ui.components.PullToRefreshBox
 import app.karta.likvidnosti.ui.icons.AppIcon
 import app.karta.likvidnosti.ui.icons.AppIcons
 import app.karta.likvidnosti.ui.theme.AppFont
@@ -53,7 +52,6 @@ import app.karta.likvidnosti.ui.theme.navBarClearance
  * круглая кнопка фильтров 48 («active»), карточки отчётов; лист фильтров
  * поверх с затемнением. У админа справа от навбара — «+» (создать отчёт).
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AnalyticsScreen(onOpenReport: (Long) -> Unit, navBar: @Composable () -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
@@ -66,6 +64,7 @@ fun AnalyticsScreen(onOpenReport: (Long) -> Unit, navBar: @Composable () -> Unit
     var reports by remember { mutableStateOf(AppData.reports ?: emptyList<ReportDto>()) }
     var loaded by remember { mutableStateOf(AppData.reports != null) }
     var refreshing by remember { mutableStateOf(false) }
+    val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
 
     // Применённые фильтры: лист получает их при каждом открытии, поэтому не сбрасывается.
@@ -128,6 +127,7 @@ fun AnalyticsScreen(onOpenReport: (Long) -> Unit, navBar: @Composable () -> Unit
     ) {
         PullToRefreshBox(
             isRefreshing = refreshing,
+            scrollState = scrollState,
             onRefresh = {
                 scope.launch {
                     refreshing = true
@@ -139,7 +139,7 @@ fun AnalyticsScreen(onOpenReport: (Long) -> Unit, navBar: @Composable () -> Unit
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(scrollState)
                     .padding(horizontal = T.ScreenX)
                     .padding(top = designTop(T.TitleTop), bottom = navBarClearance()),
                 verticalArrangement = Arrangement.spacedBy(24.dp),
