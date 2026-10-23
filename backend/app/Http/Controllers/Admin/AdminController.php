@@ -10,7 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Управление списком админов. Админа назначают по тегу пользователя (username из профиля).
+ * Управление списком админов. Админа назначают по почте пользователя.
  * Добавлять и удалять админов могут только админы; главного админа (config/admin.php) удалить нельзя.
  */
 class AdminController extends Controller
@@ -29,32 +29,32 @@ class AdminController extends Controller
     }
 
     /**
-     * Назначает админа по тегу. Старый вариант с telegram_id принимается, чтобы уже установленные
+     * Назначает админа по почте. Старый вариант с telegram_id принимается, чтобы уже установленные
      * приложения продолжали работать.
      */
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'tag' => ['nullable', 'string', 'max:65', 'regex:/^@?[\p{L}\p{N}_.]{1,64}$/u'],
+            'email' => ['nullable', 'string', 'email', 'max:255'],
             'telegram_id' => ['nullable', 'regex:/^\d{1,20}$/'],
             'name' => ['nullable', 'string', 'max:255'],
         ], [
-            'tag.regex' => 'Тег может содержать буквы, цифры, «_» и «.»',
+            'email.email' => 'Укажите корректную почту',
             'telegram_id.regex' => 'Telegram ID состоит только из цифр',
         ]);
 
-        $tag = trim((string) ($data['tag'] ?? ''));
+        $email = trim((string) ($data['email'] ?? ''));
         $telegramId = trim((string) ($data['telegram_id'] ?? ''));
 
-        if ($tag === '' && $telegramId === '') {
-            throw ValidationException::withMessages(['tag' => 'Укажите тег пользователя']);
+        if ($email === '' && $telegramId === '') {
+            throw ValidationException::withMessages(['email' => 'Укажите почту пользователя']);
         }
 
-        if ($tag !== '') {
-            $target = $this->findByTag($tag);
+        if ($email !== '') {
+            $target = $this->findByEmail($email);
             if (! $target) {
                 throw ValidationException::withMessages([
-                    'tag' => 'Пользователь с тегом '.$this->normalizeTag($tag).' не найден. Тег указан в профиле в приложении.',
+                    'email' => 'Пользователь с почтой '.mb_strtolower($email).' не найден. Он должен зарегистрироваться в приложении.',
                 ]);
             }
         } else {
@@ -62,7 +62,7 @@ class AdminController extends Controller
         }
 
         if ($target ? Admin::grantsAccess($target) : Admin::hasTelegramRow($telegramId)) {
-            throw ValidationException::withMessages([$tag !== '' ? 'tag' : 'telegram_id' => 'Этот пользователь уже админ']);
+            throw ValidationException::withMessages([$email !== '' ? 'email' : 'telegram_id' => 'Этот пользователь уже админ']);
         }
 
         $admin = Admin::create([
@@ -88,20 +88,10 @@ class AdminController extends Controller
         return response()->json(['status' => 'ok']);
     }
 
-    /** Тег в базе хранится как «@ник», а вводить его можно и с «@», и без. */
-    private function normalizeTag(string $tag): string
+    /** Почту сравниваем без учёта регистра. */
+    private function findByEmail(string $email): ?User
     {
-        return '@'.ltrim(trim($tag), '@');
-    }
-
-    /** Ищем без учёта регистра; если тегом пользуются несколько записей, берём с Telegram ID. */
-    private function findByTag(string $tag): ?User
-    {
-        $handle = mb_strtolower(ltrim(trim($tag), '@'));
-
-        return User::whereRaw('LOWER(username) IN (?, ?)', ['@'.$handle, $handle])
-            ->orderByRaw('telegram_id IS NULL')
-            ->first();
+        return User::whereRaw('LOWER(email) = ?', [mb_strtolower(trim($email))])->first();
     }
 
     /**
@@ -113,6 +103,7 @@ class AdminController extends Controller
             'id' => $id,
             'telegram_id' => $telegramId !== null ? (string) $telegramId : null,
             'name' => $user?->name ?? $name,
+            'email' => $user?->email,
             'username' => $user?->username,
             'root' => $root,
         ];

@@ -170,24 +170,25 @@ class AdminTest extends TestCase
         $this->get('/api/chats/oil/avatar')->assertOk();
     }
 
-    public function test_admin_can_be_added_by_tag(): void
+    public function test_admin_can_be_added_by_email(): void
     {
         Sanctum::actingAs($this->root());
-        User::factory()->create(['telegram_id' => 777, 'username' => '@ivan']);
+        User::factory()->create(['telegram_id' => 777, 'email' => 'ivan@example.com', 'username' => '@ivan']);
 
-        $this->postJson('/api/admin/admins', ['tag' => 'Ivan'])
+        $this->postJson('/api/admin/admins', ['email' => 'IVAN@example.com'])
             ->assertCreated()
             ->assertJsonPath('data.telegram_id', '777')
-            ->assertJsonPath('data.username', '@ivan');
+            ->assertJsonPath('data.email', 'ivan@example.com');
 
-        $this->postJson('/api/admin/admins', ['tag' => '@ivan'])->assertStatus(422)->assertJsonValidationErrors('tag');
-        $this->postJson('/api/admin/admins', ['tag' => '@nobody'])->assertStatus(422)->assertJsonValidationErrors('tag');
-
-        // Пользователь без Telegram-аккаунта тоже может стать админом по тегу.
-        User::factory()->create(['telegram_id' => null, 'username' => '@webonly']);
-        $this->postJson('/api/admin/admins', ['tag' => '@webonly'])->assertCreated()
-            ->assertJsonPath('data.telegram_id', null);
-        $this->postJson('/api/admin/admins', ['tag' => '@webonly'])->assertStatus(422)->assertJsonValidationErrors('tag');
+        $this->postJson('/api/admin/admins', ['email' => 'ivan@example.com'])->assertStatus(422)->assertJsonValidationErrors('email');
+        $this->postJson('/api/admin/admins', ['email' => 'nobody@example.com'])->assertStatus(422)->assertJsonValidationErrors('email');
+        $this->postJson('/api/admin/admins', ['email' => 'не почта'])->assertStatus(422)->assertJsonValidationErrors('email');
         $this->postJson('/api/admin/admins', [])->assertStatus(422);
+
+        // Пользователь без Telegram-аккаунта тоже может стать админом по почте.
+        User::factory()->create(['telegram_id' => null, 'email' => 'web@example.com']);
+        $this->postJson('/api/admin/admins', ['email' => 'web@example.com'])->assertCreated()
+            ->assertJsonPath('data.telegram_id', null);
+        $this->postJson('/api/admin/admins', ['email' => 'web@example.com'])->assertStatus(422)->assertJsonValidationErrors('email');
     }
 }
