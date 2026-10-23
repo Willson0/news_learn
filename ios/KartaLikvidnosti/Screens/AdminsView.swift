@@ -5,11 +5,11 @@ struct AdminsView: View {
     @EnvironmentObject var session: Session
 
     @State private var admins: [AdminDto] = []
-    @State private var tag = ""
+    @State private var email = ""
     @State private var error = ""
     @State private var adding = false
     @State private var confirmFor: AdminDto? = nil
-    @State private var removing: String? = nil
+    @State private var removing: Int? = nil
 
     private var myTelegramId: String? { session.user?.telegramId }
 
@@ -17,12 +17,12 @@ struct AdminsView: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Администраторы").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
-                Text("Админы видят админ-панель: создают и редактируют отчёты, настраивают чаты и отвечают в личных чатах. Добавить нового админа можно по его тегу из профиля, например @ivan.")
+                Text("Админы видят админ-панель: создают и редактируют отчёты, настраивают чаты и отвечают в личных чатах. Добавить нового админа можно по его почте, с которой он зарегистрирован.")
                     .font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary).lineSpacing(2)
 
                 HStack(spacing: 8) {
-                    AppInput(text: $tag, placeholder: "Тег, например @ivan", error: !error.isEmpty, keyboard: .asciiCapable)
-                        .onChange(of: tag) { _ in error = "" }
+                    AppInput(text: $email, placeholder: "Почта пользователя", error: !error.isEmpty, keyboard: .emailAddress)
+                        .onChange(of: email) { _ in error = "" }
                     Button { add() } label: {
                         Text("Добавить").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
                             .padding(.horizontal, 20).frame(height: 48)
@@ -60,7 +60,7 @@ struct AdminsView: View {
                     Text(a.name ?? "Ещё не заходил").font(Theme.sans(Theme.fontSm, .semibold))
                     if a.telegramId == myTelegramId { Text("(вы)").font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary) }
                 }
-                Text(a.username ?? "ID \(a.telegramId)")
+                Text(a.email ?? a.username ?? "Без почты")
                     .font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
             }
             Spacer()
@@ -69,7 +69,7 @@ struct AdminsView: View {
                     .padding(.horizontal, 12).frame(height: 32).liquidGlass(Capsule(), fill: ActiveFill())
             } else {
                 PurplePillButton(title: "Удалить") { confirmFor = a }
-                    .disabled(removing == a.telegramId)
+                    .disabled(removing == a.adminId)
             }
         }
         .foregroundStyle(Theme.text)
@@ -85,22 +85,23 @@ struct AdminsView: View {
     }
 
     private func add() {
-        let value = tag.trimmed
-        guard value.range(of: #"^@?[\p{L}\p{N}_.]{1,64}$"#, options: .regularExpression) != nil else { self.error = "Укажите тег пользователя, например @ivan"; return }
+        let value = email.trimmed
+        guard value.range(of: #"^[^\s@]+@[^\s@]+\.[^\s@]+$"#, options: .regularExpression) != nil else { self.error = "Укажите почту пользователя"; return }
         adding = true; error = ""
         Task {
-            do { try await Api.addAdmin(tag: value); tag = ""; Haptics.medium(); await load() }
-            catch let e as ApiError { self.error = e.fieldError("tag") ?? e.message }
+            do { try await Api.addAdmin(email: value); email = ""; Haptics.medium(); await load() }
+            catch let e as ApiError { self.error = e.fieldError("email") ?? e.message }
             catch { self.error = "Не удалось добавить" }
             adding = false
         }
     }
 
     private func remove(_ a: AdminDto) {
-        removing = a.telegramId
+        guard let adminId = a.adminId else { return }
+        removing = adminId
         Task {
             do {
-                try await Api.removeAdmin(telegramId: a.telegramId)
+                try await Api.removeAdmin(id: adminId)
                 Haptics.medium(); confirmFor = nil
                 if a.telegramId == myTelegramId {
                     await session.load(force: true)
