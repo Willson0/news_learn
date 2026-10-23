@@ -1,9 +1,11 @@
 package app.karta.likvidnosti.ui.components
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -151,7 +153,13 @@ fun GlassNavBar(
                             },
                         contentAlignment = Alignment.Center,
                     ) {
-                        AppIcon(item.icon, size = 24.dp, tint = if (item.tab == current) T.Text else T.TextMuted)
+                        // Иконка чата растворяется между активным и неактивным цветом (прототип: 0.8 с).
+                        val tint by animateColorAsState(
+                            targetValue = if (item.tab == current) T.Text else T.TextMuted,
+                            animationSpec = tween(if (item.tab == AppTab.Community) 800 else 0, easing = EaseInOutBack),
+                            label = "navIconTint",
+                        )
+                        AppIcon(item.icon, size = 24.dp, tint = tint)
                     }
                 }
             }
