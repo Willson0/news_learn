@@ -10,7 +10,15 @@ RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
-# 2. Зависимости бэкенда
+# 2. Сборка ассетов веб-админки (/admin, Vue)
+FROM node:22-alpine AS backend-assets
+WORKDIR /src
+COPY backend/package.json backend/package-lock.json ./
+RUN npm ci
+COPY backend/ ./
+RUN npm run build
+
+# 3. Зависимости бэкенда
 FROM composer:2 AS vendor
 WORKDIR /src
 COPY backend/composer.json backend/composer.lock ./
@@ -18,13 +26,14 @@ RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --ignor
 COPY backend/ ./
 RUN composer dump-autoload --optimize --no-dev --classmap-authoritative
 
-# 3. Рантайм
+# 4. Рантайм
 FROM dunglas/frankenphp:1-php8.3
 # pdo_sqlite и opcache уже есть в базовом образе
 
 WORKDIR /app
 COPY --from=vendor /src /app/backend
 COPY --from=frontend /src/dist /app/frontend
+COPY --from=backend-assets /src/public/build /app/backend/public/build
 COPY deploy/Caddyfile /etc/frankenphp/Caddyfile
 COPY deploy/entrypoint.sh /usr/local/bin/app-entrypoint
 RUN chmod +x /usr/local/bin/app-entrypoint \
