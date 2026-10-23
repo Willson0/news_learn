@@ -169,4 +169,19 @@ class AdminTest extends TestCase
         $this->assertNotNull(Chat::where('slug', 'oil')->first()->avatar_path);
         $this->get('/api/chats/oil/avatar')->assertOk();
     }
+
+    public function test_admin_can_be_added_by_tag(): void
+    {
+        Sanctum::actingAs($this->root());
+        User::factory()->create(['telegram_id' => 777, 'username' => '@ivan']);
+
+        $this->postJson('/api/admin/admins', ['tag' => 'Ivan'])
+            ->assertCreated()
+            ->assertJsonPath('data.telegram_id', '777')
+            ->assertJsonPath('data.username', '@ivan');
+
+        $this->postJson('/api/admin/admins', ['tag' => '@ivan'])->assertStatus(422)->assertJsonValidationErrors('tag');
+        $this->postJson('/api/admin/admins', ['tag' => '@nobody'])->assertStatus(422)->assertJsonValidationErrors('tag');
+        $this->postJson('/api/admin/admins', [])->assertStatus(422);
+    }
 }

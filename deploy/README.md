@@ -141,8 +141,11 @@ docker compose -f deploy/docker-compose.yml up -d --build
 ## Полезные команды
 
 ```bash
-# логи
+# логи контейнера (то же самое пишется в файл, см. ниже)
 docker compose -f deploy/docker-compose.yml logs -f
+
+# файл лога Laravel (внутри контейнера, том storage)
+docker compose -f deploy/docker-compose.yml exec app tail -n 200 /app/backend/storage/logs/laravel.log
 
 # artisan внутри контейнера
 docker compose -f deploy/docker-compose.yml exec -w /app/backend app php artisan <команда>

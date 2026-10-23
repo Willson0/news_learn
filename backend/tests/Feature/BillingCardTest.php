@@ -153,4 +153,32 @@ class BillingCardTest extends TestCase
         $this->get('/api/billing/card/return?status=cancel')
             ->assertRedirect('karta://billing?status=error');
     }
+
+    public function test_card_request_settles_pending_bind_when_webhook_is_late(): void
+    {
+        Http::fake([
+            'api.yookassa.test/v3/payments' => Http::response([
+                'id' => 'pay-late',
+                'confirmation' => ['type' => 'redirect', 'confirmation_url' => 'https://yoomoney.test/late'],
+            ]),
+        ]);
+        Sanctum::actingAs($this->demo());
+        $this->postJson('/api/billing/card/bind')->assertOk();
+
+        Http::fake([
+            'api.yookassa.test/v3/payments/pay-late' => Http::response([
+                'id' => 'pay-late',
+                'status' => 'succeeded',
+                'amount' => ['value' => '1.00', 'currency' => 'RUB'],
+                'metadata' => ['purpose' => 'card_bind', 'user_id' => (string) $this->demo()->id],
+                'payment_method' => ['id' => 'pm-late', 'saved' => true, 'card' => ['card_type' => 'MasterCard', 'last4' => '4242']],
+            ]),
+            'api.yookassa.test/v3/refunds' => Http::response(['id' => 'refund-late']),
+            'api.yookassa.test/v3/payments' => Http::response(['id' => 'pay-charge', 'status' => 'pending']),
+        ]);
+
+        $this->getJson('/api/billing/card')
+            ->assertOk()
+            ->assertExactJson(['bound' => true, 'brand' => 'MasterCard', 'last4' => '4242']);
+    }
 }

@@ -41,7 +41,8 @@ RUN chmod +x /usr/local/bin/app-entrypoint \
     && cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini" \
     && printf 'upload_max_filesize=100M\npost_max_size=105M\n' > "$PHP_INI_DIR/conf.d/uploads.ini"
 
-ENV APP_ENV=production APP_DEBUG=false LOG_CHANNEL=stderr \
+# Логи пишутся и в файл storage/logs/laravel.log (том storage), и в stderr (docker compose logs).
+ENV APP_ENV=production APP_DEBUG=false LOG_CHANNEL=stack LOG_STACK=single,stderr \
     DB_CONNECTION=sqlite DB_DATABASE=/app/backend/database/data/database.sqlite
 
 EXPOSE 80 443 443/udp

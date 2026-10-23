@@ -7,7 +7,6 @@ use App\Models\Admin;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -30,26 +29,50 @@ class AdminController extends Controller
         return response()->json(['data' => $list]);
     }
 
+    /**
+     * Назначает админа по тегу (username из профиля, например @ivan). Старый вариант с telegram_id
+     * оставлен, чтобы уже установленные приложения продолжали работать.
+     */
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'telegram_id' => [
-                'required', 'regex:/^\d{1,20}$/',
-                Rule::unique('admins', 'telegram_id'),
-            ],
+            'tag' => ['nullable', 'string', 'max:65', 'regex:/^@?[\p{L}\p{N}_.]{1,64}$/u'],
+            'telegram_id' => ['nullable', 'regex:/^\d{1,20}$/'],
             'name' => ['nullable', 'string', 'max:255'],
         ], [
-            'telegram_id.required' => 'Укажите Telegram ID',
+            'tag.regex' => 'Тег может содержать буквы, цифры, «_» и «.»',
             'telegram_id.regex' => 'Telegram ID состоит только из цифр',
-            'telegram_id.unique' => 'Этот пользователь уже админ',
         ]);
 
-        if (Admin::isRoot($data['telegram_id'])) {
-            throw ValidationException::withMessages(['telegram_id' => 'Этот пользователь уже админ']);
+        $tag = trim((string) ($data['tag'] ?? ''));
+        $telegramId = trim((string) ($data['telegram_id'] ?? ''));
+
+        if ($tag === '' && $telegramId === '') {
+            throw ValidationException::withMessages(['tag' => 'Укажите тег пользователя']);
+        }
+
+        $field = $tag !== '' ? 'tag' : 'telegram_id';
+        if ($tag !== '') {
+            $found = $this->findByTag($tag);
+            if (! $found) {
+                throw ValidationException::withMessages([
+                    'tag' => 'Пользователь с тегом '.$this->normalizeTag($tag).' не найден. Тег указан в профиле в приложении.',
+                ]);
+            }
+            if ($found->telegram_id === null) {
+                throw ValidationException::withMessages([
+                    'tag' => 'У этого пользователя нет Telegram-аккаунта, назначить его админом нельзя.',
+                ]);
+            }
+            $telegramId = (string) $found->telegram_id;
+        }
+
+        if (Admin::hasTelegramId($telegramId)) {
+            throw ValidationException::withMessages([$field => 'Этот пользователь уже админ']);
         }
 
         $admin = Admin::create([
-            'telegram_id' => $data['telegram_id'],
+            'telegram_id' => $telegramId,
             'name' => $data['name'] ?? null,
             'added_by' => $request->user() instanceof User ? $request->user()->id : null,
         ]);
@@ -68,6 +91,22 @@ class AdminController extends Controller
         Admin::where('telegram_id', $telegramId)->firstOrFail()->delete();
 
         return response()->json(['status' => 'ok']);
+    }
+
+    /** Тег в базе хранится как «@ник», а вводить его можно и с «@», и без. */
+    private function normalizeTag(string $tag): string
+    {
+        return '@'.ltrim(trim($tag), '@');
+    }
+
+    /** Ищем без учёта регистра; если тегом пользуются несколько записей, берём с Telegram ID. */
+    private function findByTag(string $tag): ?User
+    {
+        $handle = mb_strtolower(ltrim(trim($tag), '@'));
+
+        return User::whereRaw('LOWER(username) IN (?, ?)', ['@'.$handle, $handle])
+            ->orderByRaw('telegram_id IS NULL')
+            ->first();
     }
 
     /**
