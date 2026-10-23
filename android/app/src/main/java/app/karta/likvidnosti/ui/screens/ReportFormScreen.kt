@@ -334,7 +334,7 @@ fun ReportFormScreen(
                 AppButton(
                     if (isEdit) "Сохранить" else "Создать отчет",
                     variant = ButtonVariant.Accent,
-                    enabled = !saving,
+                    loading = saving,
                     modifier = Modifier
                         .padding(horizontal = T.ScreenX)
                         .padding(top = 12.dp, bottom = designBottom(T.NavBarBottom)),

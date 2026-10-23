@@ -138,7 +138,7 @@ fun PasswordRecoveryScreen(
             AppButton(
                 if (codeSent) "Сменить пароль" else "Далее",
                 variant = ButtonVariant.Accent,
-                enabled = !submitting,
+                loading = submitting,
             ) { if (codeSent) submit() else next() }
         },
     ) {

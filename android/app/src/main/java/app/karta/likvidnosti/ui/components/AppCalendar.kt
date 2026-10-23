@@ -92,14 +92,20 @@ fun AppCalendar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(9.dp),
         ) {
-            AppIcon(AppIcons.monthPrev, size = 24.dp, modifier = Modifier.pressable(pressAlpha = 1f) { cursor = cursor.minusMonths(1) })
+            Box(
+                modifier = Modifier.size(44.dp).pressable(pressAlpha = 1f) { cursor = cursor.minusMonths(1) },
+                contentAlignment = Alignment.Center,
+            ) { AppIcon(AppIcons.monthPrev, size = 24.dp) }
             Text(
                 MONTHS[cursor.monthValue - 1],
                 style = AppFont.sans(20.sp, FontWeight.SemiBold),
                 textAlign = TextAlign.Center,
                 modifier = Modifier.weight(1f),
             )
-            AppIcon(AppIcons.monthNext, size = 24.dp, modifier = Modifier.pressable(pressAlpha = 1f) { cursor = cursor.plusMonths(1) })
+            Box(
+                modifier = Modifier.size(44.dp).pressable(pressAlpha = 1f) { cursor = cursor.plusMonths(1) },
+                contentAlignment = Alignment.Center,
+            ) { AppIcon(AppIcons.monthNext, size = 24.dp) }
         }
 
         HairlineDivider(modifier = Modifier.padding(top = 8.dp).padding(horizontal = 3.dp), alpha = 0.4f)

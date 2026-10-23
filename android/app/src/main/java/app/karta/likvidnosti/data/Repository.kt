@@ -86,10 +86,18 @@ object Repository {
     }
 
     // --- Отчёты ---
-    suspend fun reports(instrument: String? = null, status: String? = null, search: String? = null): List<ReportDto> =
+    suspend fun reports(
+        instrument: String? = null,
+        instruments: String? = null,
+        period: String? = null,
+        from: String? = null,
+        to: String? = null,
+        status: String? = null,
+        search: String? = null,
+    ): List<ReportDto> =
         apiCall {
             val inst = if (instrument == "all") null else instrument
-            api.reports(inst, status, search).data ?: emptyList()
+            api.reports(inst, instruments, period, from, to, status, search).data ?: emptyList()
         }
 
     suspend fun report(id: Long): ReportDto? = apiCall { api.report(id).data }

@@ -109,7 +109,7 @@ fun AccountChangeScreen(
         onBack = onBack,
         contentTop = 278.dp,
         buttons = {
-            AppButton(button, variant = ButtonVariant.Accent, enabled = !submitting) { submit() }
+            AppButton(button, variant = ButtonVariant.Accent, loading = submitting) { submit() }
         },
     ) {
         Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {

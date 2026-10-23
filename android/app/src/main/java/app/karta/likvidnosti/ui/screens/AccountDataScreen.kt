@@ -107,7 +107,9 @@ fun AccountDataScreen(
 
         Column(modifier = Modifier.padding(top = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             AppButton("Сменить пароль", variant = ButtonVariant.Accent) { onChange("password") }
-            AppButton("Выйти из аккаунта", variant = ButtonVariant.Danger) {
+            var loggingOut by remember { mutableStateOf(false) }
+            AppButton("Выйти из аккаунта", variant = ButtonVariant.Danger, loading = loggingOut) {
+                loggingOut = true
                 scope.launch {
                     runCatching { Repository.logout() }
                     onLogout()

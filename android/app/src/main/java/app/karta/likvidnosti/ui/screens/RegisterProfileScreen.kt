@@ -147,7 +147,7 @@ fun RegisterProfileScreen(onDone: () -> Unit) {
                 style = AppFont.sans(T.FsBase),
                 modifier = Modifier.fillMaxWidth(),
             )
-            AppButton("Зарегистрироваться", variant = ButtonVariant.Accent, enabled = !saving && !uploading) { submit() }
+            AppButton("Зарегистрироваться", variant = ButtonVariant.Accent, loading = saving || uploading) { submit() }
         },
     ) {
         Column(

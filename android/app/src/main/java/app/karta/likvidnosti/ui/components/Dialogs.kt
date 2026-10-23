@@ -73,7 +73,7 @@ fun ConfirmDialog(
                         modifier = Modifier.padding(top = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        AppButton(confirmLabel, variant = ButtonVariant.Danger, enabled = !busy) { onConfirm() }
+                        AppButton(confirmLabel, variant = ButtonVariant.Danger, loading = busy) { onConfirm() }
                         AppButton(cancelLabel, variant = ButtonVariant.Secondary) { onCancel() }
                     }
                 }

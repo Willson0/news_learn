@@ -290,7 +290,7 @@ fun LoginScreen(
                 AppButton(
                     if (mode == AuthMode.Login) "Войти" else "Далее",
                     variant = ButtonVariant.Accent,
-                    enabled = !submitting,
+                    loading = submitting,
                 ) { submit() }
             }
         }

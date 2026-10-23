@@ -21,6 +21,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -64,6 +66,8 @@ fun AppButton(
     modifier: Modifier = Modifier,
     variant: ButtonVariant = ButtonVariant.Accent,
     enabled: Boolean = true,
+    /** Запрос выполняется: вместо подписи крутится индикатор, нажатие не срабатывает. */
+    loading: Boolean = false,
     onClick: () -> Unit,
 ) {
     val shape = T.ShapeInput
@@ -78,10 +82,18 @@ fun AppButton(
             .height(48.dp)
             .alpha(if (enabled) 1f else 0.5f)
             .liquidGlass(shape, fill)
-            .pressable(enabled = enabled, onClick = onClick),
+            .pressable(enabled = enabled && !loading, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, style = AppFont.sans(T.FsBase), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (loading) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(20.dp),
+                strokeWidth = 2.dp,
+                color = LocalContentColor.current,
+            )
+        } else {
+            Text(text, style = AppFont.sans(T.FsBase), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
     }
 }
 

@@ -197,7 +197,9 @@ fun ProfileScreen(
                 ConditionsBlock(subPlan, onSubscription)
                 // Без подписки доступа к настройкам аккаунта нет: выход остаётся здесь.
                 Column(modifier = Modifier.padding(horizontal = T.ScreenX).padding(top = 24.dp)) {
-                    AppButton("Выйти из аккаунта", variant = ButtonVariant.Danger) {
+                    var loggingOut by remember { mutableStateOf(false) }
+                    AppButton("Выйти из аккаунта", variant = ButtonVariant.Danger, loading = loggingOut) {
+                        loggingOut = true
                         scope.launch {
                             runCatching { Repository.logout() }
                             onLogout()

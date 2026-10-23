@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.OpenableColumns
 import java.io.ByteArrayOutputStream
+import kotlin.math.roundToInt
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -53,12 +54,27 @@ object Uploads {
                 context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
             }
         }.getOrNull() ?: return null
+        // Длинная сторона до 2048 px и JPEG 80: файл в разы меньше оригинала (3–4 МБ).
+        val scaled = downscale(bitmap, 2048)
         val out = ByteArrayOutputStream()
-        val encoded = bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
+        val encoded = scaled.compress(Bitmap.CompressFormat.JPEG, 80, out)
+        if (scaled !== bitmap) scaled.recycle()
         bitmap.recycle()
         if (!encoded) return null
         val base = displayName(context, uri).substringBeforeLast('.', "photo")
         val body = out.toByteArray().toRequestBody("image/jpeg".toMediaTypeOrNull())
         return MultipartBody.Part.createFormData(field, "$base.jpg", body)
+    }
+
+    private fun downscale(src: Bitmap, maxSide: Int): Bitmap {
+        val longest = maxOf(src.width, src.height)
+        if (longest <= maxSide) return src
+        val scale = maxSide.toFloat() / longest
+        return Bitmap.createScaledBitmap(
+            src,
+            (src.width * scale).roundToInt().coerceAtLeast(1),
+            (src.height * scale).roundToInt().coerceAtLeast(1),
+            true,
+        )
     }
 }

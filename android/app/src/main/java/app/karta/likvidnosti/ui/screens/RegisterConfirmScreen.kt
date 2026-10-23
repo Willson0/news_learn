@@ -108,7 +108,7 @@ fun RegisterConfirmScreen(
                 variant = ButtonVariant.Secondary,
                 enabled = resendIn <= 0,
             ) { resend() }
-            AppButton("Далее", variant = ButtonVariant.Accent, enabled = !submitting) { confirm() }
+            AppButton("Далее", variant = ButtonVariant.Accent, loading = submitting) { confirm() }
         },
     ) {
         AuthField(error) {

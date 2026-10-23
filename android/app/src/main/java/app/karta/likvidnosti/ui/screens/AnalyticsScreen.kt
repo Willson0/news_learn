@@ -52,11 +52,23 @@ fun AnalyticsScreen(onOpenReport: (Long) -> Unit, navBar: @Composable () -> Unit
     var query by rememberSaveable { mutableStateOf("") }
     var filtersOpen by remember { mutableStateOf(false) }
     var statusFilter by rememberSaveable { mutableStateOf<String?>(null) }
+    var instrumentFilter by rememberSaveable { mutableStateOf<String?>(null) }
+    var periodFilter by rememberSaveable { mutableStateOf<String?>(null) }
+    var rangeFrom by rememberSaveable { mutableStateOf<String?>(null) }
+    var rangeTo by rememberSaveable { mutableStateOf<String?>(null) }
     var reports by remember { mutableStateOf(AppData.reports ?: emptyList<ReportDto>()) }
     var loaded by remember { mutableStateOf(AppData.reports != null) }
 
-    LaunchedEffect(statusFilter) {
-        runCatching { Repository.reports(status = statusFilter) }.onSuccess { reports = it }
+    LaunchedEffect(statusFilter, instrumentFilter, periodFilter, rangeFrom, rangeTo) {
+        runCatching {
+            Repository.reports(
+                instruments = instrumentFilter,
+                period = if (rangeFrom == null) periodFilter else null,
+                from = rangeFrom,
+                to = rangeTo,
+                status = statusFilter,
+            )
+        }.onSuccess { reports = it }
         // при сбое обновления оставляем предзагруженные данные
         loaded = true
     }
@@ -73,7 +85,21 @@ fun AnalyticsScreen(onOpenReport: (Long) -> Unit, navBar: @Composable () -> Unit
             FiltersOverlay(
                 open = filtersOpen,
                 onClose = { filtersOpen = false },
-                onApply = { result -> statusFilter = result.statuses.joinToString(",").ifEmpty { null } },
+                onApply = { result ->
+                    statusFilter = result.statuses.joinToString(",").ifEmpty { null }
+                    instrumentFilter = result.instruments.joinToString(",").ifEmpty { null }
+                    val start = result.dateStart
+                    val end = result.dateEnd
+                    if (start != null && end != null) {
+                        rangeFrom = start.toString()
+                        rangeTo = end.toString()
+                        periodFilter = null
+                    } else {
+                        rangeFrom = null
+                        rangeTo = null
+                        periodFilter = result.dateMode
+                    }
+                },
             )
         },
     ) {

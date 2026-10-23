@@ -45,6 +45,10 @@ interface ApiService {
     @GET("reports")
     suspend fun reports(
         @Query("instrument") instrument: String? = null,
+        @Query("instruments") instruments: String? = null,
+        @Query("period") period: String? = null,
+        @Query("from") from: String? = null,
+        @Query("to") to: String? = null,
         @Query("status") status: String? = null,
         @Query("search") search: String? = null,
     ): DataWrapper<List<ReportDto>>

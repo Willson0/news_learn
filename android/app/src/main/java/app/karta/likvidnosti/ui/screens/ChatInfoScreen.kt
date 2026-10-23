@@ -123,6 +123,9 @@ fun ChatInfoScreen(
     var members by remember { mutableStateOf("") }
     var avatar by remember { mutableStateOf<String?>(null) }
     var reportId by remember { mutableStateOf<Long?>(null) }
+    var permanent by remember { mutableStateOf(false) }
+    var canManage by remember { mutableStateOf<Boolean?>(null) }
+    var leaving by remember { mutableStateOf(false) }
     var tab by remember { mutableStateOf("members") }
     var muted by remember { mutableStateOf(mutedPrefs(context).getBoolean("kl_muted_$slug", false)) }
     var searchOpen by remember { mutableStateOf(false) }
@@ -171,6 +174,8 @@ fun ChatInfoScreen(
             avatar = fileUrl(it.avatarUrl)
             members = it.subtitle ?: ""
             reportId = it.report
+            permanent = it.permanent
+            canManage = it.canManage
         }
     }
 
@@ -198,7 +203,7 @@ fun ChatInfoScreen(
     }
 
     fun newsTapped() {
-        if (Session.isAdmin) onEdit() else reportId?.let { onReport(it) }
+        if (canManage ?: Session.isAdmin) onEdit() else reportId?.let { onReport(it) }
     }
 
     val headerHeight = designTop(345.dp)
@@ -238,9 +243,14 @@ fun ChatInfoScreen(
                                 searchOpen = !searchOpen
                                 if (!searchOpen) query = ""
                             }
-                            InfoActionButton(AppIcons.leave) {
-                                scope.launch {
-                                    runCatching { Repository.leaveChat(slug) }.onSuccess { onLeave() }
+                            if (!permanent) {
+                                InfoActionButton(AppIcons.leave) {
+                                    if (leaving) return@InfoActionButton
+                                    leaving = true
+                                    scope.launch {
+                                        runCatching { Repository.leaveChat(slug) }.onSuccess { onLeave() }
+                                        leaving = false
+                                    }
                                 }
                             }
                         }

@@ -111,6 +111,9 @@ class ChatItemDto(
     val preview: String? = null,
     val time: String? = null,
     val unread: Int = 0,
+    /** Личный чат и чат отчёта нельзя покинуть вручную. */
+    val permanent: Boolean = false,
+    @SerialName("can_manage") val canManage: Boolean? = null,
 )
 
 @Serializable
