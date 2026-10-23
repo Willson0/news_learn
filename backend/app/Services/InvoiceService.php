@@ -69,6 +69,29 @@ class InvoiceService
     }
 
     /**
+     * Бесплатный доступ до указанной даты: без счёта и без автопродления. Пользователю уходит push.
+     */
+    public function grantFree(User $user, Carbon $until): Subscription
+    {
+        $sub = Subscription::firstOrCreate(['user_id' => $user->id]);
+        $sub->fill([
+            'active' => true,
+            'plan' => 'gift',
+            'until' => $until->toDateString(),
+            'auto_pay' => false,
+        ])->save();
+
+        $this->push->sendToUser(
+            $user,
+            'Подписка открыта',
+            'Вам открыли доступ к подписке до '.$until->format('d.m.Y').'.',
+            ['type' => 'subscription'],
+        );
+
+        return $sub;
+    }
+
+    /**
      * Меняет условия подписки пользователя (сумма, срок, автопродление). Пользователю уходит push.
      *
      * @param  array{amount?: int, months?: int, until?: string|null, auto_pay?: bool, active?: bool}  $terms

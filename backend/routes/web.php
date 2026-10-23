@@ -30,6 +30,7 @@ Route::prefix('admin')->group(function () {
             Route::get('/users/{user}', [Panel\UserController::class, 'show']);
             Route::post('/users/{user}/invoices', [Panel\UserController::class, 'invoice']);
             Route::put('/users/{user}/subscription', [Panel\UserController::class, 'updateSubscription']);
+            Route::post('/users/{user}/subscription/grant', [Panel\UserController::class, 'grantFree']);
             Route::get('/invoices', [Panel\InvoiceController::class, 'index']);
 
             // Аналитика.

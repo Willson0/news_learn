@@ -15,7 +15,7 @@ class SubscriptionController extends Controller
 
         return response()->json([
             'data' => [
-                'active' => (bool) $sub?->active,
+                'active' => (bool) $sub?->grantsAccessNow(),
                 'plan' => $sub?->plan,
                 'until' => $sub?->until?->format('d.m.Y'),
                 'auto_pay' => (bool) $sub?->auto_pay,

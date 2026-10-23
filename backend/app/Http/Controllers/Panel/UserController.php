@@ -8,6 +8,7 @@ use App\Models\Invoice;
 use App\Models\Report;
 use App\Models\User;
 use App\Services\InvoiceService;
+use Illuminate\Support\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -84,6 +85,22 @@ class UserController extends Controller
             'status' => $invoice->status,
             'confirmation_url' => $invoice->confirmation_url,
         ]], 201);
+    }
+
+    /**
+     * Бесплатный доступ до даты, без счёта. Работает так же, как оплаченная подписка в приложении.
+     */
+    public function grantFree(Request $request, User $user): JsonResponse
+    {
+        $data = $request->validate([
+            'until' => ['required', 'date', 'after:today'],
+        ], [
+            'until.after' => 'Дата окончания должна быть в будущем',
+        ]);
+
+        $this->invoices->grantFree($user, Carbon::parse($data['until']));
+
+        return response()->json(['data' => $this->detail($user->fresh('subscription'))]);
     }
 
     /**

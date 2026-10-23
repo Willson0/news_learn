@@ -356,4 +356,36 @@ class PanelTest extends TestCase
             ->assertCreated()
             ->assertJsonPath('data.telegram_id', '777');
     }
+
+    public function test_panel_free_grant_opens_subscription_until_date(): void
+    {
+        $user = $this->user();
+        $until = now()->addMonths(2)->toDateString();
+
+        $this->asPanel()->postJson("/admin/api/users/{$user->id}/subscription/grant", ['until' => $until])
+            ->assertOk()
+            ->assertJsonPath('data.subscription.active', true)
+            ->assertJsonPath('data.subscription.auto_pay', false)
+            ->assertJsonPath('data.group', 'active');
+
+        $this->assertDatabaseHas('subscriptions', ['user_id' => $user->id, 'plan' => 'gift', 'auto_pay' => false]);
+        $this->assertDatabaseMissing('invoices', ['user_id' => $user->id]);
+
+        Sanctum::actingAs($user);
+        $this->getJson('/api/subscription')->assertOk()->assertJsonPath('data.active', true);
+
+        $this->asPanel()->postJson("/admin/api/users/{$user->id}/subscription/grant", ['until' => now()->toDateString()])
+            ->assertStatus(422);
+    }
+
+    public function test_free_grant_stops_granting_access_after_its_end_date(): void
+    {
+        $user = $this->user();
+        $this->asPanel()->postJson("/admin/api/users/{$user->id}/subscription/grant", ['until' => now()->addDay()->toDateString()])
+            ->assertOk();
+
+        $this->travel(2)->days();
+        Sanctum::actingAs($user);
+        $this->getJson('/api/subscription')->assertOk()->assertJsonPath('data.active', false);
+    }
 }

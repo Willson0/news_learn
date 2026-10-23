@@ -17,6 +17,19 @@ class Subscription extends Model
         'until' => 'date',
     ];
 
+    /**
+     * Доступ по подписке открыт сейчас. Подписка без автопродления (например, бесплатный доступ)
+     * перестаёт действовать после даты окончания, даже если флаг активности не сняли.
+     */
+    public function grantsAccessNow(): bool
+    {
+        if (! $this->active) {
+            return false;
+        }
+
+        return $this->auto_pay || $this->until === null || $this->until->gte(today());
+    }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);

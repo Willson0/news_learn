@@ -47,6 +47,18 @@
                 </section>
 
                 <section class="block">
+                    <h3>Бесплатный доступ</h3>
+                    <p class="muted small">Открывает подписку без счёта до выбранной даты. Автопродления не будет, после даты доступ закроется.</p>
+                    <form class="form" @submit.prevent="grant">
+                        <label class="field"><span>Действует до</span>
+                            <input v-model="grantUntil" class="input" type="date" :min="tomorrow()" required>
+                        </label>
+                        <button class="btn btn-primary" :disabled="busy || !grantUntil">Выдать бесплатно</button>
+                        <p v-if="granted" class="ok small">Доступ выдан до {{ formatDate(granted) }}, пользователю отправлено уведомление.</p>
+                    </form>
+                </section>
+
+                <section class="block">
                     <h3>Последние счета</h3>
                     <p v-if="!user.invoices.length" class="muted small">Счетов пока нет</p>
                     <ul class="list">
@@ -77,7 +89,7 @@ export default {
     },
     emits: ['close', 'changed', 'invoice'],
     data() {
-        return { user: null, terms: {}, error: '', busy: false, saved: false };
+        return { user: null, terms: {}, error: '', busy: false, saved: false, grantUntil: '', granted: '' };
     },
     watch: {
         userId: 'load',
@@ -114,6 +126,27 @@ export default {
                 const res = await api('PUT', `/users/${this.userId}/subscription`, payload);
                 this.user = res.data;
                 this.saved = true;
+                this.$emit('changed');
+            } catch (e) {
+                this.error = e.message;
+            } finally {
+                this.busy = false;
+            }
+        },
+        tomorrow() {
+            const d = new Date();
+            d.setDate(d.getDate() + 1);
+            return d.toISOString().slice(0, 10);
+        },
+        async grant() {
+            this.busy = true;
+            this.granted = '';
+            this.error = '';
+            try {
+                const res = await api('POST', `/users/${this.userId}/subscription/grant`, { until: this.grantUntil });
+                this.user = res.data;
+                this.granted = this.grantUntil;
+                this.grantUntil = '';
                 this.$emit('changed');
             } catch (e) {
                 this.error = e.message;
