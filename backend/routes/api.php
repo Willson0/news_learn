@@ -113,7 +113,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
         // Список админов: добавлять/удалять могут только админы, главного удалить нельзя.
         Route::get('/admins', [Admin\AdminController::class, 'index']);
         Route::post('/admins', [Admin\AdminController::class, 'store']);
-        Route::delete('/admins/{telegramId}', [Admin\AdminController::class, 'destroy']);
+        Route::delete('/admins/{admin}', [Admin\AdminController::class, 'destroy']);
 
         // Отчёты (multipart: обложка и html-файл, поэтому обновление — POST).
         Route::post('/reports', [Admin\ReportController::class, 'store']);

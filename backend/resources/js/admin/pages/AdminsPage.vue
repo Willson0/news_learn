@@ -15,7 +15,7 @@
         <table class="table">
             <thead><tr><th>Имя</th><th>Тег</th><th>Роль</th><th /></tr></thead>
             <tbody>
-                <tr v-for="a in admins" :key="a.telegram_id">
+                <tr v-for="a in admins" :key="a.id ?? a.telegram_id">
                     <td>{{ a.name || a.username || '—' }}</td>
                     <td>{{ a.username || '—' }}</td>
                     <td><span class="tag" :class="a.root ? 'tag-accent' : 'tag-neutral'">{{ a.root ? 'Главный' : 'Админ' }}</span></td>
@@ -66,7 +66,7 @@ export default {
         async remove(a) {
             if (!window.confirm(`Убрать права админа у ${a.username || a.name || a.telegram_id}?`)) return;
             try {
-                await api('DELETE', `/admins/${a.telegram_id}`);
+                await api('DELETE', `/admins/${a.id}`);
                 await this.load();
             } catch (e) {
                 this.error = e.message;

@@ -74,10 +74,10 @@ class AdminTest extends TestCase
         Admin::create(['telegram_id' => 555]);
         Sanctum::actingAs(User::factory()->create(['telegram_id' => 555]));
 
-        $this->deleteJson('/api/admin/admins/'.self::ROOT)->assertForbidden();
+        // Главный админа не хранится в таблице, поэтому удалить его по id нельзя вовсе.
         $this->postJson('/api/admin/admins', ['telegram_id' => (string) self::ROOT])->assertStatus(422);
 
-        $this->deleteJson('/api/admin/admins/555')->assertOk();
+        $this->deleteJson('/api/admin/admins/'.Admin::where('telegram_id', 555)->first()->id)->assertOk();
         $this->assertFalse(User::where('telegram_id', 555)->first()->isAdmin());
     }
 
@@ -182,6 +182,12 @@ class AdminTest extends TestCase
 
         $this->postJson('/api/admin/admins', ['tag' => '@ivan'])->assertStatus(422)->assertJsonValidationErrors('tag');
         $this->postJson('/api/admin/admins', ['tag' => '@nobody'])->assertStatus(422)->assertJsonValidationErrors('tag');
+
+        // Пользователь без Telegram-аккаунта тоже может стать админом по тегу.
+        User::factory()->create(['telegram_id' => null, 'username' => '@webonly']);
+        $this->postJson('/api/admin/admins', ['tag' => '@webonly'])->assertCreated()
+            ->assertJsonPath('data.telegram_id', null);
+        $this->postJson('/api/admin/admins', ['tag' => '@webonly'])->assertStatus(422)->assertJsonValidationErrors('tag');
         $this->postJson('/api/admin/admins', [])->assertStatus(422);
     }
 }

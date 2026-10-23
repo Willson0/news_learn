@@ -56,7 +56,7 @@ class User extends Authenticatable
      */
     public function isAdmin(): bool
     {
-        return Admin::hasTelegramId($this->telegram_id);
+        return Admin::grantsAccess($this);
     }
 
     public function isRootAdmin(): bool

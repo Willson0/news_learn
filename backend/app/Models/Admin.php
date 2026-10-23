@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Admin extends Model
 {
-    protected $fillable = ['telegram_id', 'name', 'added_by'];
+    protected $fillable = ['user_id', 'telegram_id', 'name', 'added_by'];
 
     public static function rootTelegramId(): int
     {
@@ -19,13 +19,32 @@ class Admin extends Model
         return $telegramId !== null && (int) $telegramId === self::rootTelegramId();
     }
 
-    public static function hasTelegramId(int|string|null $telegramId): bool
+    public static function hasTelegramRow(string $telegramId): bool
     {
-        if ($telegramId === null || $telegramId === '') {
+        return self::isRoot($telegramId) || self::where('telegram_id', $telegramId)->exists();
+    }
+
+    /** Админ — главный, либо запись привязана к этому пользователю (по users.id или Telegram ID). */
+    public static function grantsAccess(?User $user): bool
+    {
+        if (! $user) {
             return false;
         }
+        if (self::isRoot($user->telegram_id)) {
+            return true;
+        }
 
-        return self::isRoot($telegramId) || self::where('telegram_id', $telegramId)->exists();
+        $query = self::where('user_id', $user->id);
+        if ($user->telegram_id !== null) {
+            $query->orWhere('telegram_id', $user->telegram_id);
+        }
+
+        return $query->exists();
+    }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
     }
 
     public function addedBy(): BelongsTo
