@@ -107,6 +107,7 @@ struct CommunityView: View {
         .withGlassNavBar()
         .onAppear(perform: seed)
         .task { await load() }
+        .refreshable { await load() }
     }
 
     /// Мгновенно показываем предзагруженные чаты, чтобы без скелетона.

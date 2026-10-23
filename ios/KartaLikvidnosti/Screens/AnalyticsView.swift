@@ -64,7 +64,7 @@ struct AnalyticsView: View {
             ? .init(icon: AppIcons.plusBig) { router.push(.reportCreate) }
             : nil)
         .overlay {
-            FiltersOverlay(isOpen: $filtersOpen) { result in
+            FiltersOverlay(isOpen: $filtersOpen, applied: appliedFilters) { result in
                 statusFilter = result.statuses.isEmpty ? nil : result.statuses
                 instrumentFilter = result.instruments.isEmpty ? nil : result.instruments
                 if let s = result.dateStart, let e = result.dateEnd {
@@ -83,6 +83,18 @@ struct AnalyticsView: View {
             #endif
         }
         .task(id: filterKey) { await load() }
+        .refreshable { await load() }
+    }
+
+    /// Фильтры, которые уже применены: лист фильтров открывается с ними.
+    private var appliedFilters: FiltersResult {
+        FiltersResult(
+            instruments: instrumentFilter ?? [],
+            statuses: statusFilter ?? [],
+            dateMode: periodFilter,
+            dateStart: rangeFilter?.start,
+            dateEnd: rangeFilter?.end
+        )
     }
 
     /// Мгновенно показываем предзагруженные материалы (без фильтра), чтобы без скелетона.

@@ -39,6 +39,19 @@ class AppSetting extends Model
         return (int) self::get('default_price', (int) config('services.yookassa.subscription_amount'));
     }
 
+    /**
+     * Стоимость подписки для приложения, например «990 ₽ / 2 мес.». Берётся из подписки
+     * пользователя, а если её ещё нет или в ней не задана цена, то из настроек по умолчанию
+     * (та же логика, что и в панели администратора).
+     */
+    public static function subscriptionPriceLabel(?Subscription $sub = null): string
+    {
+        $amount = $sub?->amount ?? self::defaultPrice();
+        $months = $sub?->months ?? self::defaultMonths();
+
+        return number_format($amount, 0, ',', ' ').' ₽ / '.$months.' мес.';
+    }
+
     /** Срок периода по умолчанию, месяцы. */
     public static function defaultMonths(): int
     {

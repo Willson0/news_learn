@@ -9,7 +9,7 @@ import SwiftUI
 struct SubscriptionView: View {
     @State private var active = false
     @State private var until = ""
-    @State private var plan = ""
+    @State private var price = ""
     @State private var cardInfo: CardDto? = nil
     @State private var cardBusy = false
     @State private var cardError: String? = nil
@@ -39,7 +39,7 @@ struct SubscriptionView: View {
                     HStack {
                         Text("Тарифный план").font(Theme.sans(Theme.fontMd, .bold)).foregroundStyle(Theme.text)
                         Spacer(minLength: 8)
-                        Text(plan.isEmpty ? "—" : plan).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
+                        Text(price.isEmpty ? "—" : price).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
                     }
                 }
                 .padding(16)
@@ -94,7 +94,7 @@ struct SubscriptionView: View {
     private func load() async {
         do {
             if let s = try await Api.fetchSubscription() {
-                active = s.active; until = s.until ?? ""; plan = s.plan ?? ""
+                active = s.active; until = s.until ?? ""; price = s.price ?? ""
                 autoPay = s.autoPay
             }
         } catch {}

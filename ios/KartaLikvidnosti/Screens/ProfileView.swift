@@ -14,7 +14,7 @@ struct ProfileView: View {
     @State private var avatar: URL? = nil
     @State private var subActive = false
     @State private var subUntil = ""
-    @State private var subPlan = ""
+    @State private var subPrice = ""
     @State private var instruments: [InstrumentDto] = []
     @State private var history: [ReportDto] = []
     @State private var sortOpen = false
@@ -52,6 +52,7 @@ struct ProfileView: View {
             }
             .padding(.bottom, Theme.navBarClearance)
         }
+        .refreshable { await load() }
         #if DEBUG
         .onAppear {
             // -kl_scroll instruments|history — для скриншотов длинного экрана.
@@ -102,7 +103,7 @@ struct ProfileView: View {
                     HStack {
                         Text("Тарифный план").font(Theme.sans(Theme.fontMd, .bold)).foregroundStyle(Theme.text)
                         Spacer(minLength: 8)
-                        Text(subPlan.isEmpty ? "Не определен" : subPlan).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
+                        Text(subPrice.isEmpty ? "Не определен" : subPrice).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
                     }
                 }
                 .padding(.horizontal, 16)
@@ -111,7 +112,7 @@ struct ProfileView: View {
             .padding(.top, 16)
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
             .padding(.top, 24)
-            if subPlan.isEmpty {
+            if subPrice.isEmpty {
                 Text("После определение тарифа Вам придет уведомление и стоимость")
                     .font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
                     .frame(maxWidth: 300, alignment: .leading)
@@ -227,7 +228,7 @@ struct ProfileView: View {
                 HStack {
                     Text("Тарифный план").font(Theme.sans(Theme.fontMd, .bold)).foregroundStyle(Theme.text)
                     Spacer(minLength: 8)
-                    Text(subPlan.isEmpty ? "—" : subPlan).font(Theme.sans(Theme.fontBase)).foregroundStyle(caption)
+                    Text(subPrice.isEmpty ? "—" : subPrice).font(Theme.sans(Theme.fontBase)).foregroundStyle(caption)
                 }
                 .frame(height: 20)
             }
@@ -424,7 +425,7 @@ struct ProfileView: View {
 
     private func apply(_ p: ProfileResponse) {
         if let u = p.user { tag = u.username ?? tag; if let a = u.avatarUrl { avatar = fileURL(a) } }
-        if let s = p.subscription { subActive = s.active; subUntil = s.until ?? ""; subPlan = s.plan ?? "" }
+        if let s = p.subscription { subActive = s.active; subUntil = s.until ?? ""; subPrice = s.price ?? "" }
         instruments = p.instruments
     }
 

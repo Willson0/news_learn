@@ -1,9 +1,10 @@
 import SwiftUI
 
+/// Применённые фильтры. Пустой список или `nil` означает «по этому фильтру ничего не фильтруем».
 struct FiltersResult {
     let instruments: [String]
     let statuses: [String]
-    let dateMode: String
+    let dateMode: String?
     /// Произвольный диапазон (YYYY-MM-DD); без него действует период `dateMode`.
     let dateStart: String?
     let dateEnd: String?
@@ -12,29 +13,44 @@ struct FiltersResult {
 /// Лист фильтров «Аналитика фильтры». Показывается поверх экрана с
 /// затемнением (см. `FiltersOverlay`).
 struct FiltersSheet: View {
+    /// Уже применённые фильтры: лист открывается с ними, а не со сброшенным состоянием.
+    let initial: FiltersResult
     let onApply: (FiltersResult) -> Void
     let onClose: () -> Void
 
-    @State private var instruments: [InstrumentDto] = [
-        .init(key: "gold", label: "Золото", on: true),
-        .init(key: "silver", label: "Серебро", on: false),
-        .init(key: "platinum", label: "Платина", on: true),
-        .init(key: "wti", label: "Нефть WTI", on: false),
-        .init(key: "brent", label: "Нефть Brent", on: true),
-        .init(key: "eurusd", label: "EUR/USD", on: false),
-        .init(key: "gas", label: "Нат. газ", on: false),
-        .init(key: "btc", label: "Биткоин", on: false),
-    ]
-    @State private var statuses: [InstrumentDto] = [
-        .init(key: "hot", label: "С пылу с жару", on: true),
-        .init(key: "actual", label: "Актуальное", on: true),
-        .init(key: "inactual", label: "Не актуально", on: true),
-        .init(key: "archive", label: "Архивное", on: false),
-    ]
-    @State private var dateMode = "week"
-    @State private var dateStart: String? = nil
-    @State private var dateEnd: String? = nil
+    @State private var instruments: [InstrumentDto]
+    @State private var statuses: [InstrumentDto]
+    @State private var dateMode: String?
+    @State private var dateStart: String?
+    @State private var dateEnd: String?
     @State private var calendarOpen = false
+
+    private static let instrumentOptions: [(key: String, label: String)] = [
+        ("gold", "Золото"), ("silver", "Серебро"), ("platinum", "Платина"), ("wti", "Нефть WTI"),
+        ("brent", "Нефть Brent"), ("eurusd", "EUR/USD"), ("gas", "Нат. газ"), ("btc", "Биткоин"),
+    ]
+    private static let statusOptions: [(key: String, label: String)] = [
+        ("hot", "С пылу с жару"), ("actual", "Актуальное"), ("inactual", "Не актуально"), ("archive", "Архивное"),
+    ]
+
+    init(initial: FiltersResult, onApply: @escaping (FiltersResult) -> Void, onClose: @escaping () -> Void) {
+        self.initial = initial
+        self.onApply = onApply
+        self.onClose = onClose
+        _instruments = State(initialValue: Self.options(Self.instrumentOptions, selected: initial.instruments))
+        _statuses = State(initialValue: Self.options(Self.statusOptions, selected: initial.statuses))
+        _dateMode = State(initialValue: initial.dateMode)
+        _dateStart = State(initialValue: initial.dateStart)
+        _dateEnd = State(initialValue: initial.dateEnd)
+    }
+
+    private static func options(_ list: [(key: String, label: String)], selected: [String]) -> [InstrumentDto] {
+        list.map { InstrumentDto(key: $0.key, label: $0.label, on: selected.contains($0.key)) }
+    }
+
+    private var dateModeBinding: Binding<String> {
+        Binding(get: { dateMode ?? "" }, set: { dateMode = $0 })
+    }
 
     private static let shortMonths = ["ЯНВ", "ФЕВ", "МАР", "АПР", "МАЙ", "ИЮН",
                                       "ИЮЛ", "АВГ", "СЕН", "ОКТ", "НОЯ", "ДЕК"]
@@ -110,7 +126,7 @@ struct FiltersSheet: View {
                     }
                     .padding(.top, 40)
 
-                    SegmentedControl(selection: $dateMode, options: [
+                    SegmentedControl(selection: dateModeBinding, options: [
                         ("week", "Неделя"), ("month", "Месяц"), ("year", "Год"),
                     ], highlight: rangeLabel.isEmpty)
                     .padding(.top, 24)
@@ -180,6 +196,7 @@ struct FiltersSheet: View {
 /// Затемнение rgba(7,7,7,0.71) с размытием 6.45 и лист фильтров от y=172.
 struct FiltersOverlay: View {
     @Binding var isOpen: Bool
+    let applied: FiltersResult
     let onApply: (FiltersResult) -> Void
 
     var body: some View {
@@ -193,7 +210,7 @@ struct FiltersOverlay: View {
                 .onTapGesture { close() }
                 .transition(.opacity)
 
-                FiltersSheet(onApply: onApply, onClose: close)
+                FiltersSheet(initial: applied, onApply: onApply, onClose: close)
                     .padding(.top, 172)
                     .transition(.move(edge: .bottom))
             }

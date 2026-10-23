@@ -165,6 +165,8 @@ struct InstrumentsResponse: Decodable {
 struct SubscriptionDto: Decodable {
     let active: Bool
     let plan: String?
+    /// Стоимость для отображения, например «990 ₽ / 1 мес.».
+    let price: String?
     let until: String?
     let autoPay: Bool
     let paymentMethod: String?
@@ -173,12 +175,13 @@ struct SubscriptionDto: Decodable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         active = (try c.decodeIfPresent(Bool.self, forKey: .active)) ?? false
         plan = try c.decodeIfPresent(String.self, forKey: .plan)
+        price = try c.decodeIfPresent(String.self, forKey: .price)
         until = try c.decodeIfPresent(String.self, forKey: .until)
         autoPay = (try c.decodeIfPresent(Bool.self, forKey: .autoPay)) ?? false
         paymentMethod = try c.decodeIfPresent(String.self, forKey: .paymentMethod)
     }
     enum CodingKeys: String, CodingKey {
-        case active, plan, until
+        case active, plan, price, until
         case autoPay = "auto_pay"
         case paymentMethod = "payment_method"
     }

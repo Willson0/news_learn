@@ -38,6 +38,7 @@ struct HomeView: View {
         .withGlassNavBar()
         .onAppear(perform: seed)
         .task(id: filter) { await load() }
+        .refreshable { await load() }
     }
 
     /// Мгновенно показываем предзагруженную ленту (фильтр «все»), чтобы без скелетона.
