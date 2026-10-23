@@ -57,7 +57,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun AdminsScreen(onBack: () -> Unit, onLeftAdmin: () -> Unit) {
     val admins = remember { mutableStateListOf<AdminDto>() }
-    var telegramId by remember { mutableStateOf("") }
+    var tag by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var adding by remember { mutableStateOf(false) }
     var confirmFor by remember { mutableStateOf<AdminDto?>(null) }
@@ -79,9 +79,9 @@ fun AdminsScreen(onBack: () -> Unit, onLeftAdmin: () -> Unit) {
     LaunchedEffect(Unit) { reload() }
 
     fun add() {
-        val id = telegramId.trim()
-        if (!id.matches(Regex("^\\d+$"))) {
-            error = "Telegram ID состоит только из цифр"
+        val value = tag.trim()
+        if (!value.matches(Regex("^@?[\\p{L}\\p{N}_.]{1,64}$"))) {
+            error = "Укажите тег пользователя, например @ivan"
             return
         }
         if (adding) return
@@ -89,11 +89,11 @@ fun AdminsScreen(onBack: () -> Unit, onLeftAdmin: () -> Unit) {
         error = null
         scope.launch {
             try {
-                Repository.addAdmin(id)
-                telegramId = ""
+                Repository.addAdmin(value)
+                tag = ""
                 reload()
             } catch (ex: ApiException) {
-                error = ex.fieldError("telegram_id") ?: ex.message
+                error = ex.fieldError("tag") ?: ex.message
             } catch (ex: Exception) {
                 error = "Не удалось добавить"
             } finally {
@@ -144,17 +144,17 @@ fun AdminsScreen(onBack: () -> Unit, onLeftAdmin: () -> Unit) {
     ) {
         Text("Администраторы", style = AppFont.heading(T.FsTitle))
         Text(
-            "Админы видят админ-панель: создают и редактируют отчёты, настраивают чаты и отвечают в личных чатах. Добавить нового админа можно по его Telegram ID.",
+            "Админы видят админ-панель: создают и редактируют отчёты, настраивают чаты и отвечают в личных чатах. Добавить нового админа можно по его тегу из профиля, например @ivan.",
             style = AppFont.sans(T.FsBase, color = T.TextSecondary).copy(lineHeight = 19.sp),
         )
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             AppInput(
-                telegramId,
-                { telegramId = it; error = null },
-                placeholder = "Telegram ID",
+                tag,
+                { tag = it; error = null },
+                placeholder = "Тег, например @ivan",
                 error = error != null,
-                keyboardType = KeyboardType.Number,
+                keyboardType = KeyboardType.Ascii,
                 modifier = Modifier.weight(1f),
             )
             Box(
@@ -203,7 +203,7 @@ private fun AdminRow(a: AdminDto, isMe: Boolean, removing: Boolean, onRemove: ()
                 if (isMe) Text("(вы)", style = AppFont.sans(T.FsSm, color = T.TextSecondary))
             }
             Text(
-                "ID ${a.telegramId}" + (a.username?.let { " · $it" } ?: ""),
+                a.username ?: "ID ${a.telegramId}",
                 style = AppFont.sans(T.FsSm, color = T.TextSecondary),
             )
         }

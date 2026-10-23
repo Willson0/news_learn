@@ -271,7 +271,7 @@ class ChangePasswordBody(
 )
 
 @Serializable
-class AddAdminBody(@SerialName("telegram_id") val telegramId: String, val name: String? = null)
+class AddAdminBody(val tag: String, val name: String? = null)
 
 @Serializable
 class DeviceBody(val token: String, val platform: String = "android")

@@ -167,8 +167,8 @@ object Repository {
 
     // --- Админка ---
     suspend fun admins(): List<AdminDto> = apiCall { api.admins().data ?: emptyList() }
-    suspend fun addAdmin(telegramId: String, name: String? = null): AdminDto? =
-        apiCall { api.addAdmin(AddAdminBody(telegramId, name)).data }
+    suspend fun addAdmin(tag: String, name: String? = null): AdminDto? =
+        apiCall { api.addAdmin(AddAdminBody(tag, name)).data }
     suspend fun removeAdmin(telegramId: String) = apiCall { api.removeAdmin(telegramId) }
 
     suspend fun createReport(parts: List<MultipartBody.Part>): ReportDto? =

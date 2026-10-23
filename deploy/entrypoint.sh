@@ -6,6 +6,9 @@ cd /app/backend
 # Папки storage (том монтируется пустым при первом запуске)
 mkdir -p storage/app/private storage/framework/cache/data storage/framework/sessions \
          storage/framework/views storage/logs database/data
+# Файл лога создаём сразу и даём права, чтобы он появился даже до первой записи.
+touch storage/logs/laravel.log
+chmod -R ug+rwX storage/logs
 
 # APP_KEY: если не задан в .env — генерируем один раз и храним в томе storage
 if [ -z "$APP_KEY" ]; then
