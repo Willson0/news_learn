@@ -217,6 +217,7 @@ class UserProfileDto(
 @Serializable
 class AdminDto(
     val id: Long? = null,
+    val email: String? = null,
     @SerialName("telegram_id") val telegramId: String? = null,
     val name: String? = null,
     val username: String? = null,
@@ -274,7 +275,7 @@ class ChangePasswordBody(
 )
 
 @Serializable
-class AddAdminBody(val tag: String, val name: String? = null)
+class AddAdminBody(val email: String, val name: String? = null)
 
 @Serializable
 class DeviceBody(val token: String, val platform: String = "android")
