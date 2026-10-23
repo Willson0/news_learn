@@ -34,6 +34,8 @@ import app.karta.likvidnosti.data.api.SubscriptionDto
 import app.karta.likvidnosti.data.api.TokenResponse
 import app.karta.likvidnosti.data.api.UserDto
 import app.karta.likvidnosti.data.api.apiCall
+import app.karta.likvidnosti.data.api.DocumentDto
+import app.karta.likvidnosti.push.Push
 import okhttp3.MultipartBody
 
 /** Полный URL файла, который бэкенд отдаёт относительной ссылкой. */
@@ -54,6 +56,7 @@ object Repository {
     private fun applyToken(resp: TokenResponse): UserDto? {
         TokenStore.token = resp.token
         Session.setCurrent(resp.user)
+        Push.syncToken()
         return resp.user
     }
 
@@ -78,12 +81,16 @@ object Repository {
 
     suspend fun logout() {
         try {
+            Push.unregisterCurrent()
             apiCall { api.logout() }
         } finally {
             TokenStore.token = null
             Session.clear()
         }
     }
+
+    /** Документы из админки (соглашение и др.). Пустой список — приложение покажет встроенный текст. */
+    suspend fun documents(): List<DocumentDto> = apiCall { api.documents().data ?: emptyList() }
 
     // --- Отчёты ---
     suspend fun reports(

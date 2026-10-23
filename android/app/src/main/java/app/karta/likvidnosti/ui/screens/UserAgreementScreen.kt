@@ -1,14 +1,26 @@
 package app.karta.likvidnosti.ui.screens
 
+import android.net.Uri
+import androidx.browser.customtabs.CustomTabsIntent
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.karta.likvidnosti.data.Repository
+import app.karta.likvidnosti.data.api.DocumentDto
 import app.karta.likvidnosti.ui.components.InnerScreen
 import app.karta.likvidnosti.ui.theme.AppFont
 import app.karta.likvidnosti.ui.theme.T
@@ -50,16 +62,39 @@ private val SECTIONS = listOf(
     ),
 )
 
-/** Пользовательское соглашение (iOS UserAgreementView): статический экран с прокруткой. */
+/**
+ * Пользовательское соглашение. Документы берутся из админки (GET /documents) и открываются
+ * ссылками в браузере внутри приложения. Если список пуст или не загрузился, показываем встроенный текст.
+ */
 @Composable
 fun UserAgreementScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    var documents by remember { mutableStateOf<List<DocumentDto>>(emptyList()) }
+
+    LaunchedEffect(Unit) {
+        documents = runCatching { Repository.documents() }.getOrDefault(emptyList())
+    }
+
     InnerScreen(onBack = onBack, spacing = 18.dp) {
         Text("Пользовательское соглашение", style = AppFont.heading(T.FsTitle))
-        Text("Последнее обновление: 17.10.2026", style = AppFont.sans(T.FsSm, color = T.TextMuted))
-        SECTIONS.forEach { section ->
-            Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(section.title, style = AppFont.sans(T.FsMd, FontWeight.Bold))
-                Text(section.body, style = AppFont.sans(T.FsBase, color = T.TextSecondary).copy(lineHeight = 20.sp))
+        if (documents.isNotEmpty()) {
+            documents.forEach { doc ->
+                Text(
+                    doc.title,
+                    style = AppFont.sans(T.FsMd, FontWeight.Medium, color = T.Text),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(doc.url)) }
+                        .padding(vertical = 8.dp),
+                )
+            }
+        } else {
+            Text("Последнее обновление: 17.10.2026", style = AppFont.sans(T.FsSm, color = T.TextMuted))
+            SECTIONS.forEach { section ->
+                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(section.title, style = AppFont.sans(T.FsMd, FontWeight.Bold))
+                    Text(section.body, style = AppFont.sans(T.FsBase, color = T.TextSecondary).copy(lineHeight = 20.sp))
+                }
             }
         }
     }

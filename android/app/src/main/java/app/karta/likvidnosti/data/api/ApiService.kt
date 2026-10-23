@@ -4,6 +4,7 @@ import okhttp3.MultipartBody
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.HTTP
 import retrofit2.http.Multipart
 import retrofit2.http.POST
 import retrofit2.http.PUT
@@ -163,4 +164,14 @@ interface ApiService {
     @Multipart
     @POST("admin/chats/{slug}")
     suspend fun updateChat(@Path("slug") slug: String, @Part parts: List<MultipartBody.Part>): DataWrapper<ChatItemDto>
+
+    // --- Push и документы ---
+    @POST("devices")
+    suspend fun registerDevice(@Body body: DeviceBody): StatusResponse
+
+    @HTTP(method = "DELETE", path = "devices", hasBody = true)
+    suspend fun unregisterDevice(@Body body: DeviceBody): StatusResponse
+
+    @GET("documents")
+    suspend fun documents(): DataWrapper<List<DocumentDto>>
 }

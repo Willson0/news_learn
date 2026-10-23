@@ -272,3 +272,10 @@ class ChangePasswordBody(
 
 @Serializable
 class AddAdminBody(@SerialName("telegram_id") val telegramId: String, val name: String? = null)
+
+@Serializable
+class DeviceBody(val token: String, val platform: String = "android")
+
+/** Документ из админки: открывается по ссылке внутри приложения. */
+@Serializable
+class DocumentDto(val title: String, val url: String)

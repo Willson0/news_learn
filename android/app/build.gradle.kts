@@ -5,6 +5,12 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+// Push (FCM) включается, когда в app/ лежит google-services.json из консоли Firebase.
+// Без файла приложение собирается и работает, просто без push.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 android {
     namespace = "app.karta.likvidnosti"
     compileSdk = 35
@@ -82,6 +88,9 @@ dependencies {
 
     implementation(libs.coil.compose)
     implementation(libs.androidx.browser)
+
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
 
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 }
