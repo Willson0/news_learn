@@ -1,16 +1,18 @@
 <?php
 
 use App\Http\Controllers\AccountController;
-use App\Http\Controllers\BillingController;
 use App\Http\Controllers\Admin;
 use App\Http\Controllers\AuthController;
-use App\Http\Controllers\YandexAuthController;
+use App\Http\Controllers\BillingController;
 use App\Http\Controllers\ChatController;
+use App\Http\Controllers\DeviceController;
+use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\InstrumentController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SubscriptionController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\YandexAuthController;
 use Illuminate\Support\Facades\Route;
 
 // Проверка доступности API.
@@ -42,6 +44,8 @@ Route::get('/billing/card/return', [BillingController::class, 'return']);
 
 // Публичные справочники (нужны и на экране входа).
 Route::get('/instruments', [InstrumentController::class, 'index']);
+// Документы (пользовательское соглашение и др.): приложение открывает их ссылками внутри себя.
+Route::get('/documents', [DocumentController::class, 'index']);
 
 // Файлы отчётов и фото чатов — без токена, чтобы открывать их в <img>/<iframe>.
 Route::get('/reports/{report}/cover', [ReportController::class, 'cover']);
@@ -79,6 +83,10 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::get('/billing/card', [BillingController::class, 'card']);
     Route::post('/billing/card/bind', [BillingController::class, 'bind']);
     Route::delete('/billing/card', [BillingController::class, 'unbind']);
+
+    // Push-уведомления: регистрация FCM-токена устройства.
+    Route::post('/devices', [DeviceController::class, 'store']);
+    Route::delete('/devices', [DeviceController::class, 'destroy']);
 
     // Подписка.
     Route::get('/subscription', [SubscriptionController::class, 'show']);

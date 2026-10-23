@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\PanelAdmin;
 use App\Models\User;
 
 return [
@@ -42,6 +43,11 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+        // Веб-админка: вход логином и паролем, отдельно от пользователей приложения.
+        'panel' => [
+            'driver' => 'session',
+            'provider' => 'panel_admins',
+        ],
     ],
 
     /*
@@ -62,6 +68,11 @@ return [
     */
 
     'providers' => [
+        'panel_admins' => [
+            'driver' => 'eloquent',
+            'model' => PanelAdmin::class,
+        ],
+
         'users' => [
             'driver' => 'eloquent',
             'model' => env('AUTH_MODEL', User::class),

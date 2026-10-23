@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Invoice;
 use App\Models\User;
+use App\Services\InvoiceService;
 use App\Services\SubscriptionBilling;
 use App\Services\YookassaClient;
 use Illuminate\Http\JsonResponse;
@@ -19,9 +21,11 @@ class BillingController extends Controller
 {
     public const PURPOSE = 'card_bind';
 
-    public function __construct(private YookassaClient $yookassa, private SubscriptionBilling $billing)
-    {
-    }
+    public function __construct(
+        private YookassaClient $yookassa,
+        private SubscriptionBilling $billing,
+        private InvoiceService $invoices,
+    ) {}
 
     public function card(Request $request): JsonResponse
     {
@@ -110,6 +114,20 @@ class BillingController extends Controller
 
         $payment = $this->yookassa->fetchPayment($paymentId);
         $purpose = $payment['metadata']['purpose'] ?? null;
+
+        // Счёт, выставленный админом: успешная оплата активирует подписку по условиям счёта.
+        if ($purpose === InvoiceService::PURPOSE) {
+            $invoice = Invoice::with('user')->find((int) ($payment['metadata']['invoice_id'] ?? 0));
+            if ($invoice && $invoice->status === Invoice::PENDING) {
+                if (($payment['status'] ?? null) === 'succeeded') {
+                    $this->invoices->markPaid($invoice, $payment);
+                } elseif (($payment['status'] ?? null) === 'canceled') {
+                    $invoice->update(['status' => Invoice::CANCELED]);
+                }
+            }
+
+            return response()->noContent();
+        }
 
         // Списание подписки: успех продлевает доступ, отказ (например, нет денег) — отключает.
         if ($purpose === SubscriptionBilling::PURPOSE) {

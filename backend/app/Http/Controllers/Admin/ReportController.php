@@ -7,6 +7,7 @@ use App\Http\Controllers\ReportController as PublicReportController;
 use App\Models\Chat;
 use App\Models\Instrument;
 use App\Models\Report;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -32,7 +33,7 @@ class ReportController extends Controller
                 'body' => $data['description'],
                 'chart_url' => $data['chart_url'] ?? null,
                 'instrument_id' => $this->instrumentId($data['instrument']),
-                'created_by' => $request->user()->id,
+                'created_by' => $request->user() instanceof User ? $request->user()->id : null,
                 'badge' => 'Актуальный',
                 'status' => 'actual',
                 'published_at' => now()->toDateString(),
