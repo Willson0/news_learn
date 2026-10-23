@@ -8,7 +8,8 @@
 	encode zstd gzip
 
 	# Laravel API (и служебный /up для проверки здоровья)
-	@backend path /api/* /up
+	# Админка (/admin) и её API тоже идут в Laravel, а не в статику Vue.
+	@backend path /api/* /up /admin /admin/* /build/*
 	handle @backend {
 		root * /app/backend/public
 		php_server
