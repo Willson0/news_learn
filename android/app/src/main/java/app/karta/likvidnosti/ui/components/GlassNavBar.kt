@@ -1,7 +1,11 @@
 package app.karta.likvidnosti.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.scaleIn
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.spring
@@ -21,6 +25,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -165,17 +170,29 @@ fun GlassNavBar(
                 }
             }
             if (extra != null && !restricted) {
-                Box(
-                    modifier = Modifier
-                        .size(64.dp)
-                        .liquidGlass(CircleShape, GlassFill(T.SurfaceMuted))
-                        .pressable {
-                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            extra.onClick()
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    AppIcon(extra.icon, size = extra.iconSize)
+                // Кнопка появляется при каждом входе на вкладку (кнопка «+» в отчётах,
+                // чат в профиле): Figma SMART_ANIMATE / DISSOLVE 800 мс, ease-in-out-back.
+                key(current) {
+                    val appear = remember { MutableTransitionState(false) }
+                    LaunchedEffect(Unit) { appear.targetState = true }
+                    AnimatedVisibility(
+                        visibleState = appear,
+                        enter = fadeIn(tween(800, easing = EaseOutFigma)) +
+                            scaleIn(tween(800, easing = EaseInOutBack), initialScale = 0.6f),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(64.dp)
+                                .liquidGlass(CircleShape, GlassFill(T.SurfaceMuted))
+                                .pressable {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    extra.onClick()
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            AppIcon(extra.icon, size = extra.iconSize)
+                        }
+                    }
                 }
             }
         }

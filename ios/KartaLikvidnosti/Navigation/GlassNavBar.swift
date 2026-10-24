@@ -32,6 +32,8 @@ struct GlassNavBar: View {
     /// Положение линзы: при появлении стартует с прошлой вкладки и переезжает
     /// на текущую.
     @State private var lensTab: Tab?
+    /// Появление дополнительной кнопки при входе на вкладку (Figma 800 мс, ease-in-out-back).
+    @State private var extraShown = false
     @Namespace private var ns
 
     private static let allItems: [(tab: Tab, icon: IconDef, x: CGFloat)] = [
@@ -64,6 +66,10 @@ struct GlassNavBar: View {
                         .liquidGlass(Circle(), fill: Theme.surfaceMuted, interactive: true)
                 }
                 .buttonStyle(PressableStyle())
+                .scaleEffect(extraShown ? 1 : 0.6)
+                .animation(.timingCurve(0.68, -0.55, 0.265, 1.55, duration: 0.8), value: extraShown)
+                .opacity(extraShown ? 1 : 0)
+                .animation(.easeOut(duration: 0.8), value: extraShown)
             }
         }
         .padding(.bottom, 45)
@@ -80,6 +86,7 @@ struct GlassNavBar: View {
         .onAppear {
             let from = router.previousTab ?? router.tab
             lensTab = from
+            extraShown = true
             guard from != router.tab else { return }
             withAnimation(.spring(response: 0.42, dampingFraction: 0.78)) { lensTab = router.tab }
         }
