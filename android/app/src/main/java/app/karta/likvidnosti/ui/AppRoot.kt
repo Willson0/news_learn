@@ -96,21 +96,15 @@ fun AppRoot() {
     val restricted = Session.restricted
 
     // Без подписки главная и аналитика недоступны — открываем «Сообщество»
-    // (iOS MainFlow.enforceRestriction). После оплаты возвращаем на главную.
-    var wasRestricted by remember { mutableStateOf(restricted) }
+    // (iOS MainFlow.enforceRestriction). После оплаты остаёмся на месте: как в
+    // прототипе, «Профиль» раскрывается в полный, навбар — в четыре вкладки.
     LaunchedEffect(restricted, currentBase) {
         if (restricted && (currentBase == Routes.HOME || currentBase == Routes.ANALYTICS)) {
             nav.navigate(Routes.COMMUNITY) {
                 popUpTo(0) { inclusive = true }
                 launchSingleTop = true
             }
-        } else if (wasRestricted && !restricted && currentBase in Routes.ROOT) {
-            nav.navigate(Routes.HOME) {
-                popUpTo(0) { inclusive = true }
-                launchSingleTop = true
-            }
         }
-        wasRestricted = restricted
     }
 
     fun selectTab(tab: AppTab) {

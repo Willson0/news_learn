@@ -101,13 +101,14 @@ struct CommunityView: View {
             }
             .padding(.top, Theme.topBarY)
             .padding(.bottom, Theme.navBarClearance)
+            .pullToRefreshAnchor()
         }
+        .pullToRefresh { await load() }
         .ignoresSafeArea(.container, edges: .top)
         .screenBackground()
         .withGlassNavBar()
         .onAppear(perform: seed)
         .task { await load() }
-        .refreshable { await load() }
     }
 
     /// Мгновенно показываем предзагруженные чаты, чтобы без скелетона.

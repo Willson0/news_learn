@@ -54,7 +54,16 @@ object Session {
             return
         }
         // Нет записи подписки (сервер отдаёт data: null) — это неактивная подписка.
-        runCatching { Repository.subscription() }.onSuccess { subscriptionActive = it?.active ?: false }
+        runCatching { Repository.subscription() }.onSuccess { setSubscription(it?.active ?: false) }
+    }
+
+    /**
+     * Свежий статус подписки (из профиля, экрана подписки или обновления):
+     * после оплаты приложение разблокируется на месте — навбар и экраны
+     * переходят в полный режим.
+     */
+    fun setSubscription(active: Boolean) {
+        subscriptionActive = active
     }
 
     /** Подгружает пользователя, если есть токен. Тихо гасит ошибки. */

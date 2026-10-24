@@ -1,6 +1,8 @@
 package app.karta.likvidnosti.ui.components
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -17,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,19 +64,14 @@ internal object TabMemory {
 /** Круглая кнопка 64 справа от навбара (админский «+», чат на «Профиле»). */
 class NavBarExtra(val icon: IconDef, val iconSize: Dp = 30.dp, val onClick: () -> Unit)
 
-private class NavItem(val tab: AppTab, val icon: IconDef, val x: Dp)
+/** [restrictedX] — место без подписки (Figma 474:11853: навбар 120, «Сообщество» и «Профиль»), null — пункт скрыт. */
+private class NavItem(val tab: AppTab, val icon: IconDef, val x: Dp, val restrictedX: Dp?)
 
 private val AllItems = listOf(
-    NavItem(AppTab.Home, AppIcons.navHome, 12.dp),
-    NavItem(AppTab.Analytics, AppIcons.navAnalytics, 67.dp),
-    NavItem(AppTab.Community, AppIcons.navCommunity, 122.dp),
-    NavItem(AppTab.Profile, AppIcons.navProfile, 178.dp),
-)
-
-/** Без подписки (Figma 474:11853): навбар 120 — «Сообщество» и «Профиль». */
-private val RestrictedItems = listOf(
-    NavItem(AppTab.Community, AppIcons.navCommunity, 12.dp),
-    NavItem(AppTab.Profile, AppIcons.navProfile, 68.dp),
+    NavItem(AppTab.Home, AppIcons.navHome, 12.dp, null),
+    NavItem(AppTab.Analytics, AppIcons.navAnalytics, 67.dp, null),
+    NavItem(AppTab.Community, AppIcons.navCommunity, 122.dp, 12.dp),
+    NavItem(AppTab.Profile, AppIcons.navProfile, 178.dp, 68.dp),
 )
 
 /** Половина ширины кнопки 64 и зазора 13: на столько капсула смещается из центра. */
@@ -101,8 +99,17 @@ fun GlassNavBar(
     extra: NavBarExtra? = null,
 ) {
     val restricted = Session.restricted
-    val items = if (restricted) RestrictedItems else AllItems
-    val barWidth = if (restricted) 120.dp else 230.dp
+    // После оплаты навбар раскрывается на месте (SMART_ANIMATE 800 мс): капсула
+    // 120 → 230, пункты разъезжаются, главная и аналитика проявляются.
+    val barWidth by animateDpAsState(if (restricted) 120.dp else 230.dp, figmaTween(), label = "barWidth")
+    val itemX = AllItems.associate { item ->
+        val target = if (restricted) item.restrictedX ?: item.x else item.x
+        item.tab to animateDpAsState(target, figmaTween(), label = "x").value
+    }
+    val itemAlpha = AllItems.associate { item ->
+        val target = if (restricted && item.restrictedX == null) 0f else 1f
+        item.tab to animateFloatAsState(target, figmaFade(), label = "alpha").value
+    }
     val haptics = LocalHapticFeedback.current
     val shownExtra = if (restricted) null else extra
 
@@ -130,9 +137,13 @@ fun GlassNavBar(
         prevExtra != null && shownExtra == null -> -ExtraShift
         else -> 0.dp
     }
-    val barShift = startShift * (1f - p)
-    val targetX = items.firstOrNull { it.tab == current }?.x
-    val fromX = items.firstOrNull { it.tab == from }?.x ?: targetX
+    // После оплаты кнопка справа появляется так же, как при входе на вкладку:
+    // капсула уезжает из центра, кнопка проявляется на месте.
+    val unlockShift by animateDpAsState(if (restricted && extra != null) ExtraShift else 0.dp, figmaTween(), label = "unlockShift")
+    val unlockAlpha by animateFloatAsState(if (restricted) 0f else 1f, figmaFade(), label = "unlockAlpha")
+    val barShift = startShift * (1f - p) + if (shownExtra != null) unlockShift else 0.dp
+    val targetX = itemX[current]
+    val fromX = itemX[from] ?: targetX
     val lensX = if (targetX != null && fromX != null) fromX + (targetX - fromX) * p else null
     // Кнопка есть на обеих вкладках — растворяется только иконка внутри неё.
     val crossIcon = if (prevExtra != null && shownExtra != null) prevExtra else null
@@ -165,12 +176,14 @@ fun GlassNavBar(
                                 .liquidGlass(CircleShape, Fills.Active),
                         )
                     }
-                    items.forEach { item ->
+                    AllItems.forEach { item ->
+                        val hidden = restricted && item.restrictedX == null
                         Box(
                             modifier = Modifier
-                                .offset(x = item.x, y = 12.dp)
+                                .offset(x = itemX.getValue(item.tab), y = 12.dp)
+                                .graphicsLayer { alpha = itemAlpha.getValue(item.tab) }
                                 .size(40.dp)
-                                .pressable(pressAlpha = 1f) {
+                                .pressable(pressAlpha = 1f, enabled = !hidden) {
                                     if (item.tab == current) {
                                         onReselect()
                                     } else {
@@ -194,7 +207,7 @@ fun GlassNavBar(
                 if (shownExtra != null) {
                     Box(
                         modifier = Modifier
-                            .graphicsLayer { alpha = if (prevExtra == null && entering) shown else 1f }
+                            .graphicsLayer { alpha = (if (prevExtra == null && entering) shown else 1f) * unlockAlpha }
                             .size(64.dp)
                             .liquidGlass(CircleShape, GlassFill(T.SurfaceMuted))
                             .pressable {

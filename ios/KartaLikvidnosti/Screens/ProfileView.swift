@@ -51,8 +51,9 @@ struct ProfileView: View {
                 }
             }
             .padding(.bottom, Theme.navBarClearance)
+            .pullToRefreshAnchor()
         }
-        .refreshable { await load() }
+        .pullToRefresh { await load() }
         #if DEBUG
         .onAppear {
             // -kl_scroll instruments|history — для скриншотов длинного экрана.
@@ -439,7 +440,11 @@ struct ProfileView: View {
     private func load() async {
         tag = session.user?.username ?? tag
         avatar = fileURL(session.user?.avatarUrl)
-        do { apply(try await Api.fetchProfile()) } catch {}
+        do {
+            let p = try await Api.fetchProfile()
+            apply(p)
+            if let s = p.subscription { session.setSubscription(s.active) }
+        } catch {}
         do { history = try await Api.fetchReports() } catch { /* оставляем предзагруженную историю */ }
     }
 

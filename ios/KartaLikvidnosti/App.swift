@@ -39,5 +39,7 @@ struct KartaLikvidnostiApp: App {
         UINavigationBar.appearance().scrollEdgeAppearance = appearance
         UINavigationBar.appearance().compactAppearance = appearance
         UINavigationBar.appearance().tintColor = .white
+        // Системный кружок обновления прячем: вместо него стеклянный (PullToRefresh.swift).
+        UIRefreshControl.appearance().tintColor = .clear
     }
 }

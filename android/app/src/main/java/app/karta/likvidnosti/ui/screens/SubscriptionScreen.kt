@@ -76,6 +76,7 @@ fun SubscriptionScreen(onBack: () -> Unit) {
             until = it.until ?: ""
             price = it.price ?: ""
             autoPay = it.autoPay
+            Session.setSubscription(it.active)
         }
         refreshCard()
     }

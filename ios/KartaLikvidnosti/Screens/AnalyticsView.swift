@@ -57,7 +57,9 @@ struct AnalyticsView: View {
             .padding(.horizontal, Theme.screenX)
             .padding(.top, Theme.titleTop)
             .padding(.bottom, Theme.navBarClearance)
+            .pullToRefreshAnchor()
         }
+        .pullToRefresh { await load() }
         .ignoresSafeArea(.container, edges: .top)
         .screenBackground()
         .withGlassNavBar(extra: session.isAdmin
@@ -83,7 +85,6 @@ struct AnalyticsView: View {
             #endif
         }
         .task(id: filterKey) { await load() }
-        .refreshable { await load() }
     }
 
     /// Фильтры, которые уже применены: лист фильтров открывается с ними.

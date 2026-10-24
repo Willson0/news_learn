@@ -31,8 +31,21 @@ final class Session: ObservableObject {
         guard TokenStore.isAuthenticated else { subscriptionActive = nil; return }
         // Нет записи подписки (сервер отдаёт data: null) — это неактивная подписка.
         do {
-            subscriptionActive = try await Api.fetchSubscription()?.active ?? false
+            setSubscription(try await Api.fetchSubscription()?.active ?? false)
         } catch {}
+    }
+
+    /// Свежий статус подписки (из профиля, экрана подписки или обновления).
+    /// После оплаты приложение разблокируется на месте: навбар и экраны
+    /// переходят в полный режим с анимацией прототипа.
+    func setSubscription(_ active: Bool) {
+        guard subscriptionActive != active else { return }
+        let wasRestricted = restricted
+        if wasRestricted && active {
+            withAnimation(Motion.standard) { subscriptionActive = active }
+        } else {
+            subscriptionActive = active
+        }
     }
 
     /// Подгружает пользователя, если есть токен. Тихо гасит ошибки.

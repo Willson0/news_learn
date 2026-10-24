@@ -163,7 +163,10 @@ fun ProfileScreen(
     suspend fun fetch() {
         runCatching { Repository.profile() }.getOrNull()?.let { p ->
             p.user?.let { tag = it.username ?: tag; avatar = it.avatarUrl ?: avatar }
-            p.subscription?.let { subActive = it.active; subUntil = it.until ?: ""; subPrice = it.price ?: "" }
+            p.subscription?.let {
+                subActive = it.active; subUntil = it.until ?: ""; subPrice = it.price ?: ""
+                Session.setSubscription(it.active)
+            }
             instruments.clear()
             instruments.addAll(p.instruments.map { ProfInstrument(it.key, it.label, it.on) })
         }

@@ -6,16 +6,25 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -23,10 +32,20 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
+import app.karta.likvidnosti.data.Session
+import app.karta.likvidnosti.ui.theme.T
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 /** Насколько индикатор уходит вслед за пальцем (половина пути пальца). */
 private const val DRAG_FACTOR = 0.5f
+
+/** Кружок крутится не меньше этого, даже если ответ пришёл мгновенно. */
+private const val MIN_SPIN_MS = 700L
+
+/** Подложка кружка: тёмное стекло, чтобы белая дуга читалась и на фото шапки. */
+private val IndicatorFill = GlassFill(Color(0xFF313131).copy(alpha = 0.6f))
 
 /**
  * Тянуть вниз, чтобы обновить содержимое (аналог PullToRefreshBox из Material3,
@@ -35,6 +54,11 @@ private const val DRAG_FACTOR = 0.5f
  * Работает через NestedScroll в фазе pre-scroll: жест забирается до прокрутки,
  * поэтому overscroll-эффект не мешает. Тянуть можно только когда [scrollState]
  * стоит в самом верху. [content] должен прокручиваться через `verticalScroll(scrollState)`.
+ *
+ * Экраны заходят под статус-бар, поэтому кружок (стекло 40 с белой дугой, как
+ * на iOS) стоит под статус-баром: пока тянут, дуга дорисовывается, во время
+ * обновления крутится. Заодно перечитывается подписка: после оплаты обновление
+ * снимает режим «без подписки».
  */
 @Composable
 fun PullToRefreshBox(
@@ -46,15 +70,22 @@ fun PullToRefreshBox(
 ) {
     val density = LocalDensity.current
     val triggerPx = with(density) { 72.dp.toPx() }
-    val indicatorPx = with(density) { 36.dp.toPx() }
     val pull = remember { mutableFloatStateOf(0f) }
     val animator = remember { Animatable(0f) }
-    val refreshing by rememberUpdatedState(isRefreshing)
-    val refreshAction by rememberUpdatedState(onRefresh)
+    val scope = rememberCoroutineScope()
+    var holding by remember { mutableStateOf(false) }
+    val spinning = isRefreshing || holding
+    val refreshing by rememberUpdatedState(spinning)
+    val refreshAction by rememberUpdatedState {
+        holding = true
+        scope.launch { delay(MIN_SPIN_MS); holding = false }
+        scope.launch { Session.loadSubscription() }
+        onRefresh()
+    }
 
     // Обновление закончилось — плавно убираем индикатор.
-    LaunchedEffect(isRefreshing) {
-        if (!isRefreshing && pull.floatValue > 0f) {
+    LaunchedEffect(spinning) {
+        if (!spinning && pull.floatValue > 0f) {
             animator.snapTo(pull.floatValue)
             animator.animateTo(0f) { pull.floatValue = value }
         }
@@ -103,14 +134,42 @@ fun PullToRefreshBox(
         ) {
             content()
         }
-        if (pull.floatValue > 0f || refreshing) {
-            CircularProgressIndicator(
+        if (pull.floatValue > 0f || spinning) {
+            val progress = (pull.floatValue / triggerPx).coerceIn(0f, 1f)
+            Box(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .offset { IntOffset(0, (pull.floatValue - indicatorPx).roundToInt()) }
-                    .size(36.dp),
-                strokeWidth = 3.dp,
-            )
+                    .padding(top = insetTop() + 6.dp)
+                    .offset { IntOffset(0, (minOf(pull.floatValue, triggerPx) * 0.15f).roundToInt()) }
+                    .graphicsLayer {
+                        val scale = if (spinning) 1f else 0.6f + 0.4f * progress
+                        scaleX = scale
+                        scaleY = scale
+                        alpha = if (spinning) 1f else (progress * 4f).coerceAtMost(1f)
+                    }
+                    .size(40.dp)
+                    .liquidGlass(CircleShape, IndicatorFill),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (spinning) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = T.Text,
+                        strokeWidth = 2.5.dp,
+                        trackColor = Color.Transparent,
+                        strokeCap = StrokeCap.Round,
+                    )
+                } else {
+                    CircularProgressIndicator(
+                        progress = { 0.75f * progress },
+                        modifier = Modifier.size(20.dp).rotate(progress * 270f),
+                        color = T.Text,
+                        strokeWidth = 2.5.dp,
+                        trackColor = Color.Transparent,
+                        strokeCap = StrokeCap.Round,
+                    )
+                }
+            }
         }
     }
 }

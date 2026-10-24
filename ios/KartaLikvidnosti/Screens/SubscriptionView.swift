@@ -7,6 +7,7 @@ import SwiftUI
 /// «Отвязать»; без счёта — круг с «+» и «Новый счет», «Привязать»); блок
 /// «Авто-платеж» со свитчем.
 struct SubscriptionView: View {
+    @EnvironmentObject var session: Session
     @State private var active = false
     @State private var until = ""
     @State private var price = ""
@@ -96,6 +97,7 @@ struct SubscriptionView: View {
             if let s = try await Api.fetchSubscription() {
                 active = s.active; until = s.until ?? ""; price = s.price ?? ""
                 autoPay = s.autoPay
+                session.setSubscription(s.active)
             }
         } catch {}
     }

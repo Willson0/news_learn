@@ -32,13 +32,14 @@ struct HomeView: View {
             .padding(.horizontal, Theme.screenX)
             .padding(.top, Theme.titleTop)
             .padding(.bottom, Theme.navBarClearance)
+            .pullToRefreshAnchor()
         }
+        .pullToRefresh { await load() }
         .ignoresSafeArea(.container, edges: .top)
         .screenBackground()
         .withGlassNavBar()
         .onAppear(perform: seed)
         .task(id: filter) { await load() }
-        .refreshable { await load() }
     }
 
     /// Мгновенно показываем предзагруженную ленту (фильтр «все»), чтобы без скелетона.
