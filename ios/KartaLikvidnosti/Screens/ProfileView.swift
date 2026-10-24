@@ -112,6 +112,13 @@ struct ProfileView: View {
             .padding(.top, 16)
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
             .padding(.top, 24)
+            if !subUntil.isEmpty {
+                Text("Истекла \(subUntil). Чтобы продлить доступ, оплатите подписку.")
+                    .font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
+                    .frame(maxWidth: 300, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 12)
+            }
             if subPrice.isEmpty {
                 Text("После определение тарифа Вам придет уведомление и стоимость")
                     .font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)

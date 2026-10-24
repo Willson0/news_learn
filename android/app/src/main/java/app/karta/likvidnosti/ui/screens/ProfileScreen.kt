@@ -212,7 +212,7 @@ fun ProfileScreen(
                 )
 
                 if (restricted) {
-                    ConditionsBlock(subPrice, onSubscription)
+                    ConditionsBlock(subPrice, subUntil, onSubscription)
                     // Без подписки доступа к настройкам аккаунта нет: выход остаётся здесь.
                     Column(modifier = Modifier.padding(horizontal = T.ScreenX).padding(top = 24.dp)) {
                         var loggingOut by remember { mutableStateOf(false) }
@@ -417,9 +417,10 @@ private fun SubscriptionBlock(
  * «Доступный экран профиля» (Figma 474:11853, 484:13055): «Условия» Kreadon 24
  * через 40 от шапки, пояснение 14, блок подписки с «Привязать счет и
  * оплатить»; без тарифа — «Не определен» и подпись 14 белый 65 % под блоком.
+ * Если срок подписки уже закончился, показываем дату окончания.
  */
 @Composable
-private fun ConditionsBlock(price: String, onSubscription: () -> Unit) {
+private fun ConditionsBlock(price: String, until: String, onSubscription: () -> Unit) {
     Column(modifier = Modifier.padding(horizontal = T.ScreenX).padding(top = 40.dp)) {
         ScreenTitle("Условия")
         Text(
@@ -449,6 +450,13 @@ private fun ConditionsBlock(price: String, onSubscription: () -> Unit) {
                 }
             }
             AppButton("Привязать счет и оплатить", variant = ButtonVariant.Accent) { onSubscription() }
+        }
+        if (until.isNotEmpty()) {
+            Text(
+                "Истекла $until. Чтобы продлить доступ, оплатите подписку.",
+                style = AppFont.sans(T.FsBase, color = T.TextSecondary),
+                modifier = Modifier.widthIn(max = 300.dp).padding(top = 12.dp),
+            )
         }
         if (price.isEmpty()) {
             Text(
