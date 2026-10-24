@@ -182,15 +182,54 @@ struct ScreenBackdrop: View {
         ZStack(alignment: .top) {
             Theme.background
             if glow {
-                Image("BgGlow")
-                    .resizable()
-                    .scaledToFill()
+                AnimatedGlow()
                     .frame(maxWidth: .infinity)
                     .frame(height: 474)
                     .allowsHitTesting(false)
             }
         }
         .ignoresSafeArea()
+    }
+}
+
+/// Свечение вверху экрана (Figma: компонент «Frame» 498:22347 у каждого экрана).
+/// В прототипе инстанс бесконечно перебирает пять вариантов: после каждого —
+/// DISSOLVE, LINEAR, 6 с (последний возвращается к первому так же). Кадры
+/// отрисованы из геометрии вариантов: два слоя «горы», layer blur 226, группа 30%.
+/// Фаза считается от общего времени, поэтому при переходах между экранами фон
+/// продолжается без скачка. При «Уменьшении движения» — статичный первый кадр.
+struct AnimatedGlow: View {
+    private static let frames = (1...5).map { "BgGlow\($0)" }
+    private static let step: TimeInterval = 6
+    /// Общая точка отсчёта для всех экранов.
+    private static let epoch = Date()
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { context in
+            let (from, to, f) = phase(at: context.date)
+            ZStack {
+                frame(from).opacity(1 - f)
+                frame(to).opacity(f)
+            }
+        }
+    }
+
+    private func phase(at date: Date) -> (Int, Int, Double) {
+        if reduceMotion { return (0, 1, 0) }
+        let t = date.timeIntervalSince(Self.epoch) / Self.step
+        let k = Int(floor(t))
+        let n = Self.frames.count
+        let from = ((k % n) + n) % n
+        return (from, (from + 1) % n, t - floor(t))
+    }
+
+    private func frame(_ i: Int) -> some View {
+        Image(Self.frames[i])
+            .resizable()
+            .interpolation(.high)
+            .scaledToFill()
     }
 }
 

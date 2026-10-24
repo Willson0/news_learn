@@ -4,6 +4,7 @@ struct ChatInfoView: View {
     @EnvironmentObject var router: Router
     @EnvironmentObject var session: Session
     let chatId: String
+    @Namespace private var tabLens
 
     @StateObject private var audio = ChatAudio()
 
@@ -133,6 +134,8 @@ struct ChatInfoView: View {
                 .padding(.top, 40)
 
             content
+                .id(tab)
+                .transition(.opacity)
                 .padding(.top, 24)
                 .padding(.bottom, 40)
         }
@@ -153,12 +156,20 @@ struct ChatInfoView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 0) {
                     ForEach(tabs, id: \.0) { t in
-                        Button { switchTab(t.0); withAnimation { proxy.scrollTo(t.0, anchor: .center) } } label: {
+                        // Прототип: «Чат Инфа» ↔ «Чат Инфа участники/Голосовые/Файлы/Ссылки» —
+                        // плашка вкладки переезжает, содержимое растворяется: SMART_ANIMATE 800 мс.
+                        Button {
+                            withAnimation(Motion.standard) {
+                                switchTab(t.0)
+                                proxy.scrollTo(t.0, anchor: .center)
+                            }
+                        } label: {
                             Text(t.1).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
                                 .padding(.horizontal, 12).frame(height: 48)
                                 .background {
                                     if tab == t.0 {
                                         SelectionLens(radius: 20)
+                                            .matchedGeometryEffect(id: "tabLens", in: tabLens)
                                     }
                                 }
                         }

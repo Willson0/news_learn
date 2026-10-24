@@ -288,7 +288,8 @@ fun FiltersOverlay(
 ) {
     BackHandler(enabled = open) { onClose() }
     Box(modifier = Modifier.fillMaxSize()) {
-        AnimatedVisibility(visible = open, enter = fadeIn(), exit = fadeOut()) {
+        // Прототип: «Аналитика» → Chips → оверлей «Frame 287»: MOVE_IN снизу, пружина SLOW.
+        AnimatedVisibility(visible = open, enter = fadeIn(figmaSlow()), exit = fadeOut(figmaSlow())) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -299,8 +300,8 @@ fun FiltersOverlay(
         }
         AnimatedVisibility(
             visible = open,
-            enter = slideInVertically(spring(dampingRatio = 0.9f)) { it },
-            exit = slideOutVertically(spring(dampingRatio = 0.9f)) { it },
+            enter = slideInVertically(figmaSlow()) { it },
+            exit = slideOutVertically(figmaSlow()) { it },
             modifier = Modifier.padding(top = designTop(172.dp)),
         ) {
             FiltersSheet(initial = applied, onApply = onApply, onClose = onClose)

@@ -1,5 +1,7 @@
 package app.karta.likvidnosti.ui.components
 
+import android.os.SystemClock
+import android.provider.Settings
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -10,6 +12,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
@@ -19,9 +25,12 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
@@ -38,29 +47,62 @@ import kotlin.math.max
 
 /**
  * Фон экрана макета (iOS ScreenBackdrop / screenBackground()): градиент «Фон» +
- * мягкое свечение сверху (BgGlow, высота 474 от верха экрана).
+ * мягкое анимированное свечение сверху (bg_glow1…5, высота 474 от верха экрана).
  */
 fun Modifier.screenBackground(glow: Boolean = true): Modifier = composed {
-    val painter = painterResource(R.drawable.bg_glow)
+    val painters = GlowFrames.map { painterResource(it) }
     val glowHeight = statusBarTop() + (474.dp - T.DesignStatusBar)
     val glowPx = with(LocalDensity.current) { glowHeight.toPx() }
+    // Свечение перебирает пять вариантов Figma («Frame» 498:22347): DISSOLVE, LINEAR,
+    // 6 с на каждый (iOS AnimatedGlow). Фаза — от общего времени, поэтому при
+    // переходах между экранами фон продолжается без скачка. Время читается только
+    // в фазе рисования: кадр перерисовывается без рекомпозиции.
+    val context = LocalContext.current
+    val animate = remember {
+        glow && Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) != 0f
+    }
+    val clock = remember { mutableStateOf(SystemClock.uptimeMillis()) }
+    if (animate) {
+        LaunchedEffect(Unit) {
+            while (true) withFrameMillis { clock.value = SystemClock.uptimeMillis() }
+        }
+    }
     this.drawBehind {
         drawRect(T.Background)
         if (glow) {
-            val iw = painter.intrinsicSize.width
-            val ih = painter.intrinsicSize.height
-            if (iw > 0f && ih > 0f) {
-                // scaledToFill по ширине экрана и высоте 474, обрезка по рамке.
-                val scale = max(size.width / iw, glowPx / ih)
-                val dw = iw * scale
-                val dh = ih * scale
-                clipRect(0f, 0f, size.width, glowPx) {
-                    translate((size.width - dw) / 2, (glowPx - dh) / 2) {
-                        with(painter) { draw(Size(dw, dh)) }
-                    }
-                }
+            val (from, to, f) = if (animate) glowPhase(clock.value) else Triple(0, 1, 0f)
+            clipRect(0f, 0f, size.width, glowPx) {
+                drawGlowFrame(painters[from], glowPx, 1f - f)
+                if (f > 0f) drawGlowFrame(painters[to], glowPx, f)
             }
         }
+    }
+}
+
+private val GlowFrames = listOf(
+    R.drawable.bg_glow1, R.drawable.bg_glow2, R.drawable.bg_glow3, R.drawable.bg_glow4, R.drawable.bg_glow5,
+)
+private const val GlowStepMs = 6000L
+
+/** Общая точка отсчёта свечения для всех экранов. */
+private val GlowEpoch = SystemClock.uptimeMillis()
+
+private fun glowPhase(now: Long): Triple<Int, Int, Float> {
+    val t = (now - GlowEpoch).coerceAtLeast(0L)
+    val from = ((t / GlowStepMs) % GlowFrames.size).toInt()
+    return Triple(from, (from + 1) % GlowFrames.size, (t % GlowStepMs) / GlowStepMs.toFloat())
+}
+
+/** scaledToFill по ширине экрана и высоте 474, по центру рамки. */
+private fun DrawScope.drawGlowFrame(painter: Painter, glowPx: Float, alpha: Float) {
+    val iw = painter.intrinsicSize.width
+    val ih = painter.intrinsicSize.height
+    if (iw <= 0f || ih <= 0f) return
+    val scale = max(size.width / iw, glowPx / ih)
+    val dw = iw * scale
+    val dh = ih * scale
+    translate((size.width - dw) / 2, (glowPx - dh) / 2) {
+        with(painter) { draw(Size(dw, dh), alpha = alpha) }
     }
 }
 

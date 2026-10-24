@@ -76,6 +76,7 @@ private struct MainFlow: View {
     private func stack<Content: View>(_ t: Tab, @ViewBuilder _ root: () -> Content) -> some View {
         NavigationStack(path: router.path(for: t)) {
             root()
+                .environment(\.hostTab, t)
                 .toolbar(.hidden, for: .navigationBar)
                 .toolbar(.hidden, for: .tabBar)
                 .navigationDestination(for: Route.self) { route in

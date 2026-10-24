@@ -18,9 +18,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -121,6 +119,8 @@ import app.karta.likvidnosti.data.api.MessageQuoteDto
 import app.karta.likvidnosti.data.api.ParticipantDto
 import app.karta.likvidnosti.data.fileUrl
 import app.karta.likvidnosti.ui.components.AvatarCircle
+import app.karta.likvidnosti.ui.components.figmaFade
+import app.karta.likvidnosti.ui.components.figmaTween
 import app.karta.likvidnosti.ui.components.BackdropBox
 import app.karta.likvidnosti.ui.components.CapsuleShape
 import app.karta.likvidnosti.ui.components.ChatMessage
@@ -162,7 +162,7 @@ import kotlin.math.sin
 
 private val REACTIONS = listOf("👍", "❤️", "🔥", "😂", "😮", "😢", "🙏", "👏")
 private val Secondary = Color.White.copy(alpha = 0.6f)
-private val ChatSpring = spring<Float>(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow)
+private val ChatSpring = figmaTween<Float>()
 
 private fun MessageDto.toUi() = ChatMessage(
     id = id,
@@ -797,13 +797,15 @@ fun ChatScreen(
                                     else -> 12.dp
                                 }
                                 val showAvatarColumn = !m.mine && !isDirect
-                                // Появление: сообщение «всплывает» снизу с лёгким масштабом.
+                                // Появление: новое сообщение проявляется на месте, остальные сдвигаются
+                                // вверх (прототип: Чат 495:16591 → 495:17748 → 495:19021, SMART_ANIMATE
+                                // 800 мс, ease-in-out-back).
                                 val appear = remember(m.id) { Animatable(if (m.id in initialIds) 1f else 0f) }
-                                LaunchedEffect(m.id) { appear.animateTo(1f, tween(300, easing = FastOutSlowInEasing)) }
+                                LaunchedEffect(m.id) { appear.animateTo(1f, figmaTween()) }
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .animateItem()
+                                        .animateItem(placementSpec = figmaTween())
                                         .padding(top = topPad)
                                         .then(if (selectMode) Modifier.pressable(pressAlpha = 1f) { toggleSelect(m.id) } else Modifier),
                                     verticalAlignment = Alignment.Bottom,
@@ -843,12 +845,7 @@ fun ChatScreen(
                                             modifier = Modifier
                                                 .weight(1f, fill = false)
                                                 .graphicsLayer {
-                                                    alpha = if (menuFor == m.id) 0f else appear.value
-                                                    translationY = (1f - appear.value) * 16.dp.toPx()
-                                                    val s = 0.92f + 0.08f * appear.value
-                                                    scaleX = s
-                                                    scaleY = s
-                                                    transformOrigin = TransformOrigin(if (m.mine) 1f else 0f, 1f)
+                                                    alpha = if (menuFor == m.id) 0f else appear.value.coerceIn(0f, 1f)
                                                 }
                                                 .combinedClickable(
                                                     interactionSource = remember { MutableInteractionSource() },
@@ -909,11 +906,13 @@ fun ChatScreen(
                                 onResume = { resumeRecording() },
                             )
                             else -> Box(Modifier.fillMaxWidth()) {
+                                val recProgress by animateFloatAsState(if (recording) 1f else 0f, figmaTween(), label = "rec")
+                                val recShown = recProgress.coerceIn(0f, 1f)
                                 // Поле ввода остаётся в иерархии во время записи: жест
                                 // удержания микрофона продолжается, пока поверх показана
                                 // плашка записи.
                                 Row(
-                                    modifier = Modifier.fillMaxWidth().alpha(if (recording) 0f else 1f),
+                                    modifier = Modifier.fillMaxWidth().alpha(1f - recShown),
                                     verticalAlignment = Alignment.Bottom,
                                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 ) {
@@ -987,8 +986,8 @@ fun ChatScreen(
                                             )
                                             AnimatedVisibility(
                                                 visible = showSend,
-                                                enter = scaleIn() + fadeIn(),
-                                                exit = scaleOut() + fadeOut(),
+                                                enter = fadeIn(figmaFade()),
+                                                exit = fadeOut(figmaFade()),
                                             ) {
                                                 Box(
                                                     modifier = Modifier
@@ -1005,8 +1004,8 @@ fun ChatScreen(
 
                                     AnimatedVisibility(
                                         visible = !showSend,
-                                        enter = scaleIn() + fadeIn(),
-                                        exit = scaleOut() + fadeOut(),
+                                        enter = fadeIn(figmaFade()),
+                                        exit = fadeOut(figmaFade()),
                                     ) {
                                         Box(
                                             modifier = Modifier
@@ -1038,7 +1037,9 @@ fun ChatScreen(
                                         }
                                     }
                                 }
-                                if (recording) {
+                                // Плашка записи проявляется поверх поля (прототип: Чат 495:16053 →
+                                // 495:16591, SMART_ANIMATE 800 мс).
+                                AnimatedVisibility(visible = recording, enter = fadeIn(figmaFade()), exit = fadeOut(figmaFade())) {
                                     RecordingBar(
                                         clock = recordClock,
                                         locked = recLocked,
@@ -1058,8 +1059,9 @@ fun ChatScreen(
                         modifier = Modifier
                             .align(Alignment.BottomStart)
                             .padding(start = T.ScreenX, bottom = bottomPad + 54.dp),
-                        enter = fadeIn() + scaleIn(initialScale = 0.9f, transformOrigin = TransformOrigin(0f, 1f)),
-                        exit = fadeOut() + scaleOut(targetScale = 0.9f, transformOrigin = TransformOrigin(0f, 1f)),
+                        // Прототип: Button/add → popup/отправка, DISSOLVE 800 мс, ease-in-out-back.
+                        enter = fadeIn(figmaFade()),
+                        exit = fadeOut(figmaFade()),
                     ) {
                         Column(
                             modifier = Modifier
@@ -1155,7 +1157,8 @@ fun ChatScreen(
             }
 
             // MARK: Просмотр фото
-            AnimatedVisibility(visible = viewerMsg != null, enter = fadeIn(), exit = fadeOut()) {
+            // Прототип: сообщение с фото → «Чат нажатие на фото» и назад — 800 мс.
+            AnimatedVisibility(visible = viewerMsg != null, enter = fadeIn(figmaFade()), exit = fadeOut(figmaFade())) {
                 val vm = remember { mutableStateOf<ChatMessage?>(null) }
                 viewerMsg?.let { vm.value = it }
                 vm.value?.let { m ->

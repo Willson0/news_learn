@@ -28,7 +28,8 @@ struct MaterialChips: View {
                         Button {
                             guard selected != item.key else { return }
                             Haptics.light()
-                            withAnimation(.spring(response: 0.38, dampingFraction: 0.78)) {
+                            // Прототип: «Слайдер» на главной, CHANGE_TO SMART_ANIMATE 800 мс.
+                            withAnimation(Motion.standard) {
                                 selected = item.key
                                 proxy.scrollTo(item.key, anchor: .center)
                             }

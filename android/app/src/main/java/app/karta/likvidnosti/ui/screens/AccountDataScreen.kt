@@ -1,5 +1,6 @@
 package app.karta.likvidnosti.ui.screens
 
+import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,6 +31,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import app.karta.likvidnosti.data.Repository
 import app.karta.likvidnosti.data.Session
+import app.karta.likvidnosti.ui.components.figmaFade
 import app.karta.likvidnosti.ui.components.AppButton
 import app.karta.likvidnosti.ui.components.ButtonVariant
 import app.karta.likvidnosti.ui.components.InnerScreen
@@ -83,12 +85,15 @@ fun AccountDataScreen(
             DataRow(if (revealed) AppIcons.eye else AppIcons.eyeClosed, { revealed = !revealed }) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("Пароль:", style = AppFont.sans(T.FsBase, color = T.TextSecondary))
-                    if (revealed) {
-                        Text("password", style = AppFont.sans(T.FsBase))
-                    } else {
-                        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                            repeat(7) {
-                                Box(Modifier.size(12.dp).clip(CircleShape).background(hex("#d9d9d9")))
+                    // Прототип: «Профиль Данные аккаунта» 484:21316 ↔ 484:21330 — 800 мс.
+                    Crossfade(targetState = revealed, animationSpec = figmaFade(), label = "password") { shown ->
+                        if (shown) {
+                            Text("password", style = AppFont.sans(T.FsBase))
+                        } else {
+                            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                repeat(7) {
+                                    Box(Modifier.size(12.dp).clip(CircleShape).background(hex("#d9d9d9")))
+                                }
                             }
                         }
                     }

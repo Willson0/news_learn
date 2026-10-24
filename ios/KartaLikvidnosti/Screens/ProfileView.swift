@@ -299,7 +299,7 @@ struct ProfileView: View {
             Spacer()
             Button {
                 Haptics.light()
-                withAnimation(.timingCurve(0.68, -0.55, 0.265, 1.55, duration: 0.8)) { sortOpen.toggle() }
+                withAnimation(Motion.standard) { sortOpen.toggle() }
             } label: {
                 Icon(AppIcons.filter, size: 16, color: Theme.text)
                     .frame(width: 48, height: 48)
@@ -324,7 +324,7 @@ struct ProfileView: View {
             ForEach(sortOptions, id: \.0) { opt in
                 Button {
                     Haptics.light()
-                    withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+                    withAnimation(Motion.standard) {
                         sort = opt.0
                         sortOpen = false
                     }

@@ -7,7 +7,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,8 +46,8 @@ fun ConfirmDialog(
     BackHandler(enabled = open) { onCancel() }
     AnimatedVisibility(
         visible = open,
-        enter = fadeIn(tween(800, easing = EaseInOutBack)),
-        exit = fadeOut(tween(800, easing = EaseInOutBack)),
+        enter = fadeIn(figmaFade()),
+        exit = fadeOut(figmaFade()),
     ) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Box(

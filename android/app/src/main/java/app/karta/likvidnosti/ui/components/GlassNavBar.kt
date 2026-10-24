@@ -1,14 +1,6 @@
 package app.karta.likvidnosti.ui.components
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.scaleIn
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.MutableTransitionState
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.VectorConverter
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -24,11 +16,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.Dp
@@ -60,6 +53,9 @@ enum class AppTab(val route: String) {
  */
 internal object TabMemory {
     var last: AppTab? = null
+
+    /** Кнопка справа у каждой вкладки, какой она была на экране (null — кнопки нет). */
+    val extras = mutableMapOf<AppTab, NavBarExtra?>()
 }
 
 /** Круглая кнопка 64 справа от навбара (админский «+», чат на «Профиле»). */
@@ -80,7 +76,11 @@ private val RestrictedItems = listOf(
     NavItem(AppTab.Profile, AppIcons.navProfile, 68.dp),
 )
 
-private val LensSpring = spring<Dp>(dampingRatio = 0.78f, stiffness = Spring.StiffnessMediumLow)
+/** Половина ширины кнопки 64 и зазора 13: на столько капсула смещается из центра. */
+private val ExtraShift = (64.dp + 13.dp) / 2
+
+/** Центр кнопки справа от центра экрана, когда группа «капсула + кнопка» по центру. */
+private val ExtraCenterX = (230.dp + 13.dp + 64.dp) / 2 - 32.dp
 
 /**
  * Нижний навбар из макета (iOS GlassNavBar): стеклянная капсула 230×64,
@@ -104,17 +104,38 @@ fun GlassNavBar(
     val items = if (restricted) RestrictedItems else AllItems
     val barWidth = if (restricted) 120.dp else 230.dp
     val haptics = LocalHapticFeedback.current
+    val shownExtra = if (restricted) null else extra
 
-    val startX = remember(restricted) {
-        val from = TabMemory.last ?: current
-        (items.firstOrNull { it.tab == from } ?: items.firstOrNull { it.tab == current })?.x ?: 12.dp
-    }
-    val lensX = remember(restricted) { Animatable(startX, Dp.VectorConverter) }
-    val targetX = items.firstOrNull { it.tab == current }?.x
-    LaunchedEffect(targetX) {
+    // Переход между вкладками в прототипе — SMART_ANIMATE 800 мс, ease-in-out-back:
+    // линза и подсветка иконки переезжают с прошлой вкладки, капсула сдвигается под
+    // новую раскладку (на «Профиле» уезжает влево, освобождая место кнопке чата),
+    // кнопка справа проявляется на месте, а кнопка прошлой вкладки растворяется.
+    // Проигрывается только при входе на вкладку; при возврате с внутреннего экрана
+    // (TabMemory.last == current) навбар сразу в итоговом состоянии.
+    val from = remember { TabMemory.last ?: current }
+    val entering = from != current
+    val prevExtra = remember { if (entering) TabMemory.extras[from] else null }
+    val progress = remember { Animatable(if (entering) 0f else 1f) }
+    LaunchedEffect(Unit) {
         TabMemory.last = current
-        if (targetX != null) lensX.animateTo(targetX, LensSpring)
+        if (entering) progress.animateTo(1f, tween(800, easing = EaseInOutBack))
     }
+    SideEffect { TabMemory.extras[current] = shownExtra }
+
+    val p = progress.value
+    val shown = p.coerceIn(0f, 1f)
+    val startShift = when {
+        !entering -> 0.dp
+        prevExtra == null && shownExtra != null -> ExtraShift
+        prevExtra != null && shownExtra == null -> -ExtraShift
+        else -> 0.dp
+    }
+    val barShift = startShift * (1f - p)
+    val targetX = items.firstOrNull { it.tab == current }?.x
+    val fromX = items.firstOrNull { it.tab == from }?.x ?: targetX
+    val lensX = if (targetX != null && fromX != null) fromX + (targetX - fromX) * p else null
+    // Кнопка есть на обеих вкладках — растворяется только иконка внутри неё.
+    val crossIcon = if (prevExtra != null && shownExtra != null) prevExtra else null
 
     val bottom = designBottom(T.NavBarBottom)
     Box(modifier = modifier.fillMaxWidth(), contentAlignment = Alignment.BottomCenter) {
@@ -125,74 +146,88 @@ fun GlassNavBar(
                 .height(79.dp - 7.dp + (bottom - T.NavBarBottom))
                 .background(T.BottomFade),
         )
-        Row(
-            modifier = Modifier.padding(bottom = bottom),
-            horizontalArrangement = Arrangement.spacedBy(13.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(width = barWidth, height = 64.dp)
-                    .liquidGlass(CapsuleShape, Fills.NavBar),
+        Box(modifier = Modifier.padding(bottom = bottom), contentAlignment = Alignment.Center) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(13.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (targetX != null) {
-                    Box(
-                        modifier = Modifier
-                            .offset(x = lensX.value, y = 12.dp)
-                            .size(40.dp)
-                            .liquidGlass(CircleShape, Fills.Active),
-                    )
-                }
-                items.forEach { item ->
-                    Box(
-                        modifier = Modifier
-                            .offset(x = item.x, y = 12.dp)
-                            .size(40.dp)
-                            .pressable(pressAlpha = 1f) {
-                                if (item.tab == current) {
-                                    onReselect()
-                                } else {
-                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    TabMemory.last = current
-                                    onSelect(item.tab)
-                                }
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        // Иконка чата растворяется между активным и неактивным цветом (прототип: 0.8 с).
-                        val tint by animateColorAsState(
-                            targetValue = if (item.tab == current) T.Text else T.TextMuted,
-                            animationSpec = tween(if (item.tab == AppTab.Community) 800 else 0, easing = EaseInOutBack),
-                            label = "navIconTint",
-                        )
-                        AppIcon(item.icon, size = 24.dp, tint = tint)
-                    }
-                }
-            }
-            if (extra != null && !restricted) {
-                // Кнопка появляется при каждом входе на вкладку (кнопка «+» в отчётах,
-                // чат в профиле): Figma SMART_ANIMATE / DISSOLVE 800 мс, ease-in-out-back.
-                key(current) {
-                    val appear = remember { MutableTransitionState(false) }
-                    LaunchedEffect(Unit) { appear.targetState = true }
-                    AnimatedVisibility(
-                        visibleState = appear,
-                        enter = fadeIn(tween(800, easing = EaseOutFigma)) +
-                            scaleIn(tween(800, easing = EaseInOutBack), initialScale = 0.6f),
-                    ) {
+                Box(
+                    modifier = Modifier
+                        .offset(x = barShift)
+                        .size(width = barWidth, height = 64.dp)
+                        .liquidGlass(CapsuleShape, Fills.NavBar),
+                ) {
+                    if (lensX != null) {
                         Box(
                             modifier = Modifier
-                                .size(64.dp)
-                                .liquidGlass(CircleShape, GlassFill(T.SurfaceMuted))
-                                .pressable {
-                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    extra.onClick()
+                                .offset(x = lensX, y = 12.dp)
+                                .size(40.dp)
+                                .liquidGlass(CircleShape, Fills.Active),
+                        )
+                    }
+                    items.forEach { item ->
+                        Box(
+                            modifier = Modifier
+                                .offset(x = item.x, y = 12.dp)
+                                .size(40.dp)
+                                .pressable(pressAlpha = 1f) {
+                                    if (item.tab == current) {
+                                        onReselect()
+                                    } else {
+                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        TabMemory.last = current
+                                        onSelect(item.tab)
+                                    }
                                 },
                             contentAlignment = Alignment.Center,
                         ) {
-                            AppIcon(extra.icon, size = extra.iconSize)
+                            // Подсветка иконки растворяется вместе с переездом линзы.
+                            val tint = when (item.tab) {
+                                current -> lerp(if (entering) T.TextMuted else T.Text, T.Text, shown)
+                                from -> lerp(T.Text, T.TextMuted, shown)
+                                else -> T.TextMuted
+                            }
+                            AppIcon(item.icon, size = 24.dp, tint = tint)
                         }
                     }
+                }
+                if (shownExtra != null) {
+                    Box(
+                        modifier = Modifier
+                            .graphicsLayer { alpha = if (prevExtra == null && entering) shown else 1f }
+                            .size(64.dp)
+                            .liquidGlass(CircleShape, GlassFill(T.SurfaceMuted))
+                            .pressable {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                shownExtra.onClick()
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (crossIcon != null) {
+                            Box(Modifier.graphicsLayer { alpha = 1f - shown }) {
+                                AppIcon(crossIcon.icon, size = crossIcon.iconSize)
+                            }
+                            Box(Modifier.graphicsLayer { alpha = shown }) {
+                                AppIcon(shownExtra.icon, size = shownExtra.iconSize)
+                            }
+                        } else {
+                            AppIcon(shownExtra.icon, size = shownExtra.iconSize)
+                        }
+                    }
+                }
+            }
+            // Кнопка прошлой вкладки растворяется там, где стояла (слой без пары на
+            // новом кадре Figma SMART_ANIMATE исчезает на месте).
+            if (shownExtra == null && prevExtra != null && shown < 1f) {
+                Box(
+                    modifier = Modifier
+                        .offset(x = ExtraCenterX)
+                        .graphicsLayer { alpha = 1f - shown }
+                        .size(64.dp)
+                        .liquidGlass(CircleShape, GlassFill(T.SurfaceMuted)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    AppIcon(prevExtra.icon, size = prevExtra.iconSize)
                 }
             }
         }

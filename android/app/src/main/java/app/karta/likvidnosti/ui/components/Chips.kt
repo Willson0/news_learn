@@ -1,8 +1,6 @@
 package app.karta.likvidnosti.ui.components
 
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -55,7 +53,8 @@ val MATERIALS = listOf(
     MaterialItem("btc", "Биткоин", AppIcons.matBtc),
 )
 
-private val LensSpringF = spring<Float>(dampingRatio = 0.78f, stiffness = Spring.StiffnessMediumLow)
+/** Прототип: «Слайдер» на главной, CHANGE_TO SMART_ANIMATE 800 мс, ease-in-out-back. */
+private val LensSpringF = figmaTween<Float>()
 
 /**
  * Горизонтальная лента чипов материалов (iOS MaterialChips): стеклянная

@@ -168,7 +168,8 @@ fun AppInput(
     }
 }
 
-private val SwitchSpring = spring<Dp>(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow)
+/** Прототип: «Профиль push-уведомления», Button/Switch — SMART_ANIMATE 800 мс. */
+private val SwitchSpring = figmaTween<Dp>()
 
 /**
  * Button/Switch: капсула 50×30 со стеклом. Вкл — «active» и белый кружок

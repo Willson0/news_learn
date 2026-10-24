@@ -92,7 +92,7 @@ struct ChatView: View {
         .ignoresSafeArea(.container, edges: [.top, .bottom])
         .toolbar(.hidden, for: .navigationBar)
         .overlay { if menuFor != nil { contextMenuOverlay.transition(.opacity) } }
-        .overlay { if photoViewerURL != nil { photoViewerOverlay } }
+        .overlay { if photoViewerURL != nil { photoViewerOverlay.transition(.opacity) } }
         .overlay(alignment: .top) {
             if let toast {
                 GlassLabel(text: toast, height: 32, font: Theme.sans(Theme.fontBase))
@@ -103,10 +103,14 @@ struct ChatView: View {
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: menuFor)
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: deleteMenu)
         .animation(.spring(response: 0.32, dampingFraction: 0.85), value: selectMode)
-        .animation(.spring(response: 0.32, dampingFraction: 0.85), value: audio.recording)
-        .animation(.spring(response: 0.32, dampingFraction: 0.85), value: recordLocked)
-        .animation(.spring(response: 0.32, dampingFraction: 0.85), value: audio.paused)
-        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: attachOpen)
+        // Прототип: запись голосового (Чат 495:16053 → 495:16591), замок/пауза и
+        // попап «+» (popup/отправка) — SMART_ANIMATE / DISSOLVE 800 мс, ease-in-out-back.
+        .animation(Motion.standard, value: audio.recording)
+        .animation(Motion.standard, value: recordLocked)
+        .animation(Motion.standard, value: audio.paused)
+        .animation(Motion.standard, value: attachOpen)
+        // Просмотр фото (Чат 495:20480 → «Чат нажатие на фото» и назад) — 800 мс.
+        .animation(Motion.standard, value: photoViewerURL)
         .animation(.easeOut(duration: 0.2), value: toast)
         .fileImporter(isPresented: $fileImporterOpen, allowedContentTypes: [.item], allowsMultipleSelection: false) { result in
             handleFileImport(result)
@@ -250,7 +254,9 @@ struct ChatView: View {
                     .padding(.horizontal, Theme.screenX)
                     .padding(.top, contentTop)
                     .frame(minHeight: geo.size.height, alignment: .bottom)
-                    .animation(.spring(response: 0.35, dampingFraction: 0.82), value: visibleMessages.count)
+                    // Новое сообщение проявляется на месте, остальные сдвигаются вверх
+                    // (прототип: Чат 495:16591 → 495:17748 → 495:19021, 800 мс, ease-in-out-back).
+                    .animation(Motion.standard, value: visibleMessages.count)
                 }
                 .scrollDismissesKeyboard(.interactively)
                 .onChange(of: visibleMessages.count) { _ in
@@ -306,10 +312,7 @@ struct ChatView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { if selectMode { toggleSelect(m.id) } }
-        .transition(.asymmetric(
-            insertion: .move(edge: .bottom).combined(with: .opacity)
-                .combined(with: .scale(scale: 0.92, anchor: m.mine ? .bottomTrailing : .bottomLeading)),
-            removal: .opacity))
+        .transition(.opacity)
     }
 
     @ViewBuilder private func messageAvatar(_ m: ChatMessage) -> some View {
@@ -407,7 +410,7 @@ struct ChatView: View {
                     attachMenu
                         .fixedSize()
                         .offset(y: -54)
-                        .transition(.scale(scale: 0.9, anchor: .bottomLeading).combined(with: .opacity))
+                        .transition(.opacity)
                 }
             }
             .zIndex(1)
@@ -430,7 +433,7 @@ struct ChatView: View {
                                 .background(Theme.green, in: Circle())
                         }
                         .buttonStyle(PressableStyle())
-                        .transition(.scale.combined(with: .opacity))
+                        .transition(.opacity)
                     }
                 }
             }
@@ -446,10 +449,12 @@ struct ChatView: View {
             }
 
             if !showSend {
-                micButton.transition(.scale.combined(with: .opacity))
+                micButton.transition(.opacity)
             }
         }
-        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: showSend)
+        // Кнопка отправки появляется в поле ввода, кнопка голосового растворяется
+        // (прототип: Чат 495:14425 → 495:15022, SMART_ANIMATE 800 мс).
+        .animation(Motion.standard, value: showSend)
     }
 
     /// Цитата ответа внутри поля ввода (Figma 337:30778).

@@ -137,7 +137,8 @@ struct AppToggle: View {
         .buttonStyle(.plain)
         .opacity(disabled ? 0.5 : 1)
         .disabled(disabled)
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isOn)
+        // Прототип: «Профиль push-уведомления», Button/Switch — SMART_ANIMATE 800 мс.
+        .animation(Motion.standard, value: isOn)
     }
 
     private struct Track: ViewModifier {

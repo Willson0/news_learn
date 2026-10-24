@@ -28,7 +28,10 @@ struct AccountDataView: View {
                     row(icon: AppIcons.pencil, action: { router.push(.accountChange(field: "phone")) }) {
                         valueText("Номер телефона:", phone)
                     }
-                    row(icon: passwordRevealed ? AppIcons.eye : AppIcons.eyeClosed, action: { passwordRevealed.toggle() }) {
+                    row(icon: passwordRevealed ? AppIcons.eye : AppIcons.eyeClosed, action: {
+                        // Прототип: «Профиль Данные аккаунта» 484:21316 ↔ 484:21330 — 800 мс.
+                        withAnimation(Motion.standard) { passwordRevealed.toggle() }
+                    }) {
                         HStack(spacing: 4) {
                             Text("Пароль:").foregroundStyle(Theme.textSecondary)
                             if passwordRevealed {

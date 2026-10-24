@@ -4,9 +4,7 @@ import android.annotation.SuppressLint
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -58,6 +56,7 @@ import app.karta.likvidnosti.data.fileUrl
 import app.karta.likvidnosti.ui.components.BackdropBox
 import app.karta.likvidnosti.ui.components.CandlestickChart
 import app.karta.likvidnosti.ui.components.GlassCircleButton
+import app.karta.likvidnosti.ui.components.figmaSlow
 import app.karta.likvidnosti.ui.components.GlassLabel
 import app.karta.likvidnosti.ui.components.GlassTopBar
 import app.karta.likvidnosti.ui.components.ReportActionButton
@@ -78,7 +77,8 @@ private val DEMO_REPORT = ReportDto(
     material = "wti",
 )
 
-private val HeroSpring = spring<Dp>(dampingRatio = 0.88f, stiffness = Spring.StiffnessMediumLow)
+/** Прототип: «Аналитика отчет» 484:13666 ↔ 484:13689 — SMART_ANIMATE, пружина SLOW (≈1.25 с). */
+private val HeroSpring = figmaSlow<Dp>()
 
 /**
  * «Аналитика отчет» (iOS ReportDetailView): размытая обложка (blur 25 +
@@ -147,10 +147,10 @@ fun ReportDetailScreen(
                             if (!url.isNullOrEmpty()) runCatching { uriHandler.openUri(url) } else graphOpen = !graphOpen
                         }
                     }
-                    AnimatedVisibility(visible = reportOpen, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+                    AnimatedVisibility(visible = reportOpen, enter = expandVertically(figmaSlow()) + fadeIn(figmaSlow()), exit = shrinkVertically(figmaSlow()) + fadeOut(figmaSlow())) {
                         ReportBody(report, Modifier.padding(horizontal = T.ScreenX).padding(top = 24.dp))
                     }
-                    AnimatedVisibility(visible = graphOpen, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+                    AnimatedVisibility(visible = graphOpen, enter = expandVertically(figmaSlow()) + fadeIn(figmaSlow()), exit = shrinkVertically(figmaSlow()) + fadeOut(figmaSlow())) {
                         CandlestickChart(modifier = Modifier.fillMaxWidth().padding(top = 24.dp))
                     }
                 }

@@ -69,8 +69,10 @@ struct ReportDetailView: View {
             }
             .ignoresSafeArea(.container, edges: .top)
         }
-        .animation(.spring(response: 0.4, dampingFraction: 0.88), value: graphOpen)
-        .animation(.spring(response: 0.4, dampingFraction: 0.88), value: reportOpen)
+        // Прототип: «Аналитика отчет» 484:13666 ↔ 484:13689 (Button chart) — обложка
+        // сжимается, график раскрывается: SMART_ANIMATE, пружина SLOW (≈1.25 с).
+        .animation(Motion.slow, value: graphOpen)
+        .animation(Motion.slow, value: reportOpen)
         .fullScreenCover(isPresented: $htmlOpen) {
             if let url = report.htmlUrl { HtmlReportView(url: url) }
         }

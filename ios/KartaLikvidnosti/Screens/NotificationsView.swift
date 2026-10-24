@@ -51,7 +51,10 @@ struct NotificationsView: View {
             .padding(.bottom, 40)
         }
         .screenBackground()
-        .animation(.easeOut(duration: 0.2), value: allNotifications)
+        // Прототип: «Профиль push-уведомления» 484:21266 ↔ 484:21302 — блок схлопывается,
+        // ниже всё подтягивается: SMART_ANIMATE 800 мс, ease-in-out-back.
+        .animation(Motion.standard, value: allNotifications)
+        .animation(Motion.standard, value: byInstrument)
         .task { await load() }
         .onChange(of: allNotifications) { v in Task { try? await Api.updateNotifications(["all": v]) } }
         .onChange(of: byInstrument) { v in Task { try? await Api.updateNotifications(["by_instrument": v]) } }

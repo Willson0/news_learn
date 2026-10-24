@@ -5,7 +5,6 @@ package app.karta.likvidnosti.ui.screens
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -63,7 +62,7 @@ import app.karta.likvidnosti.ui.components.TabScaffold
 import app.karta.likvidnosti.ui.components.liquidGlass
 import app.karta.likvidnosti.ui.components.pressable
 import app.karta.likvidnosti.ui.icons.AppIcon
-import app.karta.likvidnosti.ui.components.EaseInOutBack
+import app.karta.likvidnosti.ui.components.figmaFade
 import app.karta.likvidnosti.ui.components.PullToRefreshBox
 import app.karta.likvidnosti.ui.icons.AppIcons
 import app.karta.likvidnosti.ui.theme.AppFont
@@ -487,8 +486,8 @@ private fun SettingRow(label: String, onClick: () -> Unit) {
 private fun AnimatedSortPopup(visible: Boolean, sort: String, modifier: Modifier, onSelect: (String) -> Unit) {
     AnimatedVisibility(
         visible = visible,
-        enter = fadeIn(tween(800, easing = EaseInOutBack)),
-        exit = fadeOut(tween(800, easing = EaseInOutBack)),
+        enter = fadeIn(figmaFade()),
+        exit = fadeOut(figmaFade()),
         modifier = modifier,
     ) {
         SortPopup(sort, onSelect)

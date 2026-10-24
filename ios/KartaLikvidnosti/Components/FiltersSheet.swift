@@ -216,7 +216,9 @@ struct FiltersOverlay: View {
             }
         }
         .ignoresSafeArea(.container, edges: .top)
-        .animation(.spring(response: 0.42, dampingFraction: 0.9), value: isOpen)
+        // Прототип: «Аналитика» → Chips → оверлей «Frame 287»: MOVE_IN снизу,
+        // пружина SLOW (≈1.25 с), затемнение под листом.
+        .animation(Motion.slow, value: isOpen)
     }
 
     private func close() { isOpen = false }

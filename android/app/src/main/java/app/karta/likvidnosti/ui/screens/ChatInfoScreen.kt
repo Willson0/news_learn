@@ -5,6 +5,8 @@ import android.content.Intent
 import android.media.MediaPlayer
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -24,6 +26,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -35,8 +38,10 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,9 +51,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.karta.likvidnosti.data.Repository
@@ -65,6 +74,8 @@ import app.karta.likvidnosti.ui.components.GlassBackButton
 import app.karta.likvidnosti.ui.components.GlassCircleButton
 import app.karta.likvidnosti.ui.components.RemoteImage
 import app.karta.likvidnosti.ui.components.ReportCover
+import app.karta.likvidnosti.ui.components.figmaFade
+import app.karta.likvidnosti.ui.components.figmaTween
 import app.karta.likvidnosti.ui.components.liquidGlass
 import app.karta.likvidnosti.ui.components.pressable
 import app.karta.likvidnosti.ui.icons.AppIcon
@@ -74,7 +85,7 @@ import app.karta.likvidnosti.ui.theme.T
 import app.karta.likvidnosti.ui.theme.designTop
 import app.karta.likvidnosti.ui.theme.hex
 import kotlin.math.abs
-import androidx.compose.runtime.rememberCoroutineScope
+import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
 private val INFO_TABS = listOf(
@@ -277,24 +288,56 @@ fun ChatInfoScreen(
                                 .liquidGlass(T.ShapeCard)
                                 .clip(T.ShapeCard),
                         ) {
-                            Row(modifier = Modifier.horizontalScroll(rememberScrollState()).padding(4.dp)) {
-                                INFO_TABS.forEach { (key, label) ->
+                            // Прототип: «Чат Инфа» ↔ «Чат Инфа участники/Голосовые/Файлы/Ссылки» —
+                            // плашка вкладки переезжает и меняет ширину: SMART_ANIMATE 800 мс.
+                            val tabBounds = remember { mutableStateMapOf<String, Pair<Int, Int>>() }
+                            val lensX = remember { Animatable(0f) }
+                            val lensW = remember { Animatable(0f) }
+                            var lensReady by remember { mutableStateOf(false) }
+                            val target = tabBounds[tab]
+                            LaunchedEffect(target) {
+                                val (x, w) = target ?: return@LaunchedEffect
+                                if (!lensReady) {
+                                    lensX.snapTo(x.toFloat()); lensW.snapTo(w.toFloat()); lensReady = true
+                                } else {
+                                    launch { lensX.animateTo(x.toFloat(), figmaTween()) }
+                                    lensW.animateTo(w.toFloat(), figmaTween())
+                                }
+                            }
+                            val density = LocalDensity.current
+                            Box(modifier = Modifier.horizontalScroll(rememberScrollState()).padding(4.dp)) {
+                                if (lensReady) {
                                     Box(
                                         modifier = Modifier
+                                            .offset { IntOffset(lensX.value.roundToInt(), 0) }
+                                            .width(with(density) { lensW.value.coerceAtLeast(0f).toDp() })
                                             .height(48.dp)
-                                            .then(
-                                                if (tab == key) Modifier.liquidGlass(RoundedCornerShape(20.dp), Fills.Purple) else Modifier,
-                                            )
-                                            .pressable(pressAlpha = 1f) { tab = key }
-                                            .padding(horizontal = 12.dp),
-                                        contentAlignment = Alignment.Center,
-                                    ) { Text(label, style = AppFont.sans(T.FsBase)) }
+                                            .liquidGlass(RoundedCornerShape(20.dp), Fills.Purple),
+                                    )
+                                }
+                                Row {
+                                    INFO_TABS.forEach { (key, label) ->
+                                        Box(
+                                            modifier = Modifier
+                                                .height(48.dp)
+                                                .onPlaced { tabBounds[key] = it.positionInParent().x.roundToInt() to it.size.width }
+                                                .pressable(pressAlpha = 1f) { tab = key }
+                                                .padding(horizontal = 12.dp),
+                                            contentAlignment = Alignment.Center,
+                                        ) { Text(label, style = AppFont.sans(T.FsBase)) }
+                                    }
                                 }
                             }
                         }
 
-                        Box(modifier = Modifier.padding(top = 24.dp, bottom = 40.dp)) {
-                            when (tab) {
+                        // Содержимое вкладки растворяется (SMART_ANIMATE 800 мс).
+                        Crossfade(
+                            targetState = tab,
+                            animationSpec = figmaFade(),
+                            modifier = Modifier.padding(top = 24.dp, bottom = 40.dp),
+                            label = "infoTab",
+                        ) { shownTab ->
+                            when (shownTab) {
                                 "members" -> ListBlock(
                                     participants.filter { matches(it.name, it.username) },
                                     empty = "Пока нет участников",

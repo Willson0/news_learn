@@ -34,10 +34,24 @@ enum AuthRoute: Hashable {
 final class Router: ObservableObject {
     @Published var authed: Bool
     @Published var tab: Tab = .home {
-        didSet { if oldValue != tab { previousTab = oldValue } }
+        didSet {
+            guard oldValue != tab else { return }
+            previousTab = oldValue
+            tabEntry += 1
+            entryAtRoot = (paths[tab] ?? []).isEmpty
+        }
     }
     /// Вкладка, с которой пришли, — линза навбара переезжает с неё.
     private(set) var previousTab: Tab?
+    /// Счётчик входов на вкладку. Навбар корневого экрана анимирует переход только
+    /// один раз на каждый вход, а не при каждом onAppear (возврат с pushed-экрана,
+    /// повторное появление в TabView).
+    private(set) var tabEntry = 0
+    /// Вкладка открылась сразу корневым экраном (без сохранённого стека).
+    private(set) var entryAtRoot = true
+    /// Дополнительная кнопка навбара каждой вкладки, какой она была на экране:
+    /// навбар новой вкладки начинает анимацию с раскладки предыдущей.
+    var navExtras: [Tab: GlassNavBar.Extra] = [:]
     /// У каждой вкладки системного TabView свой стек pushed-экранов.
     @Published var paths: [Tab: [Route]] = [:]
     @Published var authPath: [AuthRoute] = []

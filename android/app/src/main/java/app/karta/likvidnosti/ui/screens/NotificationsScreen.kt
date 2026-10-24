@@ -29,6 +29,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import app.karta.likvidnosti.data.Repository
+import app.karta.likvidnosti.ui.components.figmaFade
 import app.karta.likvidnosti.ui.components.AppToggle
 import app.karta.likvidnosti.ui.components.FlowLayout
 import app.karta.likvidnosti.ui.components.InnerScreen
@@ -83,7 +84,13 @@ fun NotificationsScreen(onBack: () -> Unit) {
                 all = it
                 scope.launch { runCatching { Repository.updateNotifications(all = it) } }
             }
-            AnimatedVisibility(visible = !all, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
+            // Прототип: «Профиль push-уведомления» 484:21266 ↔ 484:21302 — строка схлопывается,
+            // ниже всё подтягивается: SMART_ANIMATE 800 мс, ease-in-out-back.
+            AnimatedVisibility(
+                visible = !all,
+                enter = fadeIn(figmaFade()) + expandVertically(figmaFade()),
+                exit = fadeOut(figmaFade()) + shrinkVertically(figmaFade()),
+            ) {
                 SwitchRow("Только по инструментам", byInstrument) {
                     byInstrument = it
                     scope.launch { runCatching { Repository.updateNotifications(byInstrument = it) } }
