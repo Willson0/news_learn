@@ -39,6 +39,8 @@ class SubscriptionBilling
             orderId: $orderId,
             description: 'Подписка «Карта ликвидности»',
             customerKey: TbankClient::customerKey($user->id),
+            initiator: 'R',
+            email: $user->email,
         );
 
         $charge = $this->tbank->charge((string) $init['PaymentId'], (string) $user->tbank_rebill_id);

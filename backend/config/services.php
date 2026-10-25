@@ -54,6 +54,9 @@ return [
         'subscription_amount' => (int) env('TBANK_SUBSCRIPTION_AMOUNT', 299),
         'subscription_months' => (int) env('TBANK_SUBSCRIPTION_MONTHS', 1),
         'app_scheme' => env('TBANK_APP_SCHEME', 'karta'),
+        // Чек 54-ФЗ (если на терминале включена фискализация): osn, usn_income, usn_income_outcome, esn, patent.
+        'taxation' => env('TBANK_TAXATION'),
+        'tax' => env('TBANK_TAX', 'none'),
     ],
 
     // Firebase Cloud Messaging (push в мобильных приложениях).

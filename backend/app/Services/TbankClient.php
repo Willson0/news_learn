@@ -26,13 +26,21 @@ class TbankClient
     }
 
     /**
-     * Инициирует платёж и возвращает страницу оплаты. С $recurrent платёж сохранит карту
-     * и вернёт RebillId, по которому потом списываются регулярные платежи.
+     * Инициирует платёж и возвращает страницу оплаты. С $recurrent платёж сохранит карту:
+     * RebillId придёт в уведомлении об успешной оплате, по нему потом списываются регулярные платежи.
      *
      * @return array<string, mixed>
      */
-    public function init(int $amount, string $orderId, string $description, ?string $customerKey = null, bool $recurrent = false, ?string $successUrl = null): array
-    {
+    public function init(
+        int $amount,
+        string $orderId,
+        string $description,
+        ?string $customerKey = null,
+        bool $recurrent = false,
+        ?string $successUrl = null,
+        ?string $initiator = null,
+        ?string $email = null,
+    ): array {
         $params = [
             'Amount' => $this->kopecks($amount),
             'OrderId' => $orderId,
@@ -46,6 +54,27 @@ class TbankClient
         }
         if ($recurrent) {
             $params['Recurrent'] = 'Y';
+        }
+        // Тип инициатора для операций по сохранённой карте: R — регулярное списание без участия клиента.
+        if ($initiator !== null) {
+            $params['OperationInitiatorType'] = $initiator;
+        }
+        // Чек 54-ФЗ: передаём, только если в настройках задана система налогообложения.
+        $taxation = (string) config('services.tbank.taxation');
+        if ($taxation !== '' && $email !== null && $email !== '') {
+            $params['Receipt'] = [
+                'Email' => $email,
+                'Taxation' => $taxation,
+                'Items' => [[
+                    'Name' => mb_substr($description, 0, 128),
+                    'Price' => $this->kopecks($amount),
+                    'Quantity' => 1,
+                    'Amount' => $this->kopecks($amount),
+                    'Tax' => (string) config('services.tbank.tax', 'none'),
+                    'PaymentMethod' => 'full_payment',
+                    'PaymentObject' => 'service',
+                ]],
+            ];
         }
 
         return $this->send('Init', $params);
@@ -87,6 +116,10 @@ class TbankClient
     {
         $token = $payload['Token'] ?? null;
         if (! is_string($token) || $token === '' || (string) config('services.tbank.password') === '') {
+            return false;
+        }
+        // Уведомление должно относиться к нашему терминалу.
+        if ((string) ($payload['TerminalKey'] ?? '') !== (string) config('services.tbank.terminal_key')) {
             return false;
         }
 

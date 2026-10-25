@@ -60,6 +60,7 @@ class BillingController extends Controller
                 description: 'Привязка карты',
                 customerKey: TbankClient::customerKey($user->id),
                 recurrent: true,
+                email: $user->email,
             );
         } catch (RuntimeException $e) {
             Log::error('Т-Касса: не создан платёж привязки карты', ['user_id' => $user->id, 'error' => $e->getMessage()]);
@@ -124,7 +125,7 @@ class BillingController extends Controller
 
         $paymentId = (string) ($payload['PaymentId'] ?? '');
         if ($paymentId !== '') {
-            $this->settle($paymentId);
+            $this->settle($paymentId, $payload);
         }
 
         // Т-Касса повторяет уведомление, пока не получит ответ OK.
@@ -133,8 +134,12 @@ class BillingController extends Controller
 
     /**
      * Применяет актуальное состояние платежа в зависимости от назначения, которое закодировано в OrderId.
+     * Статус берём из GetState, а данные сохранённой карты (RebillId, Pan) — из подписанного уведомления:
+     * Т-Касса передаёт их именно в уведомлении.
+     *
+     * @param  array<string, mixed>  $notification
      */
-    private function settle(string $paymentId): void
+    private function settle(string $paymentId, array $notification): void
     {
         try {
             $state = $this->tbank->getState($paymentId);
@@ -142,6 +147,17 @@ class BillingController extends Controller
             Log::error('Т-Касса: не удалось получить состояние платежа', ['payment_id' => $paymentId, 'error' => $e->getMessage()]);
 
             return;
+        }
+
+        // Уведомление и GetState должны относиться к одному платежу.
+        if ((string) ($state['PaymentId'] ?? $paymentId) !== $paymentId) {
+            return;
+        }
+        $state['PaymentId'] = $paymentId;
+        foreach (['RebillId', 'Pan', 'CardId', 'OrderId'] as $field) {
+            if (empty($state[$field]) && isset($notification[$field]) && is_scalar($notification[$field])) {
+                $state[$field] = (string) $notification[$field];
+            }
         }
 
         if (! preg_match('/^(inv|bind|renew)-(\d+)-/', (string) ($state['OrderId'] ?? ''), $m)) {
@@ -200,9 +216,12 @@ class BillingController extends Controller
         }
 
         $status = $state['Status'] ?? null;
+        $state['PaymentId'] = $paymentId;
         if ($status === TbankClient::SUCCESS_STATUS) {
-            $this->applyCardBind($user, $state);
-            Cache::forget($key);
+            // Без RebillId в ответе GetState ждём уведомление: карту сохранит вебхук.
+            if ($this->applyCardBind($user, $state, quiet: true)) {
+                Cache::forget($key);
+            }
         } elseif (in_array($status, TbankClient::FAILED_STATUSES, true)) {
             Cache::forget($key);
         }
@@ -213,19 +232,22 @@ class BillingController extends Controller
      * и списывает подписку сразу, если её ещё нет или она отключена.
      *
      * @param  array<string, mixed>  $state
+     * @return bool  карта сохранена (сейчас или раньше)
      */
-    private function applyCardBind(User $user, array $state): void
+    private function applyCardBind(User $user, array $state, bool $quiet = false): bool
     {
-        $rebillId = $state['RebillId'] ?? null;
-        if (! is_string($rebillId) || $rebillId === '') {
-            Log::warning('Т-Касса: платёж привязки без RebillId', ['user_id' => $user->id, 'payment_id' => $state['PaymentId'] ?? null]);
+        $rebillId = isset($state['RebillId']) && is_scalar($state['RebillId']) ? (string) $state['RebillId'] : '';
+        if ($rebillId === '') {
+            if (! $quiet) {
+                Log::warning('Т-Касса: платёж привязки без RebillId', ['user_id' => $user->id, 'payment_id' => $state['PaymentId'] ?? null]);
+            }
 
-            return;
+            return false;
         }
 
         // Уже привязана эта карта: повторное уведомление ничего не меняет.
         if ($user->tbank_rebill_id === $rebillId) {
-            return;
+            return true;
         }
 
         $user->forceFill([
@@ -250,6 +272,8 @@ class BillingController extends Controller
                 Log::warning('Подписка не списана после привязки карты', ['user_id' => $user->id, 'error' => $e->getMessage()]);
             }
         }
+
+        return true;
     }
 
     private function pendingKey(User $user): string

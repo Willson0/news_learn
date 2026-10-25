@@ -121,6 +121,49 @@ class BillingCardTest extends TestCase
             && $request->data()['PaymentId'] === 'pay-1');
     }
 
+    public function test_webhook_takes_rebill_id_from_notification_when_get_state_has_none(): void
+    {
+        $user = $this->demo();
+        $user->subscription()->update(['active' => false]);
+        $payload = $this->signed([
+            'TerminalKey' => 'test-terminal', 'OrderId' => 'bind-'.$user->id.'-n', 'Success' => true,
+            'Status' => 'CONFIRMED', 'PaymentId' => 777, 'ErrorCode' => '0', 'Amount' => 100,
+            'RebillId' => 145919, 'CardId' => 9001, 'Pan' => '553691******1448', 'ExpDate' => '1130',
+        ]);
+        Http::fake([
+            self::API.'/GetState' => Http::response([
+                'Success' => true, 'Status' => 'CONFIRMED', 'PaymentId' => '777', 'OrderId' => 'bind-'.$user->id.'-n',
+            ]),
+            self::API.'/Cancel' => Http::response(['Success' => true, 'Status' => 'REFUNDED']),
+            self::API.'/Init' => Http::response(['Success' => true, 'Status' => 'NEW', 'PaymentId' => 'pay-sub']),
+            self::API.'/Charge' => Http::response(['Success' => true, 'Status' => 'CONFIRMED', 'PaymentId' => 'pay-sub']),
+        ]);
+
+        $this->postJson('/api/tbank/webhook', $payload)->assertOk();
+
+        $user->refresh();
+        $this->assertSame('145919', $user->tbank_rebill_id);
+        $this->assertSame('1448', $user->card_last4);
+
+        // Подписки не было: сразу списали её по сохранённой карте как регулярный платёж.
+        Http::assertSent(fn ($r) => $r->url() === self::API.'/Init' && ($r->data()['OperationInitiatorType'] ?? null) === 'R'
+            && ! isset($r->data()['Recurrent']));
+        Http::assertSent(fn ($r) => $r->url() === self::API.'/Charge' && $r->data()['RebillId'] === '145919');
+        $this->assertTrue($user->subscription->fresh()->active);
+    }
+
+    public function test_webhook_from_another_terminal_is_refused(): void
+    {
+        Http::fake();
+        $payload = $this->signed([
+            'TerminalKey' => 'other-terminal', 'OrderId' => 'bind-'.$this->demo()->id.'-x',
+            'Status' => 'CONFIRMED', 'PaymentId' => 'pay-x',
+        ]);
+
+        $this->postJson('/api/tbank/webhook', $payload)->assertForbidden();
+        Http::assertNothingSent();
+    }
+
     public function test_webhook_with_wrong_signature_is_refused(): void
     {
         Http::fake();

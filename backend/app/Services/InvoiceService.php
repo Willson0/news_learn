@@ -44,6 +44,7 @@ class InvoiceService
                 description: "Подписка «Карта ликвидности», {$months} мес.",
                 customerKey: TbankClient::customerKey($user->id),
                 recurrent: true,
+                email: $user->email,
             );
         } catch (\Throwable $e) {
             // Платёж в Т-Кассе не создан: пустой счёт не оставляем.
@@ -164,9 +165,10 @@ class InvoiceService
             ]);
 
             // Карта, сохранённая этим платежом (RebillId), нужна для автопродления по этим же условиям.
-            if (is_string($state['RebillId'] ?? null) && $state['RebillId'] !== '') {
+            $rebillId = isset($state['RebillId']) && is_scalar($state['RebillId']) ? (string) $state['RebillId'] : '';
+            if ($rebillId !== '') {
                 $user->forceFill([
-                    'tbank_rebill_id' => $state['RebillId'],
+                    'tbank_rebill_id' => $rebillId,
                     'card_brand' => null,
                     'card_last4' => TbankClient::cardLast4($state),
                     'card_bound_at' => now(),
