@@ -87,11 +87,11 @@ interface ApiService {
     @PUT("subscription")
     suspend fun updateSubscription(@Body body: SubscriptionBody): StatusResponse
 
-    /** Привязанная карта YooKassa (bound = false, если карты нет). */
+    /** Привязанная карта Т-Кассы (bound = false, если карты нет). */
     @GET("billing/card")
     suspend fun billingCard(): BillingCardDto
 
-    /** Ссылка подтверждения YooKassa, по которой открывается привязка карты. */
+    /** Ссылка на страницу Т-Кассы, по которой открывается привязка карты. */
     @POST("billing/card/bind")
     suspend fun bindCard(): BillingBindDto
 

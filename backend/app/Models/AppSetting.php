@@ -36,7 +36,7 @@ class AppSetting extends Model
     /** Цена периода по умолчанию, рубли. Меняется в настройках админки. */
     public static function defaultPrice(): int
     {
-        return (int) self::get('default_price', (int) config('services.yookassa.subscription_amount'));
+        return (int) self::get('default_price', (int) config('services.tbank.subscription_amount'));
     }
 
     /**
@@ -55,6 +55,6 @@ class AppSetting extends Model
     /** Срок периода по умолчанию, месяцы. */
     public static function defaultMonths(): int
     {
-        return (int) self::get('default_months', (int) config('services.yookassa.subscription_months', 1));
+        return (int) self::get('default_months', (int) config('services.tbank.subscription_months', 1));
     }
 }

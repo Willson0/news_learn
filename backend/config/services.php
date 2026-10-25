@@ -42,15 +42,18 @@ return [
         'app_scheme' => env('YANDEX_APP_SCHEME', 'karta'),
     ],
 
-    'yookassa' => [
-        'shop_id' => env('YOOKASSA_SHOP_ID'),
-        'secret_key' => env('YOOKASSA_SECRET_KEY'),
-        'api_base' => env('YOOKASSA_API_BASE', 'https://api.yookassa.ru/v3'),
-        'return_url' => env('YOOKASSA_RETURN_URL', 'https://wilflw.ru/api/billing/card/return'),
-        'bind_amount' => env('YOOKASSA_BIND_AMOUNT', '1.00'),
-        'subscription_amount' => env('YOOKASSA_SUBSCRIPTION_AMOUNT', '299.00'),
-        'subscription_months' => (int) env('YOOKASSA_SUBSCRIPTION_MONTHS', 1),
-        'app_scheme' => env('YOOKASSA_APP_SCHEME', 'karta'),
+    // Т-Касса (бывш. Тинькофф Касса): платежи, привязка карты и автопродление.
+    'tbank' => [
+        'terminal_key' => env('TBANK_TERMINAL_KEY'),
+        'password' => env('TBANK_PASSWORD'),
+        'api_base' => env('TBANK_API_BASE', 'https://securepay.tinkoff.ru/v2'),
+        'notification_url' => env('TBANK_NOTIFICATION_URL', 'https://wilflw.ru/api/tbank/webhook'),
+        'return_url' => env('TBANK_RETURN_URL', 'https://wilflw.ru/api/billing/card/return'),
+        'fail_url' => env('TBANK_FAIL_URL', 'https://wilflw.ru/api/billing/card/return?status=cancel'),
+        'bind_amount' => (int) env('TBANK_BIND_AMOUNT', 1),              // рубли, возвращаются после привязки
+        'subscription_amount' => (int) env('TBANK_SUBSCRIPTION_AMOUNT', 299),
+        'subscription_months' => (int) env('TBANK_SUBSCRIPTION_MONTHS', 1),
+        'app_scheme' => env('TBANK_APP_SCHEME', 'karta'),
     ],
 
     // Firebase Cloud Messaging (push в мобильных приложениях).

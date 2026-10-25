@@ -1,7 +1,7 @@
 import AuthenticationServices
 import UIKit
 
-/// Привязка карты через YooKassa: страница оплаты открывается в ASWebAuthenticationSession,
+/// Привязка карты через Т-Кассу: страница оплаты открывается в ASWebAuthenticationSession,
 /// сервер возвращает пользователя на karta://billing?status=ok|error.
 enum CardBinding {
     static let callbackScheme = "karta"

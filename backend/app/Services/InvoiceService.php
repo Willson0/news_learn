@@ -12,19 +12,19 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /**
- * Счета, которые выставляет админ: оплата через YooKassa, активация подписки и push-уведомления.
+ * Счета, которые выставляет админ: оплата через Т-Кассу, активация подписки и push-уведомления.
  */
 class InvoiceService
 {
     public const PURPOSE = 'invoice';
 
     public function __construct(
-        private YookassaClient $yookassa,
+        private TbankClient $tbank,
         private PushService $push,
     ) {}
 
     /**
-     * Выставляет счёт пользователю: создаёт платёж YooKassa с сохранением карты
+     * Выставляет счёт пользователю: создаёт платёж Т-Кассы с сохранением карты (Recurrent)
      * и отправляет пользователю ссылку на оплату push-уведомлением.
      */
     public function issue(User $user, int $amount, int $months, ?string $createdBy): Invoice
@@ -37,25 +37,24 @@ class InvoiceService
             'created_by' => $createdBy,
         ]);
 
-        $payment = $this->yookassa->createPayment([
-            'amount' => ['value' => number_format($amount, 2, '.', ''), 'currency' => 'RUB'],
-            'capture' => true,
-            'save_payment_method' => true,
-            'confirmation' => [
-                'type' => 'redirect',
-                'return_url' => (string) config('services.yookassa.return_url'),
-            ],
-            'description' => "Подписка «Карта ликвидности», {$months} мес.",
-            'metadata' => [
-                'purpose' => self::PURPOSE,
-                'invoice_id' => (string) $invoice->id,
-                'user_id' => (string) $user->id,
-            ],
-        ], 'invoice-'.$invoice->id.'-'.Str::random(8));
+        try {
+            $payment = $this->tbank->init(
+                amount: $amount,
+                orderId: 'inv-'.$invoice->id.'-'.Str::random(8),
+                description: "Подписка «Карта ликвидности», {$months} мес.",
+                customerKey: TbankClient::customerKey($user->id),
+                recurrent: true,
+            );
+        } catch (\Throwable $e) {
+            // Платёж в Т-Кассе не создан: пустой счёт не оставляем.
+            $invoice->delete();
+
+            throw $e;
+        }
 
         $invoice->update([
-            'yookassa_payment_id' => $payment['id'] ?? null,
-            'confirmation_url' => $payment['confirmation']['confirmation_url'] ?? null,
+            'tbank_payment_id' => $payment['PaymentId'] ?? null,
+            'confirmation_url' => $payment['PaymentURL'] ?? null,
         ]);
 
         $this->push->sendToUser(
@@ -127,17 +126,17 @@ class InvoiceService
     }
 
     /**
-     * Оплата счёта прошла: счёт закрыт, подписка продлена на срок счёта, способ оплаты сохранён.
+     * Оплата счёта прошла: счёт закрыт, подписка продлена на срок счёта, карта сохранена для автопродления.
      *
-     * @param  array<string, mixed>  $payment  платёж YooKassa
+     * @param  array<string, mixed>  $state  состояние платежа из уведомления или GetState Т-Кассы
      */
-    public function markPaid(Invoice $invoice, array $payment): void
+    public function markPaid(Invoice $invoice, array $state): void
     {
         if ($invoice->status === Invoice::PAID) {
             return;
         }
 
-        DB::transaction(function () use ($invoice, $payment) {
+        DB::transaction(function () use ($invoice, $state) {
             $user = $invoice->user;
             $sub = Subscription::firstOrCreate(['user_id' => $user->id]);
             $base = $sub->until && $sub->until->gte(today()) ? $sub->until : today();
@@ -150,12 +149,12 @@ class InvoiceService
                 'until' => Carbon::parse($base)->addMonths($invoice->months)->toDateString(),
                 'auto_pay' => true,
                 'payment_method' => 'card',
-                'last_payment_id' => (string) $payment['id'],
+                'last_payment_id' => (string) $state['PaymentId'],
             ])->save();
 
             $invoice->update(['status' => Invoice::PAID, 'paid_at' => now()]);
 
-            Payment::firstOrCreate(['yookassa_payment_id' => (string) $payment['id']], [
+            Payment::firstOrCreate(['tbank_payment_id' => (string) $state['PaymentId']], [
                 'user_id' => $user->id,
                 'invoice_id' => $invoice->id,
                 'kind' => 'invoice',
@@ -164,13 +163,12 @@ class InvoiceService
                 'paid_at' => now(),
             ]);
 
-            // Сохранённая карта нужна для автопродления по этим же условиям.
-            $method = $payment['payment_method'] ?? [];
-            if (($method['saved'] ?? false) && is_string($method['id'] ?? null)) {
+            // Карта, сохранённая этим платежом (RebillId), нужна для автопродления по этим же условиям.
+            if (is_string($state['RebillId'] ?? null) && $state['RebillId'] !== '') {
                 $user->forceFill([
-                    'yookassa_payment_method_id' => $method['id'],
-                    'card_brand' => $method['card']['card_type'] ?? null,
-                    'card_last4' => $method['card']['last4'] ?? null,
+                    'tbank_rebill_id' => $state['RebillId'],
+                    'card_brand' => null,
+                    'card_last4' => TbankClient::cardLast4($state),
                     'card_bound_at' => now(),
                 ])->save();
             }

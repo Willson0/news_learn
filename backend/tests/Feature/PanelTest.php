@@ -29,9 +29,9 @@ class PanelTest extends TestCase
         parent::setUp();
         $this->seed(DatabaseSeeder::class);
         config([
-            'services.yookassa.shop_id' => 'test-shop',
-            'services.yookassa.secret_key' => 'test-secret',
-            'services.yookassa.api_base' => 'https://api.yookassa.test/v3',
+            'services.tbank.terminal_key' => 'test-terminal',
+            'services.tbank.password' => 'test-pass',
+            'services.tbank.api_base' => 'https://api.tbank.test/v2',
         ]);
         $this->panel = PanelAdmin::create(['login' => 'boss', 'password' => 'secret-pass']);
     }
@@ -142,9 +142,8 @@ class PanelTest extends TestCase
         DeviceToken::create(['user_id' => $user->id, 'token' => 'dev-1', 'platform' => 'android']);
 
         Http::fake([
-            'api.yookassa.test/v3/payments' => Http::response([
-                'id' => 'pay-inv-1',
-                'confirmation' => ['type' => 'redirect', 'confirmation_url' => 'https://yoomoney.test/inv-1'],
+            'api.tbank.test/v2/Init' => Http::response([
+                'Success' => true, 'Status' => 'NEW', 'PaymentId' => 'pay-inv-1', 'PaymentURL' => 'https://tbank.test/inv-1',
             ]),
             'oauth2.googleapis.com/token' => Http::response(['access_token' => 'tok']),
             'fcm.googleapis.com/*' => Http::response(['name' => 'message']),
@@ -153,18 +152,19 @@ class PanelTest extends TestCase
         $this->asPanel()->postJson("/admin/api/users/{$user->id}/invoices", ['months' => 3])
             ->assertCreated()
             ->assertJsonPath('data.amount', 1700)
-            ->assertJsonPath('data.confirmation_url', 'https://yoomoney.test/inv-1');
+            ->assertJsonPath('data.confirmation_url', 'https://tbank.test/inv-1');
 
-        Http::assertSent(fn ($r) => str_contains($r->url(), '/payments')
-            && $r['amount']['value'] === '1700.00'
-            && $r['save_payment_method'] === true
-            && $r['metadata']['purpose'] === 'invoice');
+        Http::assertSent(fn ($r) => str_ends_with($r->url(), '/Init')
+            && $r['Amount'] === 170000
+            && $r['Recurrent'] === 'Y'
+            && $r['CustomerKey'] === 'user-'.$user->id
+            && str_starts_with($r['OrderId'], 'inv-'));
 
         Http::assertSent(fn ($r) => str_contains($r->url(), 'fcm.googleapis.com')
             && $r['message']['token'] === 'dev-1'
-            && $r['message']['data']['url'] === 'https://yoomoney.test/inv-1');
+            && $r['message']['data']['url'] === 'https://tbank.test/inv-1');
 
-        $this->assertDatabaseHas('invoices', ['user_id' => $user->id, 'amount' => 1700, 'months' => 3, 'status' => 'pending', 'created_by' => 'boss']);
+        $this->assertDatabaseHas('invoices', ['user_id' => $user->id, 'amount' => 1700, 'months' => 3, 'status' => 'pending', 'created_by' => 'boss', 'tbank_payment_id' => 'pay-inv-1']);
     }
 
     public function test_invoice_is_refused_for_user_with_active_subscription(): void
@@ -180,28 +180,28 @@ class PanelTest extends TestCase
     {
         $user = $this->user();
         Http::fake([
-            'api.yookassa.test/v3/payments' => Http::response([
-                'id' => 'pay-inv-2',
-                'confirmation' => ['type' => 'redirect', 'confirmation_url' => 'https://yoomoney.test/inv-2'],
+            'api.tbank.test/v2/Init' => Http::response([
+                'Success' => true, 'Status' => 'NEW', 'PaymentId' => 'pay-inv-2', 'PaymentURL' => 'https://tbank.test/inv-2',
             ]),
         ]);
         $this->asPanel()->postJson("/admin/api/users/{$user->id}/invoices", ['amount' => 2500, 'months' => 6])->assertCreated();
         $invoice = Invoice::firstOrFail();
 
         Http::fake([
-            'api.yookassa.test/v3/payments/pay-inv-2' => Http::response([
-                'id' => 'pay-inv-2',
-                'status' => 'succeeded',
-                'amount' => ['value' => '2500.00', 'currency' => 'RUB'],
-                'metadata' => ['purpose' => 'invoice', 'invoice_id' => (string) $invoice->id, 'user_id' => (string) $user->id],
-                'payment_method' => ['id' => 'pm-42', 'saved' => true, 'card' => ['card_type' => 'Visa', 'last4' => '4242']],
+            'api.tbank.test/v2/GetState' => Http::response([
+                'Success' => true,
+                'Status' => 'CONFIRMED',
+                'PaymentId' => 'pay-inv-2',
+                'Amount' => 250000,
+                'OrderId' => 'inv-'.$invoice->id.'-abcdefgh',
+                'RebillId' => 'rb-42',
+                'Pan' => '430000******4242',
             ]),
         ]);
 
-        $this->postJson('/api/yookassa/webhook', [
-            'event' => 'payment.succeeded',
-            'object' => ['id' => 'pay-inv-2'],
-        ])->assertNoContent();
+        $payload = ['TerminalKey' => 'test-terminal', 'OrderId' => 'inv-'.$invoice->id.'-abcdefgh', 'Success' => true, 'Status' => 'CONFIRMED', 'PaymentId' => 'pay-inv-2', 'Amount' => 250000];
+        $payload['Token'] = app(\App\Services\TbankClient::class)->token($payload);
+        $this->postJson('/api/tbank/webhook', $payload)->assertOk();
 
         $this->assertSame('paid', $invoice->fresh()->status);
         $sub = Subscription::where('user_id', $user->id)->firstOrFail();
@@ -209,11 +209,12 @@ class PanelTest extends TestCase
         $this->assertSame(2500, $sub->amount);
         $this->assertSame(6, $sub->months);
         $this->assertTrue($sub->auto_pay);
-        $this->assertSame('pm-42', $user->fresh()->yookassa_payment_method_id);
+        $this->assertSame('rb-42', $user->fresh()->tbank_rebill_id);
+        $this->assertSame('4242', $user->fresh()->card_last4);
         $this->assertDatabaseHas('payments', ['user_id' => $user->id, 'kind' => 'invoice', 'amount' => 2500, 'invoice_id' => $invoice->id]);
 
-        // Повторный вебхук ничего не меняет.
-        $this->postJson('/api/yookassa/webhook', ['event' => 'payment.succeeded', 'object' => ['id' => 'pay-inv-2']])->assertNoContent();
+        // Повторное уведомление ничего не меняет.
+        $this->postJson('/api/tbank/webhook', $payload)->assertOk();
         $this->assertSame(1, Payment::count());
     }
 

@@ -80,8 +80,9 @@ export default {
         },
     },
     mounted() {
-        api('GET', '/settings').then((res) => {
-            this.defaultPrice = res.data.default_price;
+        // Цена по умолчанию — индивидуальная цена пользователя; если её нет, сервер отдаёт цену из настроек.
+        api('GET', `/users/${this.user.id}`).then((res) => {
+            this.defaultPrice = res.data.subscription.amount;
         }).catch(() => {});
     },
     methods: {

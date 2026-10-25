@@ -10,45 +10,56 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Списание подписки с сохранённой карты YooKassa и продление/отключение доступа.
- * Списание идёт без участия пользователя (recurring по payment_method_id).
+ * Списание подписки с сохранённой карты Т-Кассы и продление/отключение доступа.
+ * Списание идёт без участия пользователя: Init создаёт платёж, Charge списывает по RebillId.
  * Сумма и срок берутся из индивидуальных условий подписки, а если их нет — из настроек.
  */
 class SubscriptionBilling
 {
-    public const PURPOSE = 'subscription';
-
-    public function __construct(private YookassaClient $yookassa) {}
+    public function __construct(private TbankClient $tbank) {}
 
     /** Есть ли у пользователя сохранённая карта и настроено ли списание. */
     public function canCharge(User $user): bool
     {
-        return $user->yookassa_payment_method_id !== null && $this->yookassa->configured();
+        return $user->tbank_rebill_id !== null && $this->tbank->configured();
     }
 
     /**
-     * Создаёт платёж за период. Ключ идемпотентности не даёт списать дважды за один период.
-     * Возвращает платёж YooKassa (статус может быть pending — тогда решает вебхук).
+     * Списывает период. Номер заказа (OrderId) уникален: повторная попытка с тем же номером
+     * за тот же день отклоняется Т-Кассой, поэтому второго списания не будет.
      *
-     * @return array<string, mixed>
+     * @return array<string, mixed>  ответ Charge; статус CONFIRMED — оплачено, REJECTED — отказ
      */
-    public function charge(User $user, string $idempotenceKey): array
+    public function charge(User $user, string $orderId): array
     {
         [$amount] = $this->terms($user);
 
-        return $this->yookassa->createPayment([
-            'amount' => [
-                'value' => number_format($amount, 2, '.', ''),
-                'currency' => 'RUB',
-            ],
-            'capture' => true,
-            'payment_method_id' => $user->yookassa_payment_method_id,
-            'description' => 'Подписка «Карта ликвидности»',
-            'metadata' => [
-                'purpose' => self::PURPOSE,
-                'user_id' => (string) $user->id,
-            ],
-        ], $idempotenceKey);
+        $init = $this->tbank->init(
+            amount: $amount,
+            orderId: $orderId,
+            description: 'Подписка «Карта ликвидности»',
+            customerKey: TbankClient::customerKey($user->id),
+        );
+
+        $charge = $this->tbank->charge((string) $init['PaymentId'], (string) $user->tbank_rebill_id);
+
+        return ['PaymentId' => $init['PaymentId']] + $charge;
+    }
+
+    /**
+     * Применяет результат списания: успех продлевает доступ, отказ отключает его.
+     * Промежуточные статусы ничего не меняют, решает уведомление Т-Кассы.
+     *
+     * @param  array<string, mixed>  $payment
+     */
+    public function apply(User $user, array $payment): void
+    {
+        $status = $payment['Status'] ?? null;
+        if ($status === TbankClient::SUCCESS_STATUS) {
+            $this->markPaid($user, (string) $payment['PaymentId']);
+        } elseif (in_array($status, TbankClient::FAILED_STATUSES, true)) {
+            $this->markFailed($user);
+        }
     }
 
     /**
@@ -73,7 +84,7 @@ class SubscriptionBilling
             'last_payment_id' => $paymentId,
         ])->save();
 
-        Payment::firstOrCreate(['yookassa_payment_id' => $paymentId], [
+        Payment::firstOrCreate(['tbank_payment_id' => $paymentId], [
             'user_id' => $user->id,
             'kind' => 'renewal',
             'amount' => $amount,
@@ -108,7 +119,7 @@ class SubscriptionBilling
                 }
 
                 try {
-                    $payment = $this->charge($user, 'renew-'.$sub->id.'-'.today()->format('Ymd'));
+                    $payment = $this->charge($user, 'renew-'.$user->id.'-'.today()->format('Ymd'));
                 } catch (\Throwable $e) {
                     // Сбой сети/API не отключает подписку: попробуем в следующий запуск.
                     Log::warning('Продление подписки не отправлено', ['user_id' => $user->id, 'error' => $e->getMessage()]);
@@ -116,12 +127,7 @@ class SubscriptionBilling
                     return;
                 }
 
-                $status = $payment['status'] ?? null;
-                if ($status === 'succeeded') {
-                    $this->markPaid($user, (string) $payment['id']);
-                } elseif ($status === 'canceled') {
-                    $this->markFailed($user);
-                }
+                $this->apply($user, $payment);
                 $count++;
             });
 

@@ -143,13 +143,13 @@ enum Api {
         _ = try await ApiClient.put("subscription", body: payload, as: StatusResponse.self)
     }
 
-    // MARK: - Карта (YooKassa)
+    // MARK: - Карта (Т-Касса)
 
     static func fetchCard() async throws -> CardDto {
         try await ApiClient.get("billing/card", as: CardDto.self)
     }
 
-    /// Создаёт платёж привязки; возвращает страницу оплаты YooKassa.
+    /// Создаёт платёж привязки; возвращает страницу оплаты Т-Кассы.
     static func bindCard() async throws -> URL {
         let r = try await ApiClient.post("billing/card/bind", as: CardBindDto.self)
         guard let url = URL(string: r.confirmationUrl) else { throw ApiError("Неверная ссылка оплаты", status: 0) }

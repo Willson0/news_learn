@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Services\TbankClient;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -13,20 +14,52 @@ class BillingCardTest extends TestCase
 {
     use RefreshDatabase;
 
+    private const API = 'https://api.tbank.test/v2';
+
     protected function setUp(): void
     {
         parent::setUp();
         $this->seed(DatabaseSeeder::class);
         config([
-            'services.yookassa.shop_id' => 'test-shop',
-            'services.yookassa.secret_key' => 'test-secret',
-            'services.yookassa.api_base' => 'https://api.yookassa.test/v3',
+            'services.tbank.terminal_key' => 'test-terminal',
+            'services.tbank.password' => 'test-pass',
+            'services.tbank.api_base' => self::API,
         ]);
     }
 
     private function demo(): User
     {
         return User::where('email', 'demo@karta.app')->first();
+    }
+
+    /** Подписывает уведомление так же, как это делает Т-Касса: тем же алгоритмом Token. */
+    private function signed(array $payload): array
+    {
+        $payload['Token'] = app(TbankClient::class)->token($payload);
+
+        return $payload;
+    }
+
+    private function notification(string $paymentId, string $orderId): array
+    {
+        return $this->signed([
+            'TerminalKey' => 'test-terminal',
+            'OrderId' => $orderId,
+            'Success' => true,
+            'Status' => 'CONFIRMED',
+            'PaymentId' => $paymentId,
+            'Amount' => 100,
+        ]);
+    }
+
+    public function test_token_follows_documented_algorithm(): void
+    {
+        // Ключи по алфавиту (Amount, OrderId, Password, TerminalKey), значения склеиваются;
+        // Token и вложенные объекты не учитываются.
+        $params = ['TerminalKey' => 'TK', 'Amount' => 100, 'OrderId' => 'o-1', 'Token' => 'ignored', 'DATA' => ['x' => 1]];
+        $expected = hash('sha256', '100'.'o-1'.'test-pass'.'TK');
+
+        $this->assertSame($expected, app(TbankClient::class)->token($params));
     }
 
     public function test_card_is_unbound_by_default(): void
@@ -38,104 +71,105 @@ class BillingCardTest extends TestCase
             ->assertExactJson(['bound' => false, 'brand' => null, 'last4' => null]);
     }
 
-    public function test_bind_returns_confirmation_url_and_saves_payment_with_method(): void
+    public function test_bind_starts_recurrent_payment_and_returns_payment_url(): void
     {
         Http::fake([
-            'api.yookassa.test/v3/payments' => Http::response([
-                'id' => 'pay-1',
-                'confirmation' => ['type' => 'redirect', 'confirmation_url' => 'https://yoomoney.test/confirm'],
+            self::API.'/Init' => Http::response([
+                'Success' => true, 'Status' => 'NEW', 'PaymentId' => 'pay-1', 'PaymentURL' => 'https://tbank.test/confirm',
             ]),
         ]);
         Sanctum::actingAs($this->demo());
 
         $this->postJson('/api/billing/card/bind')
             ->assertOk()
-            ->assertJson(['confirmation_url' => 'https://yoomoney.test/confirm']);
+            ->assertJson(['confirmation_url' => 'https://tbank.test/confirm']);
 
         Http::assertSent(function ($request) {
             $body = $request->data();
 
-            return $request->url() === 'https://api.yookassa.test/v3/payments'
-                && $request->hasHeader('Idempotence-Key')
-                && $body['save_payment_method'] === true
-                && $body['amount']['value'] === '1.00'
-                && $body['amount']['currency'] === 'RUB'
-                && $body['confirmation']['type'] === 'redirect'
-                && $body['metadata']['purpose'] === 'card_bind';
+            return $request->url() === self::API.'/Init'
+                && $body['TerminalKey'] === 'test-terminal'
+                && $body['Amount'] === 100
+                && $body['Recurrent'] === 'Y'
+                && $body['CustomerKey'] === 'user-'.$this->demo()->id
+                && str_starts_with($body['OrderId'], 'bind-'.$this->demo()->id.'-')
+                && $body['Token'] === app(TbankClient::class)->token(collect($body)->except('Token')->all());
         });
     }
 
-    public function test_webhook_binds_card_after_fetching_payment_and_refunds(): void
+    public function test_webhook_binds_card_and_refunds_bind_amount(): void
     {
         $user = $this->demo();
         Http::fake([
-            'api.yookassa.test/v3/payments/pay-1' => Http::response([
-                'id' => 'pay-1',
-                'status' => 'succeeded',
-                'amount' => ['value' => '1.00', 'currency' => 'RUB'],
-                'metadata' => ['purpose' => 'card_bind', 'user_id' => (string) $user->id],
-                'payment_method' => [
-                    'id' => 'pm-1', 'saved' => true, 'type' => 'bank_card',
-                    'card' => ['card_type' => 'MasterCard', 'last4' => '4242'],
-                ],
+            self::API.'/GetState' => Http::response([
+                'Success' => true, 'Status' => 'CONFIRMED', 'PaymentId' => 'pay-1', 'Amount' => 100,
+                'OrderId' => 'bind-'.$user->id.'-abc', 'RebillId' => 'rb-1', 'Pan' => '430000******4242',
             ]),
-            'api.yookassa.test/v3/refunds' => Http::response(['id' => 'ref-1', 'status' => 'succeeded']),
+            self::API.'/Cancel' => Http::response(['Success' => true, 'Status' => 'REFUNDED', 'PaymentId' => 'pay-1']),
         ]);
 
-        $payload = ['type' => 'notification', 'event' => 'payment.succeeded', 'object' => ['id' => 'pay-1']];
-        $this->postJson('/api/yookassa/webhook', $payload)->assertNoContent();
+        $this->postJson('/api/tbank/webhook', $this->notification('pay-1', 'bind-'.$user->id.'-abc'))
+            ->assertOk()
+            ->assertSeeText('OK', false);
 
         $user->refresh();
-        $this->assertSame('pm-1', $user->yookassa_payment_method_id);
+        $this->assertSame('rb-1', $user->tbank_rebill_id);
         $this->assertSame('4242', $user->card_last4);
-        $this->assertSame('MasterCard', $user->card_brand);
         $this->assertNotNull($user->card_bound_at);
 
-        Http::assertSent(fn ($request) => $request->url() === 'https://api.yookassa.test/v3/refunds'
-            && $request->hasHeader('Idempotence-Key', 'refund-bind-pay-1'));
+        Http::assertSent(fn ($request) => $request->url() === self::API.'/Cancel'
+            && $request->data()['PaymentId'] === 'pay-1');
+    }
+
+    public function test_webhook_with_wrong_signature_is_refused(): void
+    {
+        Http::fake();
+        $payload = $this->notification('pay-9', 'bind-'.$this->demo()->id.'-x');
+        $payload['Token'] = 'forged';
+
+        $this->postJson('/api/tbank/webhook', $payload)->assertForbidden();
+
+        Http::assertNothingSent();
+        $this->assertNull($this->demo()->fresh()->tbank_rebill_id);
     }
 
     public function test_repeated_webhook_does_not_refund_twice(): void
     {
         $user = $this->demo();
         Http::fake([
-            'api.yookassa.test/v3/payments/pay-2' => Http::response([
-                'id' => 'pay-2', 'status' => 'succeeded',
-                'amount' => ['value' => '1.00', 'currency' => 'RUB'],
-                'metadata' => ['purpose' => 'card_bind', 'user_id' => (string) $user->id],
-                'payment_method' => ['id' => 'pm-2', 'saved' => true, 'card' => ['card_type' => 'Visa', 'last4' => '1111']],
+            self::API.'/GetState' => Http::response([
+                'Success' => true, 'Status' => 'CONFIRMED', 'PaymentId' => 'pay-2',
+                'OrderId' => 'bind-'.$user->id.'-def', 'RebillId' => 'rb-2', 'Pan' => '411111******1111',
             ]),
-            'api.yookassa.test/v3/refunds' => Http::response(['id' => 'ref-2']),
+            self::API.'/Cancel' => Http::response(['Success' => true, 'Status' => 'REFUNDED']),
         ]);
 
-        $payload = ['event' => 'payment.succeeded', 'object' => ['id' => 'pay-2']];
-        $this->postJson('/api/yookassa/webhook', $payload)->assertNoContent();
-        $this->postJson('/api/yookassa/webhook', $payload)->assertNoContent();
+        $payload = $this->notification('pay-2', 'bind-'.$user->id.'-def');
+        $this->postJson('/api/tbank/webhook', $payload)->assertOk();
+        $this->postJson('/api/tbank/webhook', $payload)->assertOk();
 
-        Http::assertSentCount(3); // два запроса платежа и один возврат
+        Http::assertSentCount(3); // два запроса состояния платежа и один возврат
     }
 
-    public function test_webhook_ignores_events_that_are_not_bind_payments(): void
+    public function test_webhook_ignores_payments_without_known_purpose(): void
     {
         Http::fake([
-            'api.yookassa.test/v3/payments/pay-3' => Http::response([
-                'id' => 'pay-3', 'status' => 'succeeded',
-                'metadata' => ['purpose' => 'other'],
+            self::API.'/GetState' => Http::response([
+                'Success' => true, 'Status' => 'CONFIRMED', 'PaymentId' => 'pay-3', 'OrderId' => 'other-1-zz', 'RebillId' => 'rb-3',
             ]),
         ]);
 
-        $this->postJson('/api/yookassa/webhook', ['event' => 'payment.succeeded', 'object' => ['id' => 'pay-3']])
-            ->assertNoContent();
+        $this->postJson('/api/tbank/webhook', $this->notification('pay-3', 'other-1-zz'))->assertOk();
 
-        $this->assertNull($this->demo()->fresh()->yookassa_payment_method_id);
-        Http::assertNotSent(fn ($request) => str_contains($request->url(), '/refunds'));
+        $this->assertNull($this->demo()->fresh()->tbank_rebill_id);
+        Http::assertNotSent(fn ($request) => str_contains($request->url(), '/Cancel'));
     }
 
     public function test_unbind_clears_card_fields(): void
     {
         $user = $this->demo();
         $user->forceFill([
-            'yookassa_payment_method_id' => 'pm-9', 'card_brand' => 'Visa',
+            'tbank_rebill_id' => 'rb-9', 'card_brand' => 'Visa',
             'card_last4' => '0001', 'card_bound_at' => now(),
         ])->save();
         Sanctum::actingAs($user);
@@ -156,29 +190,25 @@ class BillingCardTest extends TestCase
 
     public function test_card_request_settles_pending_bind_when_webhook_is_late(): void
     {
+        $user = $this->demo();
         Http::fake([
-            'api.yookassa.test/v3/payments' => Http::response([
-                'id' => 'pay-late',
-                'confirmation' => ['type' => 'redirect', 'confirmation_url' => 'https://yoomoney.test/late'],
+            self::API.'/Init' => Http::response([
+                'Success' => true, 'Status' => 'NEW', 'PaymentId' => 'pay-late', 'PaymentURL' => 'https://tbank.test/late',
             ]),
         ]);
-        Sanctum::actingAs($this->demo());
+        Sanctum::actingAs($user);
         $this->postJson('/api/billing/card/bind')->assertOk();
 
         Http::fake([
-            'api.yookassa.test/v3/payments/pay-late' => Http::response([
-                'id' => 'pay-late',
-                'status' => 'succeeded',
-                'amount' => ['value' => '1.00', 'currency' => 'RUB'],
-                'metadata' => ['purpose' => 'card_bind', 'user_id' => (string) $this->demo()->id],
-                'payment_method' => ['id' => 'pm-late', 'saved' => true, 'card' => ['card_type' => 'MasterCard', 'last4' => '4242']],
+            self::API.'/GetState' => Http::response([
+                'Success' => true, 'Status' => 'CONFIRMED', 'PaymentId' => 'pay-late',
+                'OrderId' => 'bind-'.$user->id.'-late', 'RebillId' => 'rb-late', 'Pan' => '530000******4242',
             ]),
-            'api.yookassa.test/v3/refunds' => Http::response(['id' => 'refund-late']),
-            'api.yookassa.test/v3/payments' => Http::response(['id' => 'pay-charge', 'status' => 'pending']),
+            self::API.'/Cancel' => Http::response(['Success' => true, 'Status' => 'REFUNDED']),
         ]);
 
         $this->getJson('/api/billing/card')
             ->assertOk()
-            ->assertExactJson(['bound' => true, 'brand' => 'MasterCard', 'last4' => '4242']);
+            ->assertExactJson(['bound' => true, 'brand' => null, 'last4' => '4242']);
     }
 }

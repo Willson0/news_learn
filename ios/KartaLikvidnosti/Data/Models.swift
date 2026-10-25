@@ -517,7 +517,7 @@ struct AdminDto: Decodable, Identifiable {
     }
 }
 
-/// Привязанная карта YooKassa (GET /billing/card).
+/// Привязанная карта Т-Кассы (GET /billing/card).
 struct CardDto: Decodable {
     let bound: Bool
     let brand: String?

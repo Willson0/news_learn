@@ -14,7 +14,7 @@ class Invoice extends Model
     public const CANCELED = 'canceled';
 
     protected $fillable = [
-        'user_id', 'amount', 'months', 'status', 'yookassa_payment_id',
+        'user_id', 'amount', 'months', 'status', 'tbank_payment_id',
         'confirmation_url', 'paid_at', 'created_by',
     ];
 

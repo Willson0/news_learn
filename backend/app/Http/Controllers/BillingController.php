@@ -6,32 +6,31 @@ use App\Models\Invoice;
 use App\Models\User;
 use App\Services\InvoiceService;
 use App\Services\SubscriptionBilling;
-use App\Services\YookassaClient;
+use App\Services\TbankClient;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use RuntimeException;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Привязка банковской карты через YooKassa. Списания не делаем: платёж на сумму
- * YOOKASSA_BIND_AMOUNT нужен только для сохранения способа оплаты и сразу возвращается.
+ * Привязка банковской карты через Т-Кассу. Платёж на сумму TBANK_BIND_AMOUNT с признаком Recurrent
+ * сохраняет карту (RebillId) для автопродления; после этого сумма возвращается.
  */
 class BillingController extends Controller
 {
-    public const PURPOSE = 'card_bind';
-
     public function __construct(
-        private YookassaClient $yookassa,
+        private TbankClient $tbank,
         private SubscriptionBilling $billing,
         private InvoiceService $invoices,
     ) {}
 
     /**
-     * Приложение открывает этот запрос при возврате из YooKassa. Вебхук может прийти чуть позже,
-     * поэтому, если привязка ещё ждёт результата, сами запрашиваем платёж у YooKassa.
+     * Приложение открывает этот запрос при возврате из Т-Кассы. Уведомление может прийти чуть позже,
+     * поэтому, если привязка ещё ждёт результата, сами запрашиваем состояние платежа.
      */
     public function card(Request $request): JsonResponse
     {
@@ -48,58 +47,49 @@ class BillingController extends Controller
         /** @var User $user */
         $user = $request->user();
 
-        if (! $this->yookassa->configured()) {
-            Log::error('YooKassa: не заданы YOOKASSA_SHOP_ID / YOOKASSA_SECRET_KEY');
+        if (! $this->tbank->configured()) {
+            Log::error('Т-Касса: не заданы TBANK_TERMINAL_KEY / TBANK_PASSWORD');
 
             return response()->json(['message' => 'Привязка карты временно недоступна'], 503);
         }
 
         try {
-            $payment = $this->yookassa->createPayment([
-                'amount' => [
-                    'value' => (string) config('services.yookassa.bind_amount'),
-                    'currency' => 'RUB',
-                ],
-                'capture' => true,
-                'save_payment_method' => true,
-                'confirmation' => [
-                    'type' => 'redirect',
-                    'return_url' => (string) config('services.yookassa.return_url'),
-                ],
-                'description' => 'Привязка карты',
-                'metadata' => [
-                    'purpose' => self::PURPOSE,
-                    'user_id' => (string) $user->id,
-                ],
-            ]);
+            $payment = $this->tbank->init(
+                amount: (int) config('services.tbank.bind_amount'),
+                orderId: 'bind-'.$user->id.'-'.Str::random(8),
+                description: 'Привязка карты',
+                customerKey: TbankClient::customerKey($user->id),
+                recurrent: true,
+            );
         } catch (RuntimeException $e) {
-            Log::error('YooKassa: не создан платёж привязки карты', ['user_id' => $user->id, 'error' => $e->getMessage()]);
+            Log::error('Т-Касса: не создан платёж привязки карты', ['user_id' => $user->id, 'error' => $e->getMessage()]);
 
             return response()->json(['message' => 'Не удалось начать привязку карты'], 502);
         }
 
-        $confirmationUrl = $payment['confirmation']['confirmation_url'] ?? null;
-        if (! is_string($confirmationUrl) || $confirmationUrl === '') {
-            Log::error('YooKassa: в ответе нет confirmation_url', ['user_id' => $user->id, 'payment' => $payment]);
+        $paymentUrl = $payment['PaymentURL'] ?? null;
+        if (! is_string($paymentUrl) || $paymentUrl === '') {
+            Log::error('Т-Касса: в ответе нет PaymentURL', ['user_id' => $user->id, 'payment' => $payment]);
 
             return response()->json(['message' => 'Не удалось начать привязку карты'], 502);
         }
 
-        // Запоминаем платёж привязки, чтобы при возврате из YooKassa дождаться его результата.
-        Cache::put($this->pendingKey($user), (string) ($payment['id'] ?? ''), now()->addDay());
+        // Запоминаем платёж привязки, чтобы при возврате из Т-Кассы дождаться его результата.
+        Cache::put($this->pendingKey($user), (string) $payment['PaymentId'], now()->addDay());
 
-        return response()->json(['confirmation_url' => $confirmationUrl]);
+        // Имя поля сохранено для приложений: там это ссылка на страницу оплаты.
+        return response()->json(['confirmation_url' => $paymentUrl]);
     }
 
     /**
-     * Возврат после страницы YooKassa. Сам факт привязки подтверждает вебхук,
+     * Возврат после страницы Т-Кассы. Сам факт привязки подтверждает уведомление,
      * поэтому здесь только передаём статус в приложение.
      */
     public function return(Request $request): RedirectResponse
     {
         $status = $request->query('status') === 'cancel' ? 'error' : 'ok';
 
-        return redirect(config('services.yookassa.app_scheme').'://billing?status='.$status);
+        return redirect(config('services.tbank.app_scheme').'://billing?status='.$status);
     }
 
     public function unbind(Request $request): Response
@@ -107,10 +97,9 @@ class BillingController extends Controller
         /** @var User $user */
         $user = $request->user();
 
-        // У YooKassa нет публичного метода удаления сохранённого способа оплаты в API v3,
-        // поэтому отвязываем локально: новые списания по этому id мы не делаем.
+        // Новые списания по RebillId мы больше не делаем; карта удаляется у нас.
         $user->forceFill([
-            'yookassa_payment_method_id' => null,
+            'tbank_rebill_id' => null,
             'card_brand' => null,
             'card_last4' => null,
             'card_bound_at' => null,
@@ -120,157 +109,158 @@ class BillingController extends Controller
     }
 
     /**
-     * Уведомление YooKassa. Событие не доверяем: платёж заново запрашиваем у API
-     * магазина и по нему решаем, что привязывать. Повторные уведомления безопасны.
+     * Уведомление Т-Кассы о смене статуса платежа. Подпись Token обязательна. Состояние платежа
+     * заново запрашиваем у API (GetState), и по нему решаем, что делать. Повторные уведомления безопасны.
      */
     public function webhook(Request $request): Response
     {
-        $event = (string) $request->input('event');
-        $paymentId = (string) $request->input('object.id');
-        if (! in_array($event, ['payment.succeeded', 'payment.canceled'], true) || $paymentId === '') {
-            return response()->noContent();
+        $payload = $request->json()->all() ?: $request->all();
+
+        if (! $this->tbank->verify($payload)) {
+            Log::warning('Т-Касса: уведомление с неверной подписью', ['payment_id' => $payload['PaymentId'] ?? null]);
+
+            return response('Forbidden', 403);
         }
 
-        $payment = $this->yookassa->fetchPayment($paymentId);
-        $purpose = $payment['metadata']['purpose'] ?? null;
+        $paymentId = (string) ($payload['PaymentId'] ?? '');
+        if ($paymentId !== '') {
+            $this->settle($paymentId);
+        }
+
+        // Т-Касса повторяет уведомление, пока не получит ответ OK.
+        return response('OK', 200);
+    }
+
+    /**
+     * Применяет актуальное состояние платежа в зависимости от назначения, которое закодировано в OrderId.
+     */
+    private function settle(string $paymentId): void
+    {
+        try {
+            $state = $this->tbank->getState($paymentId);
+        } catch (RuntimeException $e) {
+            Log::error('Т-Касса: не удалось получить состояние платежа', ['payment_id' => $paymentId, 'error' => $e->getMessage()]);
+
+            return;
+        }
+
+        if (! preg_match('/^(inv|bind|renew)-(\d+)-/', (string) ($state['OrderId'] ?? ''), $m)) {
+            return;
+        }
+        [, $purpose, $id] = $m;
 
         // Счёт, выставленный админом: успешная оплата активирует подписку по условиям счёта.
-        if ($purpose === InvoiceService::PURPOSE) {
-            $invoice = Invoice::with('user')->find((int) ($payment['metadata']['invoice_id'] ?? 0));
+        if ($purpose === 'inv') {
+            $invoice = Invoice::with('user')->find((int) $id);
             if ($invoice && $invoice->status === Invoice::PENDING) {
-                if (($payment['status'] ?? null) === 'succeeded') {
-                    $this->invoices->markPaid($invoice, $payment);
-                } elseif (($payment['status'] ?? null) === 'canceled') {
+                if (($state['Status'] ?? null) === TbankClient::SUCCESS_STATUS) {
+                    $this->invoices->markPaid($invoice, $state);
+                } elseif (in_array($state['Status'] ?? null, TbankClient::FAILED_STATUSES, true)) {
                     $invoice->update(['status' => Invoice::CANCELED]);
                 }
             }
 
-            return response()->noContent();
+            return;
+        }
+
+        $user = User::find((int) $id);
+        if (! $user) {
+            return;
+        }
+
+        if ($purpose === 'bind') {
+            if (($state['Status'] ?? null) === TbankClient::SUCCESS_STATUS) {
+                $this->applyCardBind($user, $state);
+            }
+
+            return;
         }
 
         // Списание подписки: успех продлевает доступ, отказ (например, нет денег) — отключает.
-        if ($purpose === SubscriptionBilling::PURPOSE) {
-            $user = User::find((int) ($payment['metadata']['user_id'] ?? 0));
-            if ($user) {
-                if (($payment['status'] ?? null) === 'succeeded') {
-                    $this->billing->markPaid($user, $paymentId);
-                } elseif (($payment['status'] ?? null) === 'canceled') {
-                    $this->billing->markFailed($user);
-                }
-            }
-
-            return response()->noContent();
-        }
-
-        if ($event !== 'payment.succeeded' || ($payment['status'] ?? null) !== 'succeeded' || $purpose !== self::PURPOSE) {
-            return response()->noContent();
-        }
-
-        $user = User::find((int) ($payment['metadata']['user_id'] ?? 0));
-        if ($user) {
-            $this->applyCardBind($user, $paymentId, $payment);
-        }
-
-        return response()->noContent();
+        $this->billing->apply($user, $state);
     }
 
     /**
-     * Если привязка карты ждёт результата, запрашиваем платёж у YooKassa и применяем его.
-     * Та же логика, что и в вебхуке: повторный вызов ничего не меняет.
+     * Если привязка карты ждёт результата, запрашиваем состояние платежа и применяем его.
      */
     private function settlePendingBind(User $user): void
     {
         $key = $this->pendingKey($user);
         $paymentId = (string) Cache::get($key, '');
-        if ($paymentId === '' || ! $this->yookassa->configured()) {
+        if ($paymentId === '' || ! $this->tbank->configured()) {
             return;
         }
 
         try {
-            $payment = $this->yookassa->fetchPayment($paymentId);
+            $state = $this->tbank->getState($paymentId);
         } catch (RuntimeException $e) {
-            Log::error('YooKassa: не удалось проверить привязку карты', ['user_id' => $user->id, 'payment_id' => $paymentId, 'error' => $e->getMessage()]);
+            Log::error('Т-Касса: не удалось проверить привязку карты', ['user_id' => $user->id, 'payment_id' => $paymentId, 'error' => $e->getMessage()]);
 
             return;
         }
 
-        $status = $payment['status'] ?? null;
-        if ($status === 'succeeded') {
-            $this->applyCardBind($user, $paymentId, $payment);
+        $status = $state['Status'] ?? null;
+        if ($status === TbankClient::SUCCESS_STATUS) {
+            $this->applyCardBind($user, $state);
             Cache::forget($key);
-        } elseif (in_array($status, ['canceled'], true)) {
+        } elseif (in_array($status, TbankClient::FAILED_STATUSES, true)) {
             Cache::forget($key);
         }
     }
 
     /**
-     * Сохраняет способ оплаты из успешного платежа привязки и возвращает сумму привязки.
+     * Сохраняет RebillId из успешного платежа привязки, возвращает сумму привязки
+     * и списывает подписку сразу, если её ещё нет или она отключена.
      *
-     * @param  array<string, mixed>  $payment
+     * @param  array<string, mixed>  $state
      */
-    private function applyCardBind(User $user, string $paymentId, array $payment): void
+    private function applyCardBind(User $user, array $state): void
     {
-        $method = $payment['payment_method'] ?? [];
-        $methodId = $method['id'] ?? null;
-        if (! is_string($methodId) || $methodId === '' || ! ($method['saved'] ?? false)) {
-            Log::warning('YooKassa: платёж привязки без сохранённого способа оплаты', ['user_id' => $user->id, 'payment_id' => $paymentId]);
+        $rebillId = $state['RebillId'] ?? null;
+        if (! is_string($rebillId) || $rebillId === '') {
+            Log::warning('Т-Касса: платёж привязки без RebillId', ['user_id' => $user->id, 'payment_id' => $state['PaymentId'] ?? null]);
 
             return;
         }
 
-        // Уже привязан этот способ оплаты: повторное уведомление ничего не меняет.
-        if ($user->yookassa_payment_method_id === $methodId) {
+        // Уже привязана эта карта: повторное уведомление ничего не меняет.
+        if ($user->tbank_rebill_id === $rebillId) {
             return;
         }
 
         $user->forceFill([
-            'yookassa_payment_method_id' => $methodId,
-            'card_brand' => $method['card']['card_type'] ?? null,
-            'card_last4' => $method['card']['last4'] ?? null,
+            'tbank_rebill_id' => $rebillId,
+            'card_brand' => null,
+            'card_last4' => TbankClient::cardLast4($state),
             'card_bound_at' => now(),
         ])->save();
 
-        $this->refundBindAmount($paymentId, $payment);
+        $paymentId = (string) $state['PaymentId'];
+        try {
+            $this->tbank->cancel($paymentId);
+        } catch (RuntimeException $e) {
+            Log::warning('Т-Касса: не удалось вернуть сумму привязки', ['payment_id' => $paymentId, 'error' => $e->getMessage()]);
+        }
 
-        // Подписки ещё нет (или она отключена) — списываем её сразу с привязанной карты.
         $subscription = $user->subscription;
         if (! $subscription || ! $subscription->active) {
             try {
-                $this->billing->charge($user, 'subscription-after-bind-'.$paymentId);
-            } catch (\Throwable $e) {
+                $this->billing->apply($user, $this->billing->charge($user, 'renew-'.$user->id.'-bind-'.Str::random(6)));
+            } catch (RuntimeException $e) {
                 Log::warning('Подписка не списана после привязки карты', ['user_id' => $user->id, 'error' => $e->getMessage()]);
             }
         }
     }
 
-    /**
-     * Сумма за привязку возвращается пользователю. Ключ идемпотентности от id платежа:
-     * YooKassa не создаст второй возврат, даже если вебхук придёт повторно.
-     */
-    private function refundBindAmount(string $paymentId, array $payment): void
-    {
-        try {
-            $this->yookassa->createRefund([
-                'payment_id' => $paymentId,
-                'amount' => $payment['amount'],
-                'description' => 'Возврат за привязку карты',
-            ], 'refund-bind-'.$paymentId);
-        } catch (\Throwable $e) {
-            Log::warning('YooKassa: не удалось вернуть сумму привязки', [
-                'payment_id' => $paymentId,
-                'error' => $e->getMessage(),
-            ]);
-        }
-    }
-
     private function pendingKey(User $user): string
     {
-        return 'yookassa:card_bind:'.$user->id;
+        return 'tbank:card_bind:'.$user->id;
     }
 
+    /** @return array{bound: bool, brand: ?string, last4: ?string} */
     private function cardPayload(User $user): array
     {
-        $bound = $user->yookassa_payment_method_id !== null;
+        $bound = $user->tbank_rebill_id !== null;
 
         return [
             'bound' => $bound,

@@ -91,7 +91,7 @@ fun SubscriptionScreen(onBack: () -> Unit) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // Возврат из YooKassa: karta://billing?status=…
+    // Возврат из Т-Кассы: karta://billing?status=…
     LaunchedEffect(Unit) {
         BillingReturn.results.collect { uri ->
             cardError = if (uri.getQueryParameter("status") == "error") "Не удалось привязать карту" else null
@@ -151,7 +151,7 @@ fun SubscriptionScreen(onBack: () -> Unit) {
                                 .onSuccess { url ->
                                     runCatching {
                                         CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(url))
-                                    }.onFailure { cardError = "Не удалось открыть страницу YooKassa" }
+                                    }.onFailure { cardError = "Не удалось открыть страницу оплаты" }
                                 }
                                 .onFailure { cardError = it.message ?: "Не удалось привязать карту" }
                         } else {

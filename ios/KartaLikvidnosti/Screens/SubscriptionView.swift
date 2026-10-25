@@ -122,7 +122,7 @@ struct SubscriptionView: View {
             defer { cardBusy = false }
             do {
                 try await CardBinding.run()
-                // Вебхук YooKassa сохраняет карту чуть позже возврата в приложение, поэтому опрашиваем.
+                // Уведомление Т-Кассы сохраняет карту чуть позже возврата в приложение, поэтому опрашиваем.
                 for _ in 0..<5 {
                     await reloadCard()
                     if isBound {
