@@ -229,6 +229,9 @@ class AdminDto(
 class LoginBody(val identifier: String, val password: String)
 
 @Serializable
+class YandexExchangeBody(val code: String, val verifier: String)
+
+@Serializable
 class RegisterBody(val email: String, val phone: String, val password: String, val name: String? = null)
 
 @Serializable

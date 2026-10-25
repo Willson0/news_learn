@@ -33,6 +33,9 @@ interface ApiService {
     @POST("auth/recovery/reset")
     suspend fun resetPassword(@Body body: ResetBody): TokenResponse
 
+    @POST("auth/yandex/exchange")
+    suspend fun yandexExchange(@Body body: YandexExchangeBody): TokenResponse
+
     @POST("auth/logout")
     suspend fun logout(): StatusResponse
 

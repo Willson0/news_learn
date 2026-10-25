@@ -13,6 +13,7 @@ import app.karta.likvidnosti.data.api.EmailBody
 import app.karta.likvidnosti.data.api.InstrumentDto
 import app.karta.likvidnosti.data.api.InstrumentsBody
 import app.karta.likvidnosti.data.api.LoginBody
+import app.karta.likvidnosti.data.api.YandexExchangeBody
 import app.karta.likvidnosti.data.api.ChatAttachmentDto
 import app.karta.likvidnosti.data.api.MessageBody
 import app.karta.likvidnosti.data.api.MessagesResponse
@@ -63,6 +64,10 @@ object Repository {
     // --- Авторизация ---
     suspend fun login(identifier: String, password: String): UserDto? =
         apiCall { applyToken(api.login(LoginBody(identifier, password))) }
+
+    /** Вход через Яндекс: одноразовый code из karta://auth меняется на токен. */
+    suspend fun yandexExchange(code: String, verifier: String): UserDto? =
+        apiCall { applyToken(api.yandexExchange(YandexExchangeBody(code, verifier))) }
 
     suspend fun register(email: String, phone: String, password: String) =
         apiCall { api.register(RegisterBody(email, phone, password)) }

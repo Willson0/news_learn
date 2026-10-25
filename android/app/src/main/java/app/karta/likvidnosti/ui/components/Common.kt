@@ -39,7 +39,6 @@ import app.karta.likvidnosti.R
 import app.karta.likvidnosti.ui.theme.AppFont
 import app.karta.likvidnosti.ui.theme.T
 import app.karta.likvidnosti.ui.theme.hex
-import app.karta.likvidnosti.ui.theme.statusBarTop
 import coil.compose.AsyncImage
 import kotlin.math.max
 
@@ -47,12 +46,18 @@ import kotlin.math.max
 
 /**
  * Фон экрана макета (iOS ScreenBackdrop / screenBackground()): градиент «Фон» +
- * мягкое анимированное свечение сверху (bg_glow1…5, высота 474 от верха экрана).
+ * мягкое анимированное свечение сверху (bg_glow1…5, 474/852 высоты экрана).
  */
 fun Modifier.screenBackground(glow: Boolean = true): Modifier = composed {
     val painters = GlowFrames.map { painterResource(it) }
-    val glowHeight = statusBarTop() + (474.dp - T.DesignStatusBar)
-    val glowPx = with(LocalDensity.current) { glowHeight.toPx() }
+    // Свечение в макете — 393×474 в кадре 393×852: высота пропорциональна
+    // экрану (и не меньше ширины × 474/393), чтобы огоньки занимали ту же долю
+    // экрана на любых размерах (iOS ScreenBackdrop.glowHeight). Размер окна, а не
+    // контейнера: клавиатура не сдвигает фон.
+    val metrics = LocalContext.current.resources.displayMetrics
+    val glowPx = remember(metrics.widthPixels, metrics.heightPixels) {
+        max(metrics.widthPixels * 474f / 393f, metrics.heightPixels * 474f / 852f)
+    }
     // Свечение перебирает пять вариантов Figma («Frame» 498:22347): DISSOLVE, LINEAR,
     // 6 с на каждый (iOS AnimatedGlow). Фаза — от общего времени, поэтому при
     // переходах между экранами фон продолжается без скачка. Время читается только

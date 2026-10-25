@@ -178,14 +178,25 @@ enum AppFont {
 struct ScreenBackdrop: View {
     var glow: Bool = true
 
+    /// Свечение в макете — 393×474 в кадре 393×852. Высота масштабируется
+    /// пропорционально экрану (и не меньше ширины × 474/393), чтобы на больших
+    /// и маленьких iPhone огоньки оставались в той же доле экрана, а не
+    /// обрезались сверху при scaledToFill.
+    static func glowHeight(_ size: CGSize) -> CGFloat {
+        guard size.width > 0, size.height > 0 else { return 474 }
+        return max(size.width * 474 / Theme.appWidth, size.height * 474 / 852)
+    }
+
     var body: some View {
-        ZStack(alignment: .top) {
-            Theme.background
-            if glow {
-                AnimatedGlow()
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 474)
-                    .allowsHitTesting(false)
+        GeometryReader { geo in
+            ZStack(alignment: .top) {
+                Theme.background
+                if glow {
+                    AnimatedGlow()
+                        .frame(width: geo.size.width, height: Self.glowHeight(geo.size))
+                        .clipped()
+                        .allowsHitTesting(false)
+                }
             }
         }
         .ignoresSafeArea()

@@ -102,12 +102,18 @@ fun LoginScreen(
     val context = LocalContext.current
     LaunchedEffect(Unit) {
         YandexSignIn.callbacks.collect { uri ->
-            val token = uri.getQueryParameter("token")
-            if (!token.isNullOrEmpty()) {
-                TokenStore.token = token
-                Session.load(force = true)
-                if (Session.user != null) onAuthed()
-                else { TokenStore.token = null; errors = mapOf("identifier" to "Не удалось загрузить профиль") }
+            // Ссылку принимаем только для входа, начатого в этом приложении (есть verifier).
+            val verifier = YandexSignIn.takeVerifier() ?: return@collect
+            val code = uri.getQueryParameter("code")
+            if (!code.isNullOrEmpty()) {
+                try {
+                    Repository.yandexExchange(code, verifier)
+                    Session.load(force = true)
+                    if (Session.user != null) onAuthed()
+                    else { TokenStore.token = null; errors = mapOf("identifier" to "Не удалось загрузить профиль") }
+                } catch (e: Exception) {
+                    errors = mapOf("identifier" to (e.message ?: "Не удалось войти через Яндекс"))
+                }
             } else {
                 errors = mapOf("identifier" to (uri.getQueryParameter("error") ?: "Не удалось войти через Яндекс"))
             }
