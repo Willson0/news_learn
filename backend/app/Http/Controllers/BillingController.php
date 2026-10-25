@@ -169,6 +169,13 @@ class BillingController extends Controller
         if ($purpose === 'inv') {
             $invoice = Invoice::with('user')->find((int) $id);
             if ($invoice && $invoice->status === Invoice::PENDING) {
+                // Оплачена должна быть ровно сумма счёта (в копейках).
+                $paidAmount = isset($state['Amount']) ? (int) $state['Amount'] : null;
+                if ($paidAmount !== null && $paidAmount !== $invoice->amount * 100) {
+                    Log::warning('Т-Касса: сумма оплаты не совпадает со счётом', ['invoice_id' => $invoice->id, 'amount' => $paidAmount]);
+
+                    return;
+                }
                 if (($state['Status'] ?? null) === TbankClient::SUCCESS_STATUS) {
                     $this->invoices->markPaid($invoice, $state);
                 } elseif (in_array($state['Status'] ?? null, TbankClient::FAILED_STATUSES, true)) {

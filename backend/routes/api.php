@@ -25,16 +25,17 @@ Route::get('/ping', function () {
 });
 
 // --- Авторизация (без токена) ---
+// Частота ограничена (AppServiceProvider): перебор паролей и кодов, рассылка писем.
 Route::prefix('auth')->group(function () {
-    Route::post('/telegram', [AuthController::class, 'telegram']);
-    Route::post('/register', [AuthController::class, 'register']);
-    Route::post('/register/confirm', [AuthController::class, 'confirmRegistration']);
-    Route::post('/register/resend', [AuthController::class, 'resendRegistrationCode']);
-    Route::post('/login', [AuthController::class, 'login']);
-    Route::get('/yandex/start', [YandexAuthController::class, 'start']);
-    Route::get('/yandex/callback', [YandexAuthController::class, 'callback']);
-    Route::post('/recovery', [AuthController::class, 'requestRecovery']);
-    Route::post('/recovery/reset', [AuthController::class, 'resetPassword']);
+    Route::post('/telegram', [AuthController::class, 'telegram'])->middleware('throttle:auth');
+    Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:codes');
+    Route::post('/register/confirm', [AuthController::class, 'confirmRegistration'])->middleware('throttle:auth');
+    Route::post('/register/resend', [AuthController::class, 'resendRegistrationCode'])->middleware('throttle:codes');
+    Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:login');
+    Route::get('/yandex/start', [YandexAuthController::class, 'start'])->middleware('throttle:auth');
+    Route::get('/yandex/callback', [YandexAuthController::class, 'callback'])->middleware('throttle:auth');
+    Route::post('/recovery', [AuthController::class, 'requestRecovery'])->middleware('throttle:codes');
+    Route::post('/recovery/reset', [AuthController::class, 'resetPassword'])->middleware('throttle:auth');
 });
 
 // Уведомления Т-Кассы о платежах: подпись Token проверяется, статус перепроверяется запросом GetState.
@@ -47,9 +48,10 @@ Route::get('/instruments', [InstrumentController::class, 'index']);
 // Документы (пользовательское соглашение и др.): приложение открывает их ссылками внутри себя.
 Route::get('/documents', [DocumentController::class, 'index']);
 
-// Файлы отчётов и фото чатов — без токена, чтобы открывать их в <img>/<iframe>.
-Route::get('/reports/{report}/cover', [ReportController::class, 'cover']);
-Route::get('/reports/{report}/html', [ReportController::class, 'html']);
+// Файлы отчётов — по временной подписанной ссылке (её выдаёт API подписчикам), без токена,
+// чтобы открывать их в <img>/<iframe>. Фото чатов и пользователей — открыты.
+Route::get('/reports/{report}/cover', [ReportController::class, 'cover'])->middleware('signed')->name('report.cover');
+Route::get('/reports/{report}/html', [ReportController::class, 'html'])->middleware('signed')->name('report.html');
 Route::get('/chats/{slug}/avatar', [ChatController::class, 'avatar']);
 Route::get('/users/{user}/avatar', [UserController::class, 'avatar']);
 
@@ -74,18 +76,18 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     // Профиль.
     Route::get('/profile', [ProfileController::class, 'show']);
     Route::put('/profile', [ProfileController::class, 'update']);
-    Route::post('/profile/avatar', [ProfileController::class, 'updateAvatar']);
+    Route::post('/profile/avatar', [ProfileController::class, 'updateAvatar'])->middleware('throttle:writes');
     Route::delete('/profile/avatar', [ProfileController::class, 'deleteAvatar']);
     Route::put('/profile/instruments', [ProfileController::class, 'syncInstruments']);
     Route::put('/profile/notifications', [ProfileController::class, 'updateNotifications']);
 
     // Привязка карты через Т-Кассу.
     Route::get('/billing/card', [BillingController::class, 'card']);
-    Route::post('/billing/card/bind', [BillingController::class, 'bind']);
+    Route::post('/billing/card/bind', [BillingController::class, 'bind'])->middleware('throttle:writes');
     Route::delete('/billing/card', [BillingController::class, 'unbind']);
 
     // Push-уведомления: регистрация FCM-токена устройства.
-    Route::post('/devices', [DeviceController::class, 'store']);
+    Route::post('/devices', [DeviceController::class, 'store'])->middleware('throttle:writes');
     Route::delete('/devices', [DeviceController::class, 'destroy']);
 
     // Подписка.
@@ -93,14 +95,14 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::put('/subscription', [SubscriptionController::class, 'update']);
 
     // Данные аккаунта.
-    Route::put('/account/email', [AccountController::class, 'changeEmail']);
-    Route::put('/account/phone', [AccountController::class, 'changePhone']);
-    Route::put('/account/password', [AccountController::class, 'changePassword']);
+    Route::put('/account/email', [AccountController::class, 'changeEmail'])->middleware('throttle:auth');
+    Route::put('/account/phone', [AccountController::class, 'changePhone'])->middleware('throttle:auth');
+    Route::put('/account/password', [AccountController::class, 'changePassword'])->middleware('throttle:auth');
 
     // Сообщество.
     Route::get('/chats', [ChatController::class, 'index']);
     Route::get('/chats/{slug}/messages', [ChatController::class, 'messages']);
-    Route::post('/chats/{slug}/messages', [ChatController::class, 'send']);
+    Route::post('/chats/{slug}/messages', [ChatController::class, 'send'])->middleware('throttle:writes');
     Route::post('/chats/{slug}/leave', [ChatController::class, 'leave']);
     Route::delete('/chats/{slug}/messages/{message}', [ChatController::class, 'destroyMessage']);
     Route::post('/chats/{slug}/messages/{message}/react', [ChatController::class, 'react']);

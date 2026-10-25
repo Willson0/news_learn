@@ -18,6 +18,9 @@ use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
+    /** Хэш-заглушка: проверка пароля для несуществующего пользователя занимает столько же времени. */
+    private const TIMING_GUARD_HASH = '$2y$12$HhOwHmWGkvkI6adc/Ka2puARIFFW1c1v9fvQcMZwJ0CbBYOPPAscq';
+
     /**
      * Вход через Telegram Web App: проверяем подпись initData и выдаём токен.
      */
@@ -29,8 +32,9 @@ class AuthController extends Controller
 
         $parsed = $telegram->validate($data['init_data']);
 
-        // Для локальной разработки разрешаем «небезопасный» разбор без проверки.
-        if ($parsed === null && config('services.telegram.allow_insecure')) {
+        // Для локальной разработки разрешаем «небезопасный» разбор без проверки. Только локально:
+        // иначе любой мог бы войти под чужим Telegram ID, в том числе под админом.
+        if ($parsed === null && config('services.telegram.allow_insecure') && app()->environment('local', 'testing')) {
             parse_str($data['init_data'], $raw);
             if (isset($raw['user']) && is_string($raw['user'])) {
                 $raw['user'] = json_decode($raw['user'], true);
@@ -191,7 +195,9 @@ class AuthController extends Controller
         $field = str_contains($data['identifier'], '@') ? 'email' : 'phone';
         $user = User::where($field, $data['identifier'])->first();
 
-        if (! $user || ! Hash::check($data['password'], (string) $user->password)) {
+        // Хэш проверяем и для несуществующего пользователя: время ответа не выдаёт, есть ли аккаунт.
+        $hash = $user ? (string) $user->password : self::TIMING_GUARD_HASH;
+        if (! Hash::check($data['password'], $hash) || ! $user) {
             throw ValidationException::withMessages([
                 'identifier' => 'Неверный логин или пароль.',
             ]);
@@ -274,6 +280,8 @@ class AuthController extends Controller
         $user->password = $data['password'];
         $user->save();
 
+        // Новый пароль закрывает все прежние входы (украденные токены перестают работать).
+        $user->tokens()->delete();
         PasswordResetCode::where('email', $data['email'])->delete();
 
         return $this->tokenResponse($user);
@@ -326,7 +334,10 @@ class AuthController extends Controller
             ]);
         }
 
-        Log::info('Код подтверждения', ['email' => $email, 'purpose' => $purpose, 'code' => $code]);
+        // Код в лог пишем только при локальной разработке и при почте-заглушке: в боевом логе его быть не должно.
+        if (app()->environment('local') || config('mail.default') === 'log') {
+            Log::info('Код подтверждения', ['email' => $email, 'purpose' => $purpose, 'code' => $code]);
+        }
     }
 
     private function tokenResponse(User $user, int $status = 200): JsonResponse

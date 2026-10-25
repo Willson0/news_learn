@@ -14,7 +14,7 @@ class CreatePanelAdmin extends Command
     public function handle(): int
     {
         $password = (string) $this->argument('password');
-        if (mb_strlen($password) < 8) {
+        if (mb_strlen($password) < 10) {
             $this->error('Пароль должен быть не короче 8 символов.');
 
             return self::FAILURE;

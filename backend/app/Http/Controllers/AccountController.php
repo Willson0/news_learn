@@ -20,6 +20,7 @@ class AccountController extends Controller
         ]);
 
         $request->user()->update(['email' => $data['email']]);
+        $this->revokeOtherTokens($request);
 
         return response()->json(['status' => 'ok']);
     }
@@ -53,6 +54,18 @@ class AccountController extends Controller
 
         $user->update(['password' => $data['password']]);
 
+        // Остальные устройства выходят: украденный токен не переживёт смену пароля.
+        $this->revokeOtherTokens($request);
+
         return response()->json(['status' => 'ok']);
+    }
+
+    /** Удаляет все токены пользователя, кроме текущего. */
+    private function revokeOtherTokens(Request $request): void
+    {
+        $current = $request->user()->currentAccessToken();
+        $request->user()->tokens()
+            ->when($current && isset($current->id), fn ($q) => $q->whereKeyNot($current->id))
+            ->delete();
     }
 }

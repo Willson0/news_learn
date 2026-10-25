@@ -64,6 +64,12 @@ class User extends Authenticatable
         return Admin::isRoot($this->telegram_id);
     }
 
+    /** Доступ к платным материалам: админ или активная подписка. Проверяется на сервере, не только в приложении. */
+    public function hasAccess(): bool
+    {
+        return $this->isAdmin() || (bool) $this->subscription?->grantsAccessNow();
+    }
+
     public function instruments(): BelongsToMany
     {
         return $this->belongsToMany(Instrument::class)->withTimestamps();

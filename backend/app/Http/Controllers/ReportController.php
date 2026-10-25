@@ -7,12 +7,18 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class ReportController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
+        // Отчёты — платный материал: без подписки список пуст (приложение показывает экран оплаты).
+        if (! $request->user()->hasAccess()) {
+            return response()->json(['data' => []]);
+        }
+
         // Черновики видны только в админке, пользователям не показываем.
         $query = Report::with('instrument')->where('status', '!=', 'draft')->latest('published_at');
 
@@ -73,15 +79,19 @@ class ReportController extends Controller
         return response()->json(['data' => $reports]);
     }
 
-    public function show(Report $report): JsonResponse
+    public function show(Request $request, Report $report): JsonResponse
     {
+        $user = $request->user();
+        abort_if($report->status === 'draft' && ! $user->isAdmin(), 404);
+        abort_unless($user->hasAccess(), 403, 'Отчёт доступен по подписке.');
+
         $report->load('instrument', 'chat');
 
         return response()->json(['data' => self::present($report, true)]);
     }
 
     /**
-     * Обложка отчёта. Открыта без токена, чтобы её можно было показать в <img>.
+     * Обложка отчёта по подписанной ссылке: без токена, чтобы её можно было показать в <img>.
      */
     public function cover(Report $report): BinaryFileResponse
     {
@@ -125,9 +135,9 @@ class ReportController extends Controller
             'material' => $report->instrument?->key,
             'instrument' => $report->instrument?->label,
             'chart_url' => $report->chart_url,
-            'cover_url' => $report->cover_path ? "/reports/{$report->id}/cover?v={$version}" : null,
+            'cover_url' => $report->cover_path ? self::signedFileUrl('report.cover', $report, $version) : null,
             'cover_name' => $report->cover_name,
-            'html_url' => $report->html_path ? "/reports/{$report->id}/html?v={$version}" : null,
+            'html_url' => $report->html_path ? self::signedFileUrl('report.html', $report, $version) : null,
             'html_name' => $report->html_name,
             'chat' => $report->relationLoaded('chat') ? $report->chat?->slug : null,
         ];
@@ -137,6 +147,15 @@ class ReportController extends Controller
         }
 
         return $data;
+    }
+
+    /**
+     * Временная подписанная ссылка на файл отчёта. Её получают только те, кому API отдаёт отчёт,
+     * а перебором id файлы не открыть. Срок привязан к дню, чтобы ссылка не менялась и кэш работал.
+     */
+    private static function signedFileUrl(string $route, Report $report, ?int $version): string
+    {
+        return URL::temporarySignedRoute($route, today()->addDays(2), ['report' => $report->id, 'v' => $version]);
     }
 
     /** Регистрирует в SQLite функцию mb_lower (регистронезависимо для кириллицы). */

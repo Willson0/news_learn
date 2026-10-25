@@ -17,17 +17,25 @@ class Subscription extends Model
         'until' => 'date',
     ];
 
+    /** Дней после окончания периода на автосписание: пока оно идёт, доступ не закрываем. */
+    public const RENEWAL_GRACE_DAYS = 3;
+
     /**
-     * Доступ по подписке открыт сейчас. Подписка без автопродления (например, бесплатный доступ)
-     * перестаёт действовать после даты окончания, даже если флаг активности не сняли.
+     * Доступ по подписке открыт сейчас. Дата окончания действует всегда: включённое автопродление
+     * даёт лишь несколько дней на списание, а не бессрочный доступ.
      */
     public function grantsAccessNow(): bool
     {
         if (! $this->active) {
             return false;
         }
+        if ($this->until === null) {
+            return true;
+        }
 
-        return $this->auto_pay || $this->until === null || $this->until->gte(today());
+        $grace = $this->auto_pay ? self::RENEWAL_GRACE_DAYS : 0;
+
+        return $this->until->copy()->addDays($grace)->gte(today());
     }
 
     public function user(): BelongsTo

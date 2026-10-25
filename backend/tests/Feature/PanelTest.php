@@ -99,12 +99,12 @@ class PanelTest extends TestCase
 
         $this->asPanel()->putJson('/admin/api/account', [
             'login' => 'new-boss',
-            'password' => 'brand-new-pass',
-            'password_confirmation' => 'brand-new-pass',
+            'password' => 'brand-new-pass-1',
+            'password_confirmation' => 'brand-new-pass-1',
             'current_password' => 'secret-pass',
         ])->assertOk()->assertJson(['login' => 'new-boss']);
 
-        $this->assertTrue(Hash::check('brand-new-pass', $this->panel->fresh()->password));
+        $this->assertTrue(Hash::check('brand-new-pass-1', $this->panel->fresh()->password));
     }
 
     public function test_users_list_filters_by_group_and_search(): void

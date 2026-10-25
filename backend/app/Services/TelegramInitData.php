@@ -42,6 +42,9 @@ class TelegramInitData
 
         $pairs = [];
         foreach ($params as $key => $value) {
+            if (! is_string($value)) {
+                return null;
+            }
             $pairs[] = $key.'='.$value;
         }
         $dataCheckString = implode("\n", $pairs);
@@ -53,10 +56,10 @@ class TelegramInitData
             return null;
         }
 
-        // Защита от повторного использования старого initData.
-        if (isset($params['auth_date']) && $maxAgeSeconds > 0) {
-            $authDate = (int) $params['auth_date'];
-            if ($authDate > 0 && Carbon::createFromTimestamp($authDate)->addSeconds($maxAgeSeconds)->isPast()) {
+        // Защита от повторного использования старого initData: auth_date обязателен.
+        if ($maxAgeSeconds > 0) {
+            $authDate = (int) ($params['auth_date'] ?? 0);
+            if ($authDate <= 0 || Carbon::createFromTimestamp($authDate)->addSeconds($maxAgeSeconds)->isPast()) {
                 return null;
             }
         }

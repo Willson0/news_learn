@@ -18,7 +18,7 @@ Route::get('/', function () {
 */
 Route::prefix('admin')->group(function () {
     Route::prefix('api')->group(function () {
-        Route::post('/login', [Panel\AuthController::class, 'login']);
+        Route::post('/login', [Panel\AuthController::class, 'login'])->middleware('throttle:panel-login');
 
         Route::middleware('auth:panel')->group(function () {
             Route::post('/logout', [Panel\AuthController::class, 'logout']);

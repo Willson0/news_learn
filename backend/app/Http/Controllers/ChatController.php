@@ -38,8 +38,11 @@ class ChatController extends Controller
             ];
         }
 
+        // Без подписки доступны только общие чаты и чат с админом; чаты отчётов — по подписке.
+        $sectionsAllowed = $user->hasAccess() ? ['main', 'reports'] : ['main'];
+
         $chats = Chat::with('latestMessage')
-            ->whereIn('section', ['main', 'reports'])
+            ->whereIn('section', $sectionsAllowed)
             ->whereNotIn('id', $user->leftChats()->select('chats.id'))
             ->orderByDesc('pinned')
             ->orderBy('position')
@@ -130,6 +133,22 @@ class ChatController extends Controller
             'kind' => ['nullable', 'in:image,file,voice', 'required_with:attachment,attachments'],
             'duration' => ['nullable', 'integer', 'min:0', 'max:36000'],
         ]);
+
+        // Тип файла проверяем по содержимому: «фото» должно быть картинкой, «голосовое» — аудио.
+        $kindRules = [
+            'image' => ['mimes:jpg,jpeg,png,gif,webp,heic,heif'],
+            'voice' => ['mimetypes:audio/mp4,audio/x-m4a,audio/m4a,audio/aac,audio/mpeg,audio/ogg,audio/opus,audio/wav,audio/x-wav,audio/webm,video/mp4,video/webm,application/ogg'],
+        ];
+        if (isset($data['kind'], $kindRules[$data['kind']])) {
+            $request->validate([
+                'attachment' => $kindRules[$data['kind']],
+                'attachments.*' => $kindRules[$data['kind']],
+            ], [
+                'attachment.mimes' => 'Можно отправить только фото.',
+                'attachments.*.mimes' => 'Можно отправить только фото.',
+                'attachment.mimetypes' => 'Неподдерживаемый формат голосового сообщения.',
+            ]);
+        }
 
         $files = $request->file('attachments', []);
         if ($request->hasFile('attachment')) {
@@ -301,10 +320,26 @@ class ChatController extends Controller
     {
         abort_unless(Storage::disk(self::DISK)->exists($attachment->path), 404);
 
-        // Вложение не меняется: кэшируем в браузере/приложении, чтобы фото не грузились заново.
-        return response()->file(Storage::disk(self::DISK)->path($attachment->path), [
+        $path = Storage::disk(self::DISK)->path($attachment->path);
+        $headers = [
+            // Вложение не меняется: кэшируем в браузере/приложении, чтобы фото не грузились заново.
             'Cache-Control' => 'private, max-age=2592000, immutable',
-        ]);
+            // Пользовательский файл не исполняется в браузере на нашем домене (защита от XSS через html/svg).
+            'Content-Security-Policy' => "default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'; sandbox",
+            'X-Content-Type-Options' => 'nosniff',
+        ];
+
+        // Картинки и аудио отдаём для просмотра, всё остальное — только как скачивание.
+        $mime = (string) (mime_content_type($path) ?: 'application/octet-stream');
+        $inline = in_array($mime, ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif'], true)
+            || str_starts_with($mime, 'audio/') || in_array($mime, ['video/mp4', 'video/webm', 'application/ogg'], true);
+        if (! $inline) {
+            return response()->download($path, $attachment->name ?: basename($path), $headers + [
+                'Content-Type' => 'application/octet-stream',
+            ]);
+        }
+
+        return response()->file($path, $headers + ['Content-Type' => $mime]);
     }
 
     /**
@@ -330,6 +365,10 @@ class ChatController extends Controller
 
         if ($chat->type === 'direct' && $chat->user_id !== $user->id && ! $user->isAdmin()) {
             abort(404);
+        }
+
+        if ($chat->type !== 'direct' && $chat->section !== 'main' && ! $user->hasAccess()) {
+            abort(403, 'Чат доступен по подписке.');
         }
 
         if ($user->leftChats()->whereKey($chat->id)->exists()) {
@@ -448,9 +487,9 @@ class ChatController extends Controller
 
     private function fileUrl(MessageAttachment $a): string
     {
-        // Срок ссылки привязан к вложению, а не к текущему времени: адрес не меняется
-        // при каждом открытии чата, и кэш картинок работает.
-        $expires = ($a->created_at ?? now())->copy()->addDays(30);
+        // Срок ссылки — конец следующего месяца: адрес не меняется при каждом открытии чата
+        // (кэш картинок работает), а старые вложения не перестают открываться через 30 дней.
+        $expires = now()->startOfMonth()->addMonths(2);
 
         return URL::temporarySignedRoute('chat.attachment', $expires, ['attachment' => $a->id]);
     }

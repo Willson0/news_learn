@@ -32,11 +32,13 @@ class SubscriptionController extends Controller
     {
         $data = $request->validate([
             'auto_pay' => ['sometimes', 'boolean'],
-            'payment_method' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'payment_method' => ['sometimes', 'nullable', 'string', 'max:64'],
         ]);
 
-        $sub = Subscription::firstOrCreate(['user_id' => $request->user()->id]);
-        $sub->fill($data)->save();
+        // Пользователь меняет только свои настройки уже существующей подписки: статус, срок и сумму
+        // задают оплата и админ. Новую запись отсюда не создаём.
+        $sub = Subscription::where('user_id', $request->user()->id)->first();
+        $sub?->fill($data)->save();
 
         return response()->json(['status' => 'ok']);
     }

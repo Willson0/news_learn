@@ -112,9 +112,12 @@ class AdminTest extends TestCase
         $this->assertSame('report-'.$id, $resp->json('data.chat'));
         $this->assertDatabaseHas('chats', ['report_id' => $id, 'section' => 'reports']);
 
-        $this->get("/api/reports/{$id}/html")->assertOk()
+        // Файлы отчёта открываются только по подписанной ссылке из API.
+        $this->get($resp->json('data.html_url'))->assertOk()
             ->assertHeader('Content-Security-Policy', 'sandbox allow-scripts');
-        $this->get("/api/reports/{$id}/cover")->assertOk();
+        $this->get($resp->json('data.cover_url'))->assertOk();
+        $this->get("/api/reports/{$id}/html")->assertForbidden();
+        $this->get("/api/reports/{$id}/cover")->assertForbidden();
 
         $this->post("/api/admin/reports/{$id}", [
             'title' => 'Нефть 2027, обновлено',

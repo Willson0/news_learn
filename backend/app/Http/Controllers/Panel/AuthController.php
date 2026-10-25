@@ -57,11 +57,12 @@ class AuthController extends Controller
         $data = $request->validate([
             'current_password' => ['required', 'string'],
             'login' => ['sometimes', 'required', 'string', 'max:255', Rule::unique('panel_admins', 'login')->ignore($admin->id)],
-            'password' => ['sometimes', 'nullable', 'string', 'min:8', 'confirmed'],
+            'password' => ['sometimes', 'nullable', 'string', 'min:10', 'confirmed', 'regex:/[A-Za-zА-Яа-я]/u', 'regex:/\d/'],
         ], [
             'current_password.required' => 'Введите текущий пароль',
             'login.unique' => 'Такой логин уже занят',
-            'password.min' => 'Пароль должен быть не короче 8 символов',
+            'password.min' => 'Пароль должен быть не короче 10 символов',
+            'password.regex' => 'В пароле должны быть буквы и цифры',
             'password.confirmed' => 'Пароли не совпадают',
         ]);
 
@@ -76,6 +77,11 @@ class AuthController extends Controller
             $admin->password = $data['password'];
         }
         $admin->save();
+
+        // Новый пароль: сессия текущего входа выдаётся заново.
+        if (! empty($data['password'])) {
+            $request->session()->regenerate();
+        }
 
         return $this->me($request);
     }
