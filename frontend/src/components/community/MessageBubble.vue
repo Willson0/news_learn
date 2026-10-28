@@ -74,6 +74,7 @@ export default {
     <div v-if="message.toAuthor" class="bubble__to-author">Автору</div>
 
     <!-- Цитата (ответ) -->
+    <div v-if="message.private && message.private_label" class="bubble__author">{{ message.private_label }}</div>
     <div v-if="message.reply" class="bubble__quote">
       <span class="bubble__quote-author">{{ message.reply.author }}</span>
       <span class="bubble__quote-text">{{ message.reply.text }}</span>

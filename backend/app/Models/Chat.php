@@ -48,10 +48,29 @@ class Chat extends Model
         return $user->isAdmin();
     }
 
-    /** Нельзя выйти вручную: личный чат и чат отчёта закрываются вместе с отчётом. */
+    /** Закреплять и откреплять сообщения могут админы и создатель отчёта (в чате отчёта). */
+    public function canPinBy(User $user): bool
+    {
+        if ($user->isAdmin()) {
+            return true;
+        }
+
+        return $this->type === 'report' && $this->report?->created_by === $user->id;
+    }
+
+    /** Автор отчёта — адресат личных сообщений «/текст/» в чате отчёта. */
+    public function reportAuthorId(): ?int
+    {
+        return $this->type === 'report' ? $this->report?->created_by : null;
+    }
+
+    /**
+     * Нельзя выйти вручную: личный чат, чат отчёта (закрывается вместе с отчётом)
+     * и общие чаты раздела «Чаты» — в них состоят все пользователи.
+     */
     public function isPermanent(): bool
     {
-        return in_array($this->type, ['direct', 'report'], true);
+        return in_array($this->type, ['direct', 'report'], true) || $this->section === 'main';
     }
 
     /** Владелец личного чата с админом. */

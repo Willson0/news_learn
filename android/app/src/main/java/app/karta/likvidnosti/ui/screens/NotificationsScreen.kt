@@ -6,12 +6,14 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
@@ -28,12 +30,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import app.karta.likvidnosti.data.AppData
 import app.karta.likvidnosti.data.Repository
 import app.karta.likvidnosti.ui.components.figmaFade
 import app.karta.likvidnosti.ui.components.AppToggle
 import app.karta.likvidnosti.ui.components.FlowLayout
 import app.karta.likvidnosti.ui.components.InnerScreen
 import app.karta.likvidnosti.ui.components.InstrumentChip
+import app.karta.likvidnosti.ui.components.SkeletonBox
 import app.karta.likvidnosti.ui.theme.AppFont
 import app.karta.likvidnosti.ui.theme.T
 import kotlinx.coroutines.launch
@@ -51,22 +55,45 @@ private data class NotifInstrument(val key: String, val label: String, val on: B
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun NotificationsScreen(onBack: () -> Unit) {
-    var all by remember { mutableStateOf(true) }
-    var byInstrument by remember { mutableStateOf(false) }
-    val instruments = remember { mutableStateListOf<NotifInstrument>() }
+    // Сразу в состоянии пользователя (кэш AppData): свитчи не переключаются
+    // анимацией из значений по умолчанию. Без кэша — скелетоны до ответа сервера.
+    val cached = AppData.profile
+    var known by remember { mutableStateOf(cached != null) }
+    var all by remember { mutableStateOf(cached?.notifications?.all ?: true) }
+    var byInstrument by remember { mutableStateOf(cached?.notifications?.byInstrument ?: false) }
+    val instruments = remember {
+        mutableStateListOf<NotifInstrument>().apply {
+            cached?.instruments?.let { list -> addAll(list.map { NotifInstrument(it.key, it.label, it.on) }) }
+        }
+    }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
         runCatching { Repository.profile() }.getOrNull()?.let { p ->
+            AppData.profile = p
             all = p.notifications?.all ?: true
             byInstrument = p.notifications?.byInstrument ?: false
-            instruments.clear()
-            instruments.addAll(p.instruments.map { NotifInstrument(it.key, it.label, it.on) })
+            val fresh = p.instruments.map { NotifInstrument(it.key, it.label, it.on) }
+            if (fresh != instruments.toList()) {
+                instruments.clear()
+                instruments.addAll(fresh)
+            }
         }
+        known = true
     }
 
     fun saveInstruments() {
-        scope.launch { runCatching { Repository.syncInstruments(instruments.filter { it.on }.map { it.key }) } }
+        scope.launch {
+            runCatching { Repository.syncInstruments(instruments.filter { it.on }.map { it.key }) }
+            AppData.refreshProfile()
+        }
+    }
+
+    fun saveNotifications(all: Boolean? = null, byInstrument: Boolean? = null) {
+        scope.launch {
+            runCatching { Repository.updateNotifications(all = all, byInstrument = byInstrument) }
+            AppData.refreshProfile()
+        }
     }
 
     InnerScreen(onBack = onBack) {
@@ -80,20 +107,30 @@ fun NotificationsScreen(onBack: () -> Unit) {
                 .background(T.Surface)
                 .padding(horizontal = 16.dp, vertical = 12.dp),
         ) {
-            SwitchRow("Все уведомления", all) {
-                all = it
-                scope.launch { runCatching { Repository.updateNotifications(all = it) } }
-            }
-            // Прототип: «Профиль push-уведомления» 484:21266 ↔ 484:21302 — строка схлопывается,
-            // ниже всё подтягивается: SMART_ANIMATE 800 мс, ease-in-out-back.
-            AnimatedVisibility(
-                visible = !all,
-                enter = fadeIn(figmaFade()) + expandVertically(figmaFade()),
-                exit = fadeOut(figmaFade()) + shrinkVertically(figmaFade()),
-            ) {
-                SwitchRow("Только по инструментам", byInstrument) {
-                    byInstrument = it
-                    scope.launch { runCatching { Repository.updateNotifications(byInstrument = it) } }
+            if (!known) {
+                repeat(2) {
+                    Row(Modifier.fillMaxWidth().height(43.dp), verticalAlignment = Alignment.CenterVertically) {
+                        SkeletonBox(Modifier.width(160.dp).height(16.dp))
+                        Spacer(Modifier.weight(1f))
+                        SkeletonBox(Modifier.size(50.dp, 30.dp), shape = CircleShape)
+                    }
+                }
+            } else {
+                SwitchRow("Все уведомления", all) {
+                    all = it
+                    saveNotifications(all = it)
+                }
+                // Прототип: «Профиль push-уведомления» 484:21266 ↔ 484:21302 — строка схлопывается,
+                // ниже всё подтягивается: SMART_ANIMATE 800 мс, ease-in-out-back.
+                AnimatedVisibility(
+                    visible = !all,
+                    enter = fadeIn(figmaFade()) + expandVertically(figmaFade()),
+                    exit = fadeOut(figmaFade()) + shrinkVertically(figmaFade()),
+                ) {
+                    SwitchRow("Только по инструментам", byInstrument) {
+                        byInstrument = it
+                        saveNotifications(byInstrument = it)
+                    }
                 }
             }
         }

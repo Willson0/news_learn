@@ -4,13 +4,10 @@ import android.content.Context
 import android.content.Intent
 import android.media.MediaPlayer
 import android.net.Uri
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -65,7 +62,6 @@ import app.karta.likvidnosti.data.Session
 import app.karta.likvidnosti.data.api.ChatAttachmentDto
 import app.karta.likvidnosti.data.api.ParticipantDto
 import app.karta.likvidnosti.data.fileUrl
-import app.karta.likvidnosti.ui.components.AppInput
 import app.karta.likvidnosti.ui.components.AvatarCircle
 import app.karta.likvidnosti.ui.components.BackdropBox
 import app.karta.likvidnosti.ui.components.CapsuleShape
@@ -137,10 +133,12 @@ fun ChatInfoScreen(
     var permanent by remember { mutableStateOf(false) }
     var canManage by remember { mutableStateOf<Boolean?>(null) }
     var leaving by remember { mutableStateOf(false) }
+    // Пока данные чата не пришли, обложка — мигающий блок, а не заглушка.
+    var infoLoaded by remember { mutableStateOf(false) }
     var tab by remember { mutableStateOf("members") }
     var muted by remember { mutableStateOf(mutedPrefs(context).getBoolean("kl_muted_$slug", false)) }
-    var searchOpen by remember { mutableStateOf(false) }
-    var query by remember { mutableStateOf("") }
+    // Поиск идёт по сообщениям в самом чате (как в Телеграме): фильтр вкладок здесь не нужен.
+    val query = ""
 
     val participants = remember { mutableStateListOf<ParticipantDto>() }
     val media = remember { mutableStateListOf<ChatAttachmentDto>() }
@@ -188,6 +186,7 @@ fun ChatInfoScreen(
             permanent = it.permanent
             canManage = it.canManage
         }
+        infoLoaded = true
     }
 
     LaunchedEffect(tab) {
@@ -225,7 +224,7 @@ fun ChatInfoScreen(
         content = {
             Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                 Box(modifier = Modifier.fillMaxWidth()) {
-                    InfoHeader(title, members, avatar, headerHeight)
+                    InfoHeader(title, members, avatar, headerHeight, loading = !infoLoaded)
 
                     // Лист с радиусом 24 поверх нижнего края шапки.
                     Column(
@@ -251,8 +250,9 @@ fun ChatInfoScreen(
                                 mutedPrefs(context).edit().putBoolean("kl_muted_$slug", muted).apply()
                             }
                             InfoActionButton(AppIcons.search) {
-                                searchOpen = !searchOpen
-                                if (!searchOpen) query = ""
+                                // Поиск открывается в чате: возвращаемся к переписке с открытым поиском.
+                                ChatSearchBus.request = slug
+                                onBack()
                             }
                             if (!permanent) {
                                 InfoActionButton(AppIcons.leave) {
@@ -265,20 +265,6 @@ fun ChatInfoScreen(
                                 }
                             }
                         }
-
-                        AnimatedVisibility(
-                            visible = searchOpen,
-                            enter = fadeIn() + expandVertically(),
-                            exit = fadeOut() + shrinkVertically(),
-                        ) {
-                            AppInput(
-                                value = query,
-                                onValueChange = { query = it },
-                                placeholder = "Поиск",
-                                modifier = Modifier.padding(horizontal = T.ScreenX).padding(top = 12.dp),
-                            )
-                        }
-
                         // Сегменты-вкладки.
                         Box(
                             modifier = Modifier
@@ -439,7 +425,7 @@ fun ChatInfoScreen(
 }
 
 @Composable
-private fun InfoHeader(title: String, members: String, avatar: String?, height: androidx.compose.ui.unit.Dp) {
+private fun InfoHeader(title: String, members: String, avatar: String?, height: androidx.compose.ui.unit.Dp, loading: Boolean) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -448,7 +434,7 @@ private fun InfoHeader(title: String, members: String, avatar: String?, height: 
             .background(hex("#383838")),
     ) {
         Box(modifier = Modifier.fillMaxWidth().height(height + 31.dp)) {
-            ReportCover(avatar, Modifier.fillMaxSize().blur(50.dp, BlurredEdgeTreatment.Rectangle))
+            ReportCover(avatar, Modifier.fillMaxSize().blur(50.dp, BlurredEdgeTreatment.Rectangle), loading = loading)
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f)))
         }
         Box(
@@ -456,10 +442,9 @@ private fun InfoHeader(title: String, members: String, avatar: String?, height: 
                 .align(Alignment.TopCenter)
                 .padding(top = designTop(78.dp))
                 .size(148.dp)
-                .clip(CircleShape)
-                .background(hex("#d9d9d9")),
+                .clip(CircleShape),
         ) {
-            ReportCover(avatar, Modifier.fillMaxSize())
+            ReportCover(avatar, Modifier.fillMaxSize(), loading = loading)
         }
         Column(
             modifier = Modifier
@@ -536,11 +521,10 @@ private fun MediaGrid(media: List<ChatAttachmentDto>, onOpen: (ChatAttachmentDto
                         modifier = Modifier
                             .weight(1f)
                             .aspectRatio(1f)
-                            .background(hex("#d9d9d9"))
                             .clipToBounds()
                             .pressable(pressAlpha = 1f) { onOpen(a) },
                     ) {
-                        RemoteImage(fileUrl(a.url), Modifier.fillMaxSize())
+                        RemoteImage(fileUrl(a.url), Modifier.fillMaxSize(), loading = true)
                     }
                 }
                 repeat(3 - row.size) { Spacer(Modifier.weight(1f).aspectRatio(1f)) }

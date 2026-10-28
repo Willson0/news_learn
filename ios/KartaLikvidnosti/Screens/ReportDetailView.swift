@@ -3,9 +3,13 @@ import SwiftUI
 struct ReportDetailView: View {
     @EnvironmentObject var router: Router
     @EnvironmentObject var session: Session
+    @EnvironmentObject var appData: AppData
     let reportId: Int?
 
     @State private var report = ReportModel.placeholder
+    /// Данные отчёта уже есть (из ленты или с сервера) — до этого вместо обложки и
+    /// текста мигающие блоки, а не демо-заглушка, которая сменялась бы настоящим отчётом.
+    @State private var loaded = false
     @State private var reportOpen = false
     @State private var graphOpen = false
     /// html-отчёт открывается на весь экран, как отдельная страница.
@@ -24,10 +28,24 @@ struct ReportDetailView: View {
         var htmlUrl: URL?
 
         static let placeholder = ReportModel(
-            title: "Нефть в 2026 году, как она?", date: "12.02.26", badge: "Актуальный",
-            description: "Здесь мы расскажем о состоянии нефти на момент 2026 года и возможное ее будущее",
-            body: nil, material: "wti", chat: nil, chartUrl: nil, coverUrl: nil, htmlUrl: nil)
+            title: "", date: nil, badge: nil, description: "",
+            body: nil, material: nil, chat: nil, chartUrl: nil, coverUrl: nil, htmlUrl: nil)
+
+        init(title: String, date: String?, badge: String?, description: String, body: String?,
+             material: String?, chat: String?, chartUrl: String?, coverUrl: URL?, htmlUrl: URL?) {
+            self.title = title; self.date = date; self.badge = badge; self.description = description
+            self.body = body; self.material = material; self.chat = chat; self.chartUrl = chartUrl
+            self.coverUrl = coverUrl; self.htmlUrl = htmlUrl
+        }
+
+        init(_ d: ReportDto) {
+            self.init(title: d.title, date: d.date, badge: d.badge, description: d.description,
+                      body: d.body, material: d.material, chat: d.chat, chartUrl: d.chartUrl,
+                      coverUrl: fileURL(d.coverUrl), htmlUrl: fileURL(d.htmlUrl))
+        }
     }
+
+    private var chartSource: ChartSource? { ChartSource.parse(report.chartUrl) }
 
     // «Аналитика отчет»: размытая обложка (blur 25 + чёрный 50%) высотой 465
     // со скруглением снизу, сверху — стеклянные «назад» и лейбл статуса; кнопки
@@ -47,8 +65,12 @@ struct ReportDetailView: View {
                     if reportOpen {
                         reportBody.padding(.horizontal, Theme.screenX).padding(.top, 24)
                     }
-                    if graphOpen {
-                        CandlestickChart().padding(.top, 24)
+                    if graphOpen, let source = chartSource {
+                        // Прототип: «Аналитика отчет график внутри» — блок графика во всю ширину.
+                        ChartEmbedView(source: source)
+                            .frame(height: 600)
+                            .padding(.top, 24)
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
                     }
                 }
                 .padding(.bottom, 45)
@@ -76,6 +98,7 @@ struct ReportDetailView: View {
         .fullScreenCover(isPresented: $htmlOpen) {
             if let url = report.htmlUrl { HtmlReportView(url: url) }
         }
+        .onAppear { seedFromFeed() }
         .task { await load() }
     }
 
@@ -87,9 +110,12 @@ struct ReportDetailView: View {
             ReportActionButton(label: "Обсудить", variant: .pink, icon: AppIcons.chat) {
                 discuss()
             }
-            ReportActionButton(label: graphOpen ? "Закрыть график" : "Открыть график",
-                               variant: graphOpen ? .chartOn : .chartOff, icon: AppIcons.chartBadge) {
-                toggleGraph()
+            // Без ссылки на график кнопки нет (Figma «Аналитика отчет без графика»).
+            if chartSource != nil {
+                ReportActionButton(label: graphOpen ? "Закрыть график" : "Открыть график",
+                                   variant: graphOpen ? .chartOn : .chartOff, icon: AppIcons.chartBadge) {
+                    graphOpen.toggle()
+                }
             }
         }
     }
@@ -103,13 +129,28 @@ struct ReportDetailView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .overlay {
                     ZStack {
-                        ReportCoverPlaceholder()
-                        if let cover = report.coverUrl { RemoteImage(url: cover) }
+                        if !loaded {
+                            LoadingBlock()
+                        } else if let cover = report.coverUrl {
+                            RemoteImage(url: cover) { ReportCoverPlaceholder() }
+                        } else {
+                            ReportCoverPlaceholder()
+                        }
                     }
                 }
                 .clipped()
                 .overlay { ZStack { BackdropBlur(radius: 25); Color.black.opacity(0.5) } }
 
+            if !loaded {
+                VStack(alignment: .leading, spacing: 12) {
+                    SkeletonBlock(width: 220, height: 20)
+                    SkeletonBlock(width: 80, height: 14)
+                    SkeletonBlock(width: 300, height: 14)
+                    SkeletonBlock(width: 240, height: 14)
+                }
+                .padding(.horizontal, Theme.screenX)
+                .padding(.bottom, 16)
+            } else {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 0) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -128,6 +169,7 @@ struct ReportDetailView: View {
             }
             .padding(.horizontal, Theme.screenX)
             .padding(.bottom, 16)
+            }
         }
         .frame(height: (graphOpen || reportOpen) ? 302 : 465)
         .clipShape(shape)
@@ -156,23 +198,20 @@ struct ReportDetailView: View {
         else { router.switchTab(.community) }
     }
 
-    private func toggleGraph() {
-        if let chart = report.chartUrl, let url = URL(string: chart) {
-            UIApplication.shared.open(url)
-            return
-        }
-        graphOpen.toggle()
+    /// Отчёт из ленты (уже загруженной) показывается сразу: обложка берётся из кэша картинок.
+    private func seedFromFeed() {
+        guard !loaded, let id = reportId, let d = appData.reports.first(where: { $0.id == id }) else { return }
+        report = ReportModel(d)
+        loaded = true
     }
 
     private func load() async {
-        guard let id = reportId else { return }
+        guard let id = reportId else { loaded = true; return }
         do {
-            guard let d = try await Api.fetchReport(id: String(id)) else { return }
-            report = ReportModel(
-                title: d.title, date: d.date, badge: d.badge, description: d.description,
-                body: d.body, material: d.material, chat: d.chat, chartUrl: d.chartUrl,
-                coverUrl: fileURL(d.coverUrl), htmlUrl: fileURL(d.htmlUrl))
+            guard let d = try await Api.fetchReport(id: String(id)) else { loaded = true; return }
+            report = ReportModel(d)
         } catch {}
+        loaded = true
     }
 }
 

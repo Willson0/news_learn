@@ -221,6 +221,10 @@ struct ChatItemDto: Decodable, Identifiable {
     let permanent: Bool
     /// Может ли текущий пользователь управлять чатом (у чата отчёта — только создатель отчёта).
     let canManage: Bool?
+    /// Может ли закреплять/откреплять сообщения (админ или автор отчёта).
+    var canPin: Bool = false
+    /// В чате отчёта можно написать автору лично через «/текст/».
+    var authorMessages: Bool = false
 
     init(id: String, type: String? = nil, title: String, subtitle: String? = nil,
          pinned: Bool = false, avatarUrl: String? = nil, report: Int? = nil,
@@ -246,31 +250,48 @@ struct ChatItemDto: Decodable, Identifiable {
         unread = (try c.decodeIfPresent(Int.self, forKey: .unread)) ?? 0
         permanent = (try c.decodeIfPresent(Bool.self, forKey: .permanent)) ?? false
         canManage = try c.decodeIfPresent(Bool.self, forKey: .canManage)
+        canPin = (try c.decodeIfPresent(Bool.self, forKey: .canPin)) ?? false
+        authorMessages = (try c.decodeIfPresent(Bool.self, forKey: .authorMessages)) ?? false
     }
     enum CodingKeys: String, CodingKey {
         case id, type, title, subtitle, pinned, report, sender, preview, time, unread, permanent
         case avatarUrl = "avatar_url"
         case canManage = "can_manage"
+        case canPin = "can_pin"
+        case authorMessages = "author_messages"
     }
 }
 
 struct MessagesResponse: Decodable {
     let chat: ChatItemDto?
     let pinned: MessageQuoteDto?
+    /// Все закреплённые сообщения по порядку закрепления (старые → новые).
+    let pins: [MessageQuoteDto]
     let data: [MessageDto]
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         chat = try c.decodeIfPresent(ChatItemDto.self, forKey: .chat)
         pinned = try c.decodeIfPresent(MessageQuoteDto.self, forKey: .pinned)
+        let list = (try c.decodeIfPresent([MessageQuoteDto].self, forKey: .pins)) ?? []
+        pins = list.isEmpty ? (pinned.map { [$0] } ?? []) : list
         data = (try c.decodeIfPresent([MessageDto].self, forKey: .data)) ?? []
     }
-    enum CodingKeys: String, CodingKey { case chat, pinned, data }
+    enum CodingKeys: String, CodingKey { case chat, pinned, pins, data }
 }
 
 /// Ответ на закреп/открепление сообщения.
 struct PinResponse: Decodable {
     let pinned: MessageQuoteDto?
+    let pins: [MessageQuoteDto]
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        pinned = try c.decodeIfPresent(MessageQuoteDto.self, forKey: .pinned)
+        let list = (try c.decodeIfPresent([MessageQuoteDto].self, forKey: .pins)) ?? []
+        pins = list.isEmpty ? (pinned.map { [$0] } ?? []) : list
+    }
+    enum CodingKeys: String, CodingKey { case pinned, pins }
 }
 
 /// Короткая цитата сообщения (ответ / закреп).
@@ -358,10 +379,21 @@ struct MessageDto: Decodable, Identifiable {
     let reactions: [ReactionDto]
     let pinned: Bool
     let read: Bool
+    /// Служебное сообщение: "join" — зашел в чат, "leave" — вышел.
+    let event: String?
+    /// Личное сообщение (автору отчёта и ответы на него) — видят только двое.
+    let isPrivate: Bool
+    let privateLabel: String?
+    /// Можно ли удалить у всех (своё; у админа и автора отчёта — любое).
+    let canDelete: Bool?
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = (try c.decodeIfPresent(Int.self, forKey: .id)) ?? 0
+        event = try c.decodeIfPresent(String.self, forKey: .event)
+        isPrivate = (try c.decodeIfPresent(Bool.self, forKey: .isPrivate)) ?? false
+        privateLabel = try c.decodeIfPresent(String.self, forKey: .privateLabel)
+        canDelete = try c.decodeIfPresent(Bool.self, forKey: .canDelete)
         userId = try c.decodeIfPresent(Int.self, forKey: .userId)
         mine = (try c.decodeIfPresent(Bool.self, forKey: .mine)) ?? false
         author = try c.decodeIfPresent(String.self, forKey: .author)
@@ -380,7 +412,10 @@ struct MessageDto: Decodable, Identifiable {
         read = (try c.decodeIfPresent(Bool.self, forKey: .read)) ?? false
     }
     enum CodingKeys: String, CodingKey {
-        case id, mine, author, role, text, time, reply, image, images, file, voice, reactions, pinned, read
+        case id, mine, author, role, text, time, reply, image, images, file, voice, reactions, pinned, read, event
+        case isPrivate = "private"
+        case privateLabel = "private_label"
+        case canDelete = "can_delete"
         case userId = "user_id"
         case avatarUrl = "avatar_url"
         case createdAt = "created_at"

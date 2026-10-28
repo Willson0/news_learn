@@ -6,6 +6,7 @@ import SwiftUI
 /// подпись 12 pt белый 65 %, блок чипов (отступ 12, шаг 4).
 /// «Только по инструментам» показывается, пока не включены все уведомления.
 struct NotificationsView: View {
+    @EnvironmentObject var appData: AppData
     @State private var allNotifications = true
     @State private var byInstrument = false
     @State private var instruments: [InstrumentDto] = []
@@ -16,9 +17,15 @@ struct NotificationsView: View {
                 Text("Уведомления").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
 
                 VStack(spacing: 0) {
-                    switchRow("Все уведомления", $allNotifications)
+                    switchRow("Все уведомления", Binding(get: { allNotifications }, set: { v in
+                        allNotifications = v
+                        Task { try? await Api.updateNotifications(["all": v]) }
+                    }))
                     if !allNotifications {
-                        switchRow("Только по инструментам", $byInstrument)
+                        switchRow("Только по инструментам", Binding(get: { byInstrument }, set: { v in
+                            byInstrument = v
+                            Task { try? await Api.updateNotifications(["by_instrument": v]) }
+                        }))
                             .transition(.opacity)
                     }
                 }
@@ -55,9 +62,16 @@ struct NotificationsView: View {
         // ниже всё подтягивается: SMART_ANIMATE 800 мс, ease-in-out-back.
         .animation(Motion.standard, value: allNotifications)
         .animation(Motion.standard, value: byInstrument)
+        // Экран сразу открывается с известными настройками (кэш профиля), без «доезжания»
+        // переключателей; ответ сервера ставится без анимации.
+        .onAppear { if let p = appData.profile, instruments.isEmpty { withoutAnimation { apply(p) } } }
         .task { await load() }
-        .onChange(of: allNotifications) { v in Task { try? await Api.updateNotifications(["all": v]) } }
-        .onChange(of: byInstrument) { v in Task { try? await Api.updateNotifications(["by_instrument": v]) } }
+    }
+
+    private func apply(_ p: ProfileResponse) {
+        allNotifications = p.notifications?.all ?? true
+        byInstrument = p.notifications?.byInstrument ?? false
+        instruments = p.instruments
     }
 
     private func switchRow(_ title: String, _ isOn: Binding<Bool>) -> some View {
@@ -72,9 +86,8 @@ struct NotificationsView: View {
     private func load() async {
         do {
             let p = try await Api.fetchProfile()
-            allNotifications = p.notifications?.all ?? true
-            byInstrument = p.notifications?.byInstrument ?? false
-            instruments = p.instruments
+            withoutAnimation { apply(p) }
+            appData.profile = p
         } catch {}
     }
 

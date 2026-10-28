@@ -109,6 +109,8 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::post('/chats/{slug}/messages/{message}/react', [ChatController::class, 'react']);
     Route::post('/chats/{slug}/messages/{message}/pin', [ChatController::class, 'pin']);
     Route::get('/chats/{slug}/participants', [ChatController::class, 'participants']);
+    // Кого можно упомянуть через «@» (все, у кого есть доступ к чату).
+    Route::get('/chats/{slug}/members', [ChatController::class, 'members']);
     Route::get('/chats/{slug}/attachments/{kind}', [ChatController::class, 'attachments']);
 
     // --- Админка: только для админов (по Telegram ID) ---

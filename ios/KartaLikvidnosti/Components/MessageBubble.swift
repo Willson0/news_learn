@@ -10,6 +10,7 @@ struct ChatMessage: Identifiable {
     var avatarUrl: String? = nil
     var text: String? = nil
     var time: String? = nil
+    var createdAt: String? = nil
     var read: Bool = false
     var pinned: Bool = false
     var reply: Reply? = nil
@@ -22,6 +23,13 @@ struct ChatMessage: Identifiable {
     var file: FileAtt? = nil
     var voice: VoiceAtt? = nil
     var reactions: [Reaction] = []
+    /// Служебное: "join" — зашел в чат, "leave" — вышел.
+    var event: String? = nil
+    /// Личное сообщение автору отчёта (/текст/) и ответы на него.
+    var isPrivate: Bool = false
+    var privateLabel: String? = nil
+    /// Сервер разрешает удалить у всех (nil — старый сервер: решает клиент).
+    var canDelete: Bool? = nil
 
     struct Reply { let author: String; let text: String }
     struct ImageAtt { let url: URL?; let width: Int?; let height: Int? }
@@ -38,6 +46,7 @@ struct ChatMessage: Identifiable {
         avatarUrl = dto.avatarUrl
         text = dto.text
         time = dto.time
+        createdAt = dto.createdAt
         read = dto.read
         pinned = dto.pinned
         if let r = dto.reply { reply = Reply(author: r.author ?? "", text: r.text ?? "") }
@@ -49,7 +58,16 @@ struct ChatMessage: Identifiable {
         }
         if let v = dto.voice { voice = VoiceAtt(url: fileURL(v.url), duration: v.duration ?? "0:00") }
         reactions = dto.reactions.map { Reaction(emoji: $0.emoji, count: $0.count, mine: $0.mine) }
+        event = dto.event
+        isPrivate = dto.isPrivate
+        privateLabel = dto.privateLabel
+        canDelete = dto.canDelete
     }
+
+    var isSystem: Bool { event != nil }
+
+    /// Текст служебного сообщения без имени («зашел в чат» / «вышел из чата»).
+    var eventText: String { event == "leave" ? "вышел из чата" : "зашел в чат" }
 
     /// Локальное сообщение с фото, которое ещё отправляется.
     init(pendingId: Int, localImages: [UIImage], text: String?) {
@@ -79,6 +97,10 @@ struct MessageBubble: View {
     var onPlayVoice: (() -> Void)? = nil
     var onOpenFile: (() -> Void)? = nil
     var onOpenImage: (() -> Void)? = nil
+    /// Тап по реакции под сообщением: своя — снять, чужая — поставить такую же.
+    var onToggleReaction: ((String) -> Void)? = nil
+    /// Поиск по чату: совпадения в тексте подсвечиваются.
+    var highlight: String? = nil
 
     static let maxWidth: CGFloat = 302
     private let secondary = Color.white.opacity(0.6)
@@ -104,6 +126,9 @@ struct MessageBubble: View {
             if showHeader, !message.mine, let author = message.author, message.voice == nil {
                 header(author)
             }
+            if message.isPrivate, let label = message.privateLabel {
+                Text(label).font(Theme.sans(Theme.fontBase, .semibold)).foregroundStyle(Theme.text)
+            }
             if let reply = message.reply { replyQuote(reply) }
             if !message.localImages.isEmpty || message.images.count > 1 {
                 albumView
@@ -113,10 +138,22 @@ struct MessageBubble: View {
             if let file = message.file { fileView(file) }
             if let voice = message.voice { voiceView(voice) }
             if let text = message.text, !text.isEmpty {
-                Text(text)
-                    .font(Theme.sans(Theme.fontBase))
-                    .foregroundStyle(Theme.text)
-                    .fixedSize(horizontal: false, vertical: true)
+                if message.isPrivate {
+                    // Сообщение автору (Figma «Чат виды Сообщение автору»): текст в кавычках
+                    // на тёмной плашке внутри пузыря.
+                    Text(styled("\u{201C}\(text)\u{201D}"))
+                        .font(Theme.sans(Theme.fontMd))
+                        .foregroundStyle(Theme.text)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .background(Color.black.opacity(0.3), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                } else {
+                    Text(styled(text))
+                        .font(Theme.sans(Theme.fontBase))
+                        .foregroundStyle(Theme.text)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             footer
         }
@@ -126,6 +163,30 @@ struct MessageBubble: View {
         .frame(maxWidth: Self.maxWidth, alignment: .leading)
         .fixedSize(horizontal: true, vertical: false)
         .modifier(BubbleGlass(mine: message.mine, shape: bubbleShape))
+    }
+
+    /// Текст с выделенными упоминаниями «@тег» и найденным в поиске фрагментом.
+    private func styled(_ text: String) -> AttributedString {
+        var result = AttributedString(text)
+        let ns = text as NSString
+        if let regex = try? NSRegularExpression(pattern: "@[\\p{L}\\p{N}_.]+") {
+            for match in regex.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+                if let r = Range(match.range, in: text), let ar = Range(r, in: result) {
+                    result[ar].foregroundColor = Theme.green
+                    result[ar].font = Theme.sans(Theme.fontBase, .semibold)
+                }
+            }
+        }
+        if let q = highlight?.trimmingCharacters(in: .whitespaces), !q.isEmpty {
+            var searchRange = text.startIndex..<text.endIndex
+            while let r = text.range(of: q, options: [.caseInsensitive, .diacriticInsensitive], range: searchRange) {
+                if let ar = Range(r, in: result) {
+                    result[ar].backgroundColor = Color(hex: "#d9a400").opacity(0.55)
+                }
+                searchRange = r.upperBound..<text.endIndex
+            }
+        }
+        return result
     }
 
     private func header(_ author: String) -> some View {
@@ -284,14 +345,19 @@ struct MessageBubble: View {
             if !message.reactions.isEmpty {
                 HStack(spacing: 4) {
                     ForEach(message.reactions) { r in
-                        HStack(spacing: 4) {
-                            Text(r.emoji).font(.system(size: 13))
-                            Text("\(r.count)").font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.text)
+                        // Своя реакция выделена; тап по ней снимает её, по чужой — ставит такую же.
+                        Button { onToggleReaction?(r.emoji) } label: {
+                            HStack(spacing: 4) {
+                                Text(r.emoji).font(.system(size: 13))
+                                Text("\(r.count)").font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.text)
+                            }
+                            .padding(.vertical, 4).padding(.horizontal, 8)
+                            .frame(height: 24)
+                            .background(r.mine ? Theme.green.opacity(0.55) : Color(hex: "#404040"), in: Capsule())
+                            .overlay(Capsule().stroke(r.mine ? Color.white.opacity(0.6) : .clear, lineWidth: 1))
                         }
-                        .padding(.vertical, 4).padding(.horizontal, 8)
-                        .frame(height: 24)
-                        .background(Color(hex: "#404040"), in: Capsule())
-                        .overlay(Capsule().stroke(r.mine ? Color.white.opacity(0.5) : .clear, lineWidth: 1))
+                        .buttonStyle(PressableStyle())
+                        .disabled(onToggleReaction == nil)
                     }
                 }
             }
@@ -326,16 +392,19 @@ struct MessageBubble: View {
     }
 }
 
-/// «Сообщение/Union» из макета: два кружка 8 pt — прочитано (второй залит),
-/// доставлено (только контур).
+/// Отметка доставки (Figma «Сообщение/Union»): не прочитано — один кружок 8 pt;
+/// прочитано — к нему добавляется второй (контур), как в макете.
 struct ReadMark: View {
     let read: Bool
     var body: some View {
         ZStack(alignment: .leading) {
-            Circle().stroke(Color.white, lineWidth: 1).frame(width: 7, height: 7).offset(x: 3.5)
-            if read { Circle().fill(Color.white).frame(width: 8, height: 8) }
-            else { Circle().stroke(Color.white, lineWidth: 1).frame(width: 7, height: 7).offset(x: 0.5) }
+            if read {
+                Circle().stroke(Color.white, lineWidth: 1).frame(width: 7, height: 7).offset(x: 3.5)
+                    .transition(.scale(scale: 0.4).combined(with: .opacity))
+            }
+            Circle().fill(Color.white).frame(width: 8, height: 8)
         }
         .frame(width: 11, height: 8, alignment: .leading)
+        .animation(.easeOut(duration: 0.25), value: read)
     }
 }

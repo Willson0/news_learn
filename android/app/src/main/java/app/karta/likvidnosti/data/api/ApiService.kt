@@ -132,10 +132,18 @@ interface ApiService {
     suspend fun pinMessage(@Path("slug") slug: String, @Path("id") id: Long): PinResponse
 
     @DELETE("chats/{slug}/messages/{id}")
-    suspend fun deleteMessage(@Path("slug") slug: String, @Path("id") id: Long): StatusResponse
+    suspend fun deleteMessage(
+        @Path("slug") slug: String,
+        @Path("id") id: Long,
+        @Query("for") forWhom: String,
+    ): StatusResponse
 
     @GET("chats/{slug}/participants")
     suspend fun participants(@Path("slug") slug: String): DataWrapper<List<ParticipantDto>>
+
+    /** Кого можно упомянуть через «@» (участники с ником, у которых есть доступ к чату). */
+    @GET("chats/{slug}/members")
+    suspend fun chatMembers(@Path("slug") slug: String, @Query("q") q: String): DataWrapper<List<ParticipantDto>>
 
     @GET("chats/{slug}/attachments/{kind}")
     suspend fun chatAttachments(@Path("slug") slug: String, @Path("kind") kind: String): DataWrapper<List<ChatAttachmentDto>>

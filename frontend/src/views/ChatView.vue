@@ -405,9 +405,16 @@ export default {
       <p v-else-if="!error" class="chat__empty">Пока нет сообщений. Напишите первым!</p>
       <p v-if="error" class="chat__empty">{{ error }}</p>
 
+      <template v-for="m in messages" :key="m.id">
+      <!-- Служебное: «Имя зашел в чат / вышел из чата», имя открывает профиль. -->
+      <div v-if="m.event" class="chat__day">
+        <span class="chat__day-pill">
+          <b class="chat__event-name" @click="goUser(m)">{{ m.author || 'Пользователь' }}</b>
+          {{ m.event === 'leave' ? 'вышел из чата' : 'зашел в чат' }}
+        </span>
+      </div>
       <div
-        v-for="m in messages"
-        :key="m.id"
+        v-else
         class="chat__row"
         :class="{ 'chat__row--mine': m.mine, 'chat__row--select': selectMode }"
       >
@@ -420,6 +427,7 @@ export default {
         <span v-if="!m.mine && !selectMode && !isDirect" class="chat__msg-avatar" @click="goUser(m)"></span>
         <MessageBubble :message="m" @click="onBubble(m)" />
       </div>
+      </template>
     </div>
 
     <!-- Нижняя панель режима выбора -->
@@ -618,6 +626,7 @@ export default {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='60' height='60' viewBox='0 0 60 60'><path d='M30 20 L38 34 L22 34 Z' fill='none' stroke='rgba(255,255,255,0.03)' stroke-width='1.5'/></svg>");
 }
 .chat__day { display: flex; justify-content: center; margin: 8px 0; }
+.chat__event-name { cursor: pointer; font-weight: 600; }
 .chat__day-pill {
   padding: 4px 14px;
   border-radius: var(--radius-pill);

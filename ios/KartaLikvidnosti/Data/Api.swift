@@ -221,13 +221,21 @@ enum Api {
         try await ApiClient.post("chats/\(slug)/messages/\(id)/react", body: ["emoji": emoji], as: DataWrapper<MessageDto>.self).data
     }
 
-    /// Закрепить/открепить сообщение — возвращает текущую закреплённую цитату (или nil).
-    static func pinMessage(_ slug: String, _ id: Int) async throws -> MessageQuoteDto? {
-        try await ApiClient.post("chats/\(slug)/messages/\(id)/pin", as: PinResponse.self).pinned
+    /// Закрепить/открепить сообщение — возвращает все закрепы чата по порядку закрепления.
+    static func pinMessage(_ slug: String, _ id: Int) async throws -> [MessageQuoteDto] {
+        try await ApiClient.post("chats/\(slug)/messages/\(id)/pin", as: PinResponse.self).pins
     }
 
-    static func deleteMessage(_ slug: String, _ id: Int) async throws {
-        _ = try await ApiClient.delete("chats/\(slug)/messages/\(id)", as: StatusResponse.self)
+    /// Удалить сообщение: forAll — у всех, иначе только у себя (на всех своих устройствах).
+    static func deleteMessage(_ slug: String, _ id: Int, forAll: Bool = true) async throws {
+        _ = try await ApiClient.delete("chats/\(slug)/messages/\(id)", body: ["for": forAll ? "all" : "me"],
+                                       as: StatusResponse.self)
+    }
+
+    /// Кого можно упомянуть через «@» в этом чате.
+    static func chatMembers(_ slug: String, query: String) async throws -> [ParticipantDto] {
+        let q = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        return try await ApiClient.get("chats/\(slug)/members?q=\(q)", as: DataWrapper<[ParticipantDto]>.self).data ?? []
     }
 
     static func chatParticipants(_ slug: String) async throws -> [ParticipantDto] {

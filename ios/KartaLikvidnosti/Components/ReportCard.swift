@@ -12,8 +12,12 @@ struct ReportCard: View {
         VStack(alignment: .leading, spacing: 16) {
             ZStack(alignment: .topTrailing) {
                 ZStack {
-                    ReportCoverPlaceholder()
-                    if let url = fileURL(report.coverUrl) { RemoteImage(url: url) }
+                    // Обложка есть — пока грузится, мигающий блок (без промелькивания заглушки).
+                    if let url = fileURL(report.coverUrl) {
+                        RemoteImage(url: url) { ReportCoverPlaceholder() }
+                    } else {
+                        ReportCoverPlaceholder()
+                    }
                 }
                 .frame(height: 162)
                 .frame(maxWidth: .infinity)

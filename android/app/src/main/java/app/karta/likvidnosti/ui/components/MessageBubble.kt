@@ -38,6 +38,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -86,8 +89,41 @@ data class ChatMessage(
     val replyText: String? = null,
     val reactions: List<Reaction> = emptyList(),
     val pinned: Boolean = false,
-    val toAuthor: Boolean = false,
-)
+    val createdAt: String? = null,
+    /** Служебное: "join" — зашёл в чат, "leave" — вышел. */
+    val event: String? = null,
+    /** Личное сообщение автору отчёта (/текст/) и ответы на него. */
+    val isPrivate: Boolean = false,
+    val privateLabel: String? = null,
+    /** Сервер разрешает удалить у всех. */
+    val canDelete: Boolean = false,
+) {
+    val isSystem: Boolean get() = event != null
+
+    /** Текст служебного сообщения без имени. */
+    val eventText: String get() = if (event == "leave") "вышел из чата" else "зашел в чат"
+}
+
+private val MentionPattern = Regex("@[\\p{L}\\p{N}_.]+")
+private val SearchHighlight = Color(0xFFD9A400).copy(alpha = 0.55f)
+
+/** Текст с выделенными упоминаниями «@тег» и найденным в поиске фрагментом. */
+fun styledMessageText(text: String, highlight: String?): AnnotatedString = buildAnnotatedString {
+    append(text)
+    MentionPattern.findAll(text).forEach { m ->
+        addStyle(SpanStyle(color = T.Green, fontWeight = FontWeight.SemiBold), m.range.first, m.range.last + 1)
+    }
+    val q = highlight?.trim().orEmpty()
+    if (q.isNotEmpty()) {
+        var from = 0
+        while (true) {
+            val i = text.indexOf(q, from, ignoreCase = true)
+            if (i < 0) break
+            addStyle(SpanStyle(background = SearchHighlight), i, i + q.length)
+            from = i + q.length
+        }
+    }
+}
 
 /** Максимальная ширина пузыря (iOS MessageBubble.maxWidth). */
 val MessageBubbleMaxWidth = 302.dp
@@ -120,6 +156,10 @@ fun MessageBubble(
     onOpenImage: (() -> Unit)? = null,
     /** Долгое нажатие на вложение (картинка/файл) — то же меню, что и на пузыре. */
     onLongPress: (() -> Unit)? = null,
+    /** Тап по реакции под сообщением: своя — снять, чужая — поставить такую же. */
+    onToggleReaction: ((String) -> Unit)? = null,
+    /** Поиск по чату: совпадения в тексте подсвечиваются. */
+    highlight: String? = null,
 ) {
     val r = 24.dp
     val shape = RoundedCornerShape(
@@ -141,8 +181,8 @@ fun MessageBubble(
         if (showHeader && !message.mine && !message.author.isNullOrEmpty() && !hasVoice) {
             BubbleHeader(message.author, message.role)
         }
-        if (message.toAuthor) {
-            Text("Автору", style = AppFont.sans(T.FsSm, FontWeight.SemiBold))
+        if (message.isPrivate && !message.privateLabel.isNullOrEmpty()) {
+            Text(message.privateLabel, style = AppFont.sans(T.FsBase, FontWeight.SemiBold))
         }
         if (!message.replyText.isNullOrEmpty() || !message.replyAuthor.isNullOrEmpty()) {
             ReplyQuote(message.replyAuthor ?: "", message.replyText ?: "")
@@ -183,9 +223,21 @@ fun MessageBubble(
             VoiceRow(message, showHeader, isPlaying, voiceProgress, onPlayVoice)
         }
         if (!message.text.isNullOrEmpty()) {
-            Text(message.text, style = AppFont.sans(T.FsBase))
+            if (message.isPrivate) {
+                // Сообщение автору (Figma «Чат виды Сообщение автору»): текст в кавычках
+                // на тёмной плашке внутри пузыря.
+                Text(
+                    styledMessageText("\u201C${message.text}\u201D", highlight),
+                    style = AppFont.sans(T.FsMd),
+                    modifier = Modifier
+                        .background(Color.Black.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                )
+            } else {
+                Text(styledMessageText(message.text, highlight), style = AppFont.sans(T.FsBase))
+            }
         }
-        Footer(message)
+        Footer(message, onToggleReaction)
     }
 }
 
@@ -405,7 +457,7 @@ private fun VoiceRow(
 }
 
 @Composable
-private fun Footer(message: ChatMessage) {
+private fun Footer(message: ChatMessage, onToggleReaction: ((String) -> Unit)?) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.Bottom,
@@ -417,10 +469,12 @@ private fun Footer(message: ChatMessage) {
                     Row(
                         modifier = Modifier
                             .height(24.dp)
-                            .background(hex("#404040"), CapsuleShape)
+                            .background(if (r.mine) T.Green.copy(alpha = 0.55f) else hex("#404040"), CapsuleShape)
                             .then(
-                                if (r.mine) Modifier.border(1.dp, Color.White.copy(alpha = 0.5f), CapsuleShape) else Modifier,
+                                if (r.mine) Modifier.border(1.dp, Color.White.copy(alpha = 0.6f), CapsuleShape) else Modifier,
                             )
+                            // Своя реакция выделена; тап по ней снимает её, по чужой — ставит такую же.
+                            .then(if (onToggleReaction != null) Modifier.pressable { onToggleReaction(r.emoji) } else Modifier)
                             .padding(horizontal = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -445,20 +499,23 @@ private fun Footer(message: ChatMessage) {
 }
 
 /**
- * «Сообщение/Union» из макета: два кружка 8 dp — прочитано (второй залит),
- * доставлено (только контур).
+ * Отметка доставки (Figma «Сообщение/Union»): не прочитано — один кружок 8 dp;
+ * прочитано — к нему добавляется второй (контур), как в макете.
  */
 @Composable
 fun ReadMark(read: Boolean, modifier: Modifier = Modifier, color: Color = Color.White) {
+    val second by animateFloatAsState(if (read) 1f else 0f, tween(250), label = "read")
     Canvas(modifier = modifier.size(11.dp, 8.dp)) {
         val px = size.height / 8f
-        val stroke = Stroke(width = 1f * px)
-        // Контурный кружок справа (диаметр 7, левый край на 3.5).
-        drawCircle(color, radius = 3.5f * px, center = Offset(7f * px, 4f * px), style = stroke)
-        if (read) {
-            drawCircle(color, radius = 4f * px, center = Offset(4f * px, 4f * px))
-        } else {
-            drawCircle(color, radius = 3.5f * px, center = Offset(4f * px, 4f * px), style = stroke)
+        if (second > 0f) {
+            // Контурный кружок справа (диаметр 7, левый край на 3.5) проявляется при прочтении.
+            drawCircle(
+                color.copy(alpha = color.alpha * second),
+                radius = 3.5f * px * (0.4f + 0.6f * second),
+                center = Offset(7f * px, 4f * px),
+                style = Stroke(width = 1f * px),
+            )
         }
+        drawCircle(color, radius = 4f * px, center = Offset(4f * px, 4f * px))
     }
 }

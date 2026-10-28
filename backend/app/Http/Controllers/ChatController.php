@@ -7,10 +7,12 @@ use App\Models\ChatRead;
 use App\Models\Message;
 use App\Models\MessageAttachment;
 use App\Models\User;
+use App\Services\PushService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Validation\ValidationException;
@@ -19,6 +21,21 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 class ChatController extends Controller
 {
     private const DISK = 'local';
+
+    /** Может ли зритель удалять чужие сообщения у всех (админ, создатель отчёта). */
+    private bool $moderator = false;
+
+    /** Автор отчёта этого чата — адресат личных сообщений «/текст/». */
+    private ?int $reportAuthorId = null;
+
+    public function __construct(private PushService $push) {}
+
+    /** Права зрителя в этом чате — нужны при сборке сообщений. */
+    private function context(Chat $chat, User $user): void
+    {
+        $this->moderator = $user->isAdmin() || $chat->canBeManagedBy($user);
+        $this->reportAuthorId = $chat->reportAuthorId();
+    }
 
     /**
      * Список чатов, сгруппированный по секциям.
@@ -84,10 +101,13 @@ class ChatController extends Controller
     {
         $user = $request->user();
         $chat = self::resolve($slug, $user);
+        $this->context($chat, $user);
+        $this->ensureJoined($chat, $user);
 
         $messages = $chat->messages()
-            ->with(['user', 'replyTo.user', 'attachments', 'reactions'])
-            ->oldest()
+            ->visibleTo($user)
+            ->with(['user', 'privateTo', 'replyTo.user', 'replyTo.attachments', 'attachments', 'reactions'])
+            ->oldest('id')
             ->get();
 
         // Прочитано другими: максимальный last_read среди остальных участников.
@@ -106,11 +126,13 @@ class ChatController extends Controller
             );
         }
 
-        $pinned = $messages->firstWhere('pinned', true);
+        $pins = $this->pinsOf($chat, $user);
 
         return response()->json([
             'chat' => self::presentChat($chat, $user),
-            'pinned' => $pinned ? $this->quoteOf($pinned) : null,
+            // pinned — последнее закреплённое (как в шапке Телеграма), pins — все по порядку закрепления.
+            'pinned' => $pins === [] ? null : end($pins),
+            'pins' => $pins,
             'data' => $payload,
         ]);
     }
@@ -122,6 +144,7 @@ class ChatController extends Controller
     {
         $user = $request->user();
         $chat = self::resolve($slug, $user);
+        $this->context($chat, $user);
 
         $data = $request->validate([
             'body' => ['nullable', 'string', 'max:4000'],
@@ -162,21 +185,45 @@ class ChatController extends Controller
             ]);
         }
 
-        // Ответ допустим только на сообщение этого же чата.
-        $replyToId = null;
+        $body = $hasBody ? trim($data['body']) : null;
+
+        // Ответ допустим только на видимое пользователю обычное сообщение этого же чата.
+        $replyTo = null;
         if (! empty($data['reply_to'])) {
-            $replyToId = optional(
-                $chat->messages()->whereKey($data['reply_to'])->first()
-            )->id;
+            $replyTo = $chat->messages()->visibleTo($user)->whereKey($data['reply_to'])->first();
+            if ($replyTo?->isSystem()) {
+                $replyTo = null;
+            }
         }
 
-        $message = DB::transaction(function () use ($chat, $user, $data, $hasBody, $replyToId, $files) {
+        // Личная переписка с автором отчёта: «/текст/» уходит только автору, ответы на личное
+        // сообщение тоже личные — их видят только двое участников.
+        $privateTo = null;
+        if ($replyTo?->isPrivate()) {
+            $privateTo = $replyTo->user_id === $user->id ? $replyTo->private_to_id : $replyTo->user_id;
+        } elseif ($body !== null && $chat->type === 'report' && preg_match('#^/(.*\S.*)/$#su', $body, $m)) {
+            $authorId = $this->reportAuthorId;
+            if ($authorId === null) {
+                throw ValidationException::withMessages([
+                    'body' => 'У этого отчёта не указан автор, личное сообщение отправить некому.',
+                ]);
+            }
+            if ($authorId !== $user->id) {
+                $privateTo = $authorId;
+                $body = trim($m[1]);
+            }
+        }
+
+        $this->ensureJoined($chat, $user);
+
+        $message = DB::transaction(function () use ($chat, $user, $data, $body, $replyTo, $privateTo, $files) {
             $message = $chat->messages()->create([
                 'user_id' => $user->id,
-                'reply_to_id' => $replyToId,
+                'reply_to_id' => $replyTo?->id,
+                'private_to_id' => $privateTo,
                 'author_name' => $user->name,
                 'author_role' => $user->isAdmin() ? 'Админ' : 'Участник',
-                'body' => $hasBody ? trim($data['body']) : null,
+                'body' => $body,
             ]);
 
             foreach ($files as $file) {
@@ -186,7 +233,9 @@ class ChatController extends Controller
             return $message;
         });
 
-        $message->load(['user', 'replyTo.user', 'attachments', 'reactions']);
+        $message->load(['user', 'privateTo', 'replyTo.user', 'replyTo.attachments', 'attachments', 'reactions']);
+
+        $this->notifyRecipients($chat, $user, $message);
 
         return response()->json(['data' => $this->toArray($message, $user)], 201);
     }
@@ -198,7 +247,9 @@ class ChatController extends Controller
     {
         $user = $request->user();
         $chat = self::resolve($slug, $user);
-        $msg = $chat->messages()->whereKey($message)->firstOrFail();
+        $this->context($chat, $user);
+        $msg = $chat->messages()->visibleTo($user)->whereKey($message)->firstOrFail();
+        abort_if($msg->isSystem(), 422, 'На служебное сообщение нельзя поставить реакцию.');
 
         $data = $request->validate([
             'emoji' => ['required', 'string', 'max:16'],
@@ -215,44 +266,77 @@ class ChatController extends Controller
             $msg->reactions()->create(['user_id' => $user->id, 'emoji' => $data['emoji']]);
         }
 
-        $msg->load(['user', 'replyTo.user', 'attachments', 'reactions']);
+        $msg->load(['user', 'privateTo', 'replyTo.user', 'replyTo.attachments', 'attachments', 'reactions']);
 
         return response()->json(['data' => $this->toArray($msg, $user)]);
     }
 
     /**
-     * Закрепить/открепить сообщение (одно закреплённое на чат).
+     * Закрепить/открепить сообщение. Закрепов может быть несколько (как в Телеграме);
+     * закреплять и откреплять могут только админы и создатель отчёта.
      */
     public function pin(Request $request, string $slug, int $message): JsonResponse
     {
         $user = $request->user();
         $chat = self::resolve($slug, $user);
-        $msg = $chat->messages()->whereKey($message)->firstOrFail();
+        abort_unless($chat->canPinBy($user), 403, 'Закреплять сообщения могут только администратор и автор отчёта.');
+
+        $msg = $chat->messages()->visibleTo($user)->whereKey($message)->firstOrFail();
+        abort_if($msg->isSystem() || $msg->isPrivate(), 422, 'Это сообщение нельзя закрепить.');
 
         $makePinned = ! $msg->pinned;
+        $msg->update(['pinned' => $makePinned, 'pinned_at' => $makePinned ? now() : null]);
 
-        DB::transaction(function () use ($chat, $msg, $makePinned) {
-            $chat->messages()->where('pinned', true)->update(['pinned' => false]);
-            if ($makePinned) {
-                $msg->update(['pinned' => true]);
-            }
-        });
+        $pins = $this->pinsOf($chat, $user);
 
         return response()->json([
-            'pinned' => $makePinned ? $this->quoteOf($msg->fresh(['user'])) : null,
+            'pinned' => $pins === [] ? null : end($pins),
+            'pins' => $pins,
         ]);
     }
 
     /**
-     * Удалить сообщение: автор — своё, админ — любое.
+     * Закреплённые сообщения чата в порядке закрепления (старые → новые).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function pinsOf(Chat $chat, User $user): array
+    {
+        return $chat->messages()
+            ->visibleTo($user)
+            ->where('pinned', true)
+            ->whereNull('private_to_id')
+            ->with(['user', 'attachments'])
+            ->orderBy('pinned_at')
+            ->orderBy('id')
+            ->get()
+            ->map(fn (Message $m) => $this->quoteOf($m))
+            ->all();
+    }
+
+    /**
+     * Удалить сообщение. for=me — скрыть только у себя (на всех своих устройствах);
+     * for=all (по умолчанию) — у всех: автор — своё, админ и создатель отчёта — любое.
      */
     public function destroyMessage(Request $request, string $slug, int $message): JsonResponse
     {
         $user = $request->user();
         $chat = self::resolve($slug, $user);
-        $msg = $chat->messages()->whereKey($message)->firstOrFail();
+        $this->context($chat, $user);
+        $msg = $chat->messages()->visibleTo($user)->whereKey($message)->firstOrFail();
 
-        abort_unless($msg->user_id === $user->id || $msg->chat->canBeManagedBy($user), 403);
+        if ($request->input('for', $request->query('for')) === 'me') {
+            DB::table('message_hides')->insertOrIgnore([
+                'user_id' => $user->id,
+                'message_id' => $msg->id,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            return response()->json(['status' => 'ok']);
+        }
+
+        abort_unless($this->canDeleteForAll($msg, $user), 403);
 
         foreach ($msg->attachments as $att) {
             $this->deleteFile($att->path);
@@ -270,8 +354,9 @@ class ChatController extends Controller
         $user = $request->user();
         $chat = self::resolve($slug, $user);
 
-        $userIds = $chat->messages()->whereNotNull('user_id')->distinct()->pluck('user_id');
-        $members = User::whereIn('id', $userIds)->get()
+        $userIds = $chat->messages()->visibleTo($user)->whereNotNull('user_id')->distinct()->pluck('user_id');
+        $leftIds = DB::table('chat_leaves')->where('chat_id', $chat->id)->pluck('user_id');
+        $members = User::whereIn('id', $userIds)->whereNotIn('id', $leftIds)->get()
             ->map(fn (User $u) => [
                 'id' => $u->id,
                 'name' => $u->name,
@@ -297,12 +382,12 @@ class ChatController extends Controller
         $chat = self::resolve($slug, $user);
 
         if ($kind === 'link') {
-            return response()->json(['data' => $this->collectLinks($chat)]);
+            return response()->json(['data' => $this->collectLinks($chat, $user)]);
         }
 
         abort_unless(in_array($kind, ['image', 'file', 'voice'], true), 404);
 
-        $items = MessageAttachment::whereIn('message_id', $chat->messages()->select('id'))
+        $items = MessageAttachment::whereIn('message_id', $chat->messages()->visibleTo($user)->select('id'))
             ->where('kind', $kind)
             ->with('message.user')
             ->orderByDesc('id')
@@ -353,7 +438,152 @@ class ChatController extends Controller
         return response()->file(Storage::disk(self::DISK)->path($chat->avatar_path));
     }
 
+    /**
+     * Кого можно упомянуть через «@»: все, у кого есть доступ к чату (кроме себя),
+     * с тегом; q — поиск по имени и тегу.
+     */
+    public function members(Request $request, string $slug): JsonResponse
+    {
+        $user = $request->user();
+        $chat = self::resolve($slug, $user);
+
+        $q = trim((string) $request->query('q', ''));
+        $query = User::query()
+            ->whereKeyNot($user->id)
+            ->whereNotNull('username')
+            ->where('username', '!=', '');
+        if ($q !== '') {
+            $like = '%'.addcslashes(ltrim($q, '@'), '%_\\').'%';
+            $query->where(fn ($w) => $w->where('name', 'like', $like)->orWhere('username', 'like', $like));
+        }
+
+        $members = $query->orderBy('name')->limit(200)->get()
+            ->filter(fn (User $u) => self::canAccess($chat, $u))
+            ->take(30)
+            ->map(fn (User $u) => [
+                'id' => $u->id,
+                'name' => $u->name,
+                'username' => self::handle($u->username),
+                'avatar_url' => $u->avatar_url,
+                'role' => $u->isAdmin() ? 'Админ' : 'Участник',
+                'seen' => self::seenLabel($u->last_active_at),
+            ])
+            ->values()
+            ->all();
+
+        return response()->json(['data' => $members]);
+    }
+
     // --- Helpers ---------------------------------------------------------
+
+    /** Есть ли у пользователя доступ к чату (тот же смысл, что и в resolve()). */
+    public static function canAccess(Chat $chat, User $user): bool
+    {
+        if ($chat->type === 'direct') {
+            return $chat->user_id === $user->id || $user->isAdmin();
+        }
+        if ($chat->section !== 'main' && ! $user->hasAccess()) {
+            return false;
+        }
+
+        return ! $user->leftChats()->whereKey($chat->id)->exists();
+    }
+
+    /** Тег всегда с «@» в начале. */
+    private static function handle(?string $username): ?string
+    {
+        if ($username === null || $username === '') {
+            return null;
+        }
+
+        return str_starts_with($username, '@') ? $username : '@'.$username;
+    }
+
+    /**
+     * Первый вход в групповой чат — служебное сообщение «зашёл в чат». Кто уже открывал чат
+     * или писал в нём до появления этих сообщений, считается вошедшим.
+     */
+    private function ensureJoined(Chat $chat, User $user): void
+    {
+        if ($chat->type === 'direct') {
+            return;
+        }
+
+        $seen = ChatRead::where('chat_id', $chat->id)->where('user_id', $user->id)->exists()
+            || $chat->messages()->where('user_id', $user->id)->exists();
+        if ($seen) {
+            return;
+        }
+
+        $chat->messages()->create([
+            'user_id' => $user->id,
+            'author_name' => $user->name,
+            'author_role' => $user->isAdmin() ? 'Админ' : 'Участник',
+            'event' => 'join',
+        ]);
+    }
+
+    private function canDeleteForAll(Message $m, User $user): bool
+    {
+        return $this->moderator || ($m->user_id === $user->id && ! $m->isSystem());
+    }
+
+    /**
+     * Push-уведомления: адресату личного сообщения и упомянутым через «@тег».
+     */
+    private function notifyRecipients(Chat $chat, User $sender, Message $message): void
+    {
+        $text = $message->body ?? $this->quoteOf($message)['text'];
+
+        try {
+            if ($message->isPrivate()) {
+                $to = $message->privateTo;
+                if ($to) {
+                    $title = $to->id === $this->reportAuthorId
+                        ? "Сообщение автору · {$chat->title}"
+                        : "Ответ автора отчёта · {$chat->title}";
+                    $this->push->sendToUser($to, $title, "{$sender->name}: {$text}", [
+                        'type' => 'chat',
+                        'chat' => $chat->slug,
+                        'message' => (string) $message->id,
+                    ]);
+                }
+
+                return;
+            }
+
+            if ($message->body === null || ! preg_match_all('/@([\p{L}\p{N}_.]+)/u', $message->body, $mm)) {
+                return;
+            }
+
+            $tags = collect($mm[1])->map(fn ($t) => rtrim($t, '.'))->filter()->unique()->take(50);
+            $handles = $tags->flatMap(fn ($t) => ['@'.$t, $t])->all();
+
+            User::whereIn('username', $handles)
+                ->whereKeyNot($sender->id)
+                ->get()
+                ->filter(fn (User $u) => self::canAccess($chat, $u))
+                ->each(function (User $u) use ($chat, $sender, $text, $message) {
+                    $slug = $chat->type === 'direct' && $chat->user_id === $u->id ? 'admin' : $chat->slug;
+                    $this->push->sendToUser($u, "Вас упомянули · {$chat->title}", "{$sender->name}: {$text}", [
+                        'type' => 'chat',
+                        'chat' => $slug,
+                        'message' => (string) $message->id,
+                    ]);
+                });
+        } catch (\Throwable $e) {
+            // Сбой push не должен мешать отправке сообщения.
+            Log::warning('Push о сообщении не отправлен', ['message' => $message->id, 'error' => $e->getMessage()]);
+        }
+    }
+
+    /** Текст служебного сообщения для превью и цитат. */
+    private static function eventText(Message $m): string
+    {
+        $name = $m->author_name ?: 'Пользователь';
+
+        return $m->event === 'leave' ? "{$name} вышел из чата" : "{$name} зашел в чат";
+    }
 
     public static function resolve(string $slug, User $user): Chat
     {
@@ -386,9 +616,19 @@ class ChatController extends Controller
         $user = $request->user();
         $chat = self::resolve($slug, $user);
 
-        abort_if($chat->isPermanent(), 422, 'Этот чат нельзя покинуть: он удаляется вместе с отчётом.');
+        abort_if($chat->isPermanent(), 422, $chat->section === 'main'
+            ? 'Из общего чата нельзя выйти.'
+            : 'Этот чат нельзя покинуть: он удаляется вместе с отчётом.');
 
-        $user->leftChats()->syncWithoutDetaching([$chat->id]);
+        DB::transaction(function () use ($chat, $user) {
+            $chat->messages()->create([
+                'user_id' => $user->id,
+                'author_name' => $user->name,
+                'author_role' => $user->isAdmin() ? 'Админ' : 'Участник',
+                'event' => 'leave',
+            ]);
+            $user->leftChats()->syncWithoutDetaching([$chat->id]);
+        });
 
         return response()->json(['status' => 'ok']);
     }
@@ -441,10 +681,10 @@ class ChatController extends Controller
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function collectLinks(Chat $chat): array
+    private function collectLinks(Chat $chat, User $user): array
     {
         $links = [];
-        $messages = $chat->messages()->with('user')->whereNotNull('body')->orderByDesc('id')->get();
+        $messages = $chat->messages()->visibleTo($user)->with('user')->whereNotNull('body')->orderByDesc('id')->get();
 
         foreach ($messages as $m) {
             if (preg_match_all('#https?://[^\s]+#iu', (string) $m->body, $matches)) {
@@ -503,8 +743,16 @@ class ChatController extends Controller
         $ownDirect = $direct && $chat->user_id === $viewer->id;
         $last = $chat->latestMessage;
 
+        // Последнее сообщение может быть чужим личным или скрытым у зрителя — тогда берём видимое.
+        if ($last && (! $last->isVisibleTo($viewer)
+            || DB::table('message_hides')->where('user_id', $viewer->id)->where('message_id', $last->id)->exists())) {
+            $last = $chat->messages()->visibleTo($viewer)->latest('id')->first();
+        }
+
         $preview = $last?->body;
-        if ($last && ($preview === null || $preview === '')) {
+        if ($last?->isSystem()) {
+            $preview = self::eventText($last);
+        } elseif ($last && ($preview === null || $preview === '')) {
             $preview = 'Вложение';
         }
 
@@ -517,8 +765,12 @@ class ChatController extends Controller
             'avatar_url' => $chat->avatar_path ? "/chats/{$chat->slug}/avatar?v={$chat->updated_at?->timestamp}" : null,
             'report' => $chat->report_id,
             'can_manage' => $chat->canBeManagedBy($viewer),
+            'can_pin' => $chat->canPinBy($viewer),
+            // В чате отчёта можно написать автору лично через «/текст/».
+            'author_messages' => $chat->type === 'report' && $chat->reportAuthorId() !== null
+                && $chat->reportAuthorId() !== $viewer->id,
             'permanent' => $chat->isPermanent(),
-            'sender' => $last ? ($last->user_id === $viewer->id ? 'Вы' : $last->author_name) : null,
+            'sender' => $last && ! $last->isSystem() ? ($last->user_id === $viewer->id ? 'Вы' : $last->author_name) : null,
             'preview' => $preview,
             'time' => $last?->created_at?->format('H:i'),
         ];
@@ -532,7 +784,9 @@ class ChatController extends Controller
     private function quoteOf(Message $m): array
     {
         $text = $m->body;
-        if ($text === null || $text === '') {
+        if ($m->isSystem()) {
+            $text = self::eventText($m);
+        } elseif ($text === null || $text === '') {
             $att = $m->attachments->first();
             $text = match ($att?->kind) {
                 'image' => 'Фото',
@@ -607,7 +861,24 @@ class ChatController extends Controller
             'reactions' => $reactions,
             'pinned' => (bool) $m->pinned,
             'read' => $mine && $othersRead !== null ? $othersRead >= $m->id : false,
+            // Служебное сообщение: join — «зашел в чат», leave — «вышел из чата» (имя — author, профиль — user_id).
+            'event' => $m->event,
+            // Личное сообщение (автору отчёта и ответы на него) видят только двое.
+            'private' => $m->isPrivate(),
+            'private_label' => $m->isPrivate() ? $this->privateLabel($m, $mine) : null,
+            'can_delete' => $this->canDeleteForAll($m, $viewer),
         ];
+    }
+
+    private function privateLabel(Message $m, bool $mine): string
+    {
+        if (! $mine) {
+            return 'Лично вам';
+        }
+
+        return $m->private_to_id === $this->reportAuthorId
+            ? 'Автору'
+            : 'Лично · '.($m->privateTo?->name ?? 'участнику');
     }
 
     private static function extOf(?string $name): string

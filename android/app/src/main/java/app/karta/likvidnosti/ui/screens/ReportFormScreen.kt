@@ -256,7 +256,7 @@ fun ReportFormScreen(
                         AppInput(
                             chartUrl,
                             { chartUrl = it; clearError("chart_url") },
-                            placeholder = "Ссылка на график",
+                            placeholder = "Ссылка на график TradingView",
                             label = "График",
                             error = errors.containsKey("chart_url"),
                             keyboardType = KeyboardType.Uri,

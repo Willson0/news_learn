@@ -1,26 +1,122 @@
 import SwiftUI
 
-/// Загрузка картинки по URL с плейсхолдером (аналог <img :src>).
-struct RemoteImage: View {
+/// Загруженные картинки в памяти: при повторном показе (возврат на экран, скролл
+/// ленты) картинка рисуется сразу, без мигания загрузки.
+enum RemoteImageCache {
+    static let shared: NSCache<NSURL, UIImage> = {
+        let cache = NSCache<NSURL, UIImage>()
+        cache.totalCostLimit = 120 * 1024 * 1024
+        return cache
+    }()
+
+    static func image(for url: URL) -> UIImage? { shared.object(forKey: url as NSURL) }
+
+    static func store(_ image: UIImage, for url: URL) {
+        let cost = Int(image.size.width * image.size.height * image.scale * image.scale * 4)
+        shared.setObject(image, forKey: url as NSURL, cost: cost)
+    }
+}
+
+/// Загрузчик одной картинки: кэш проверяется синхронно, поэтому уже загруженная
+/// картинка появляется в первом же кадре.
+@MainActor
+final class RemoteImageLoader: ObservableObject {
+    @Published private(set) var image: UIImage?
+    @Published private(set) var failed = false
+    private var url: URL?
+    private var task: Task<Void, Never>?
+
+    init(url: URL?) {
+        self.url = url
+        if let url { image = RemoteImageCache.image(for: url) }
+    }
+
+    func load(_ newURL: URL?) {
+        if newURL != url {
+            task?.cancel()
+            task = nil
+            url = newURL
+            failed = false
+            image = newURL.flatMap(RemoteImageCache.image(for:))
+        }
+        guard let url, image == nil, !failed, task == nil else { return }
+        task = Task { [weak self] in
+            do {
+                let (data, response) = try await URLSession.shared.data(from: url)
+                if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                    throw URLError(.badServerResponse)
+                }
+                guard let decoded = UIImage(data: data) else { throw URLError(.cannotDecodeContentData) }
+                // Декодируем заранее, чтобы первый кадр с картинкой не подтормаживал.
+                let ready = await decoded.byPreparingForDisplay() ?? decoded
+                RemoteImageCache.store(ready, for: url)
+                guard let self, self.url == url else { return }
+                self.image = ready
+                self.task = nil
+            } catch {
+                guard let self, self.url == url, !Task.isCancelled else { return }
+                self.failed = true
+                self.task = nil
+            }
+        }
+    }
+}
+
+/// Мигающий блок на месте загружающейся картинки (обложка, фото, аватар):
+/// мягко пульсирует, пока картинка не пришла, — вместо заглушки, которая сменялась бы фото.
+struct LoadingBlock: View {
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
+            let pulse = (sin(t * 2 * .pi / 1.4) + 1) / 2
+            Color.white.opacity(0.05 + 0.08 * pulse)
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+/// Картинка по URL (аналог <img :src>). Пока грузится — мигающий блок, если не
+/// загрузилась — `fallback` (заглушка обложки, буква аватара).
+struct RemoteImage<Fallback: View>: View {
     let url: URL?
     var contentMode: ContentMode = .fill
+    /// Мигающий блок во время загрузки; false — прозрачно (под картинкой уже есть свой фон).
+    var showsLoading: Bool = true
+    @ViewBuilder var fallback: () -> Fallback
+
+    @StateObject private var loader: RemoteImageLoader
+
+    init(url: URL?, contentMode: ContentMode = .fill, showsLoading: Bool = true,
+         @ViewBuilder fallback: @escaping () -> Fallback) {
+        self.url = url
+        self.contentMode = contentMode
+        self.showsLoading = showsLoading
+        self.fallback = fallback
+        _loader = StateObject(wrappedValue: RemoteImageLoader(url: url))
+    }
 
     var body: some View {
-        if let url = url {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image.resizable().aspectRatio(contentMode: contentMode)
-                default:
-                    Color.clear
-                }
+        ZStack {
+            if let image = loader.image {
+                Image(uiImage: image).resizable().aspectRatio(contentMode: contentMode)
+            } else if url == nil || loader.failed {
+                fallback()
+            } else if showsLoading {
+                LoadingBlock()
+            } else {
+                Color.clear
             }
-            .clipped()
-            .allowsHitTesting(false)
-        } else {
-            Color.clear
-                .allowsHitTesting(false)
         }
+        .clipped()
+        .allowsHitTesting(false)
+        .onAppear { loader.load(url) }
+        .onChange(of: url) { loader.load($0) }
+    }
+}
+
+extension RemoteImage where Fallback == Color {
+    init(url: URL?, contentMode: ContentMode = .fill, showsLoading: Bool = true) {
+        self.init(url: url, contentMode: contentMode, showsLoading: showsLoading) { Color.clear }
     }
 }
 
@@ -48,9 +144,8 @@ struct HoloFoil: View {
     }
 }
 
-/// Круглый аватар: фото по URL поверх градиента с первой буквой имени.
-/// Пока фото грузится (или если его нет / не загрузилось) — видна буква,
-/// а не пустой кружок-заглушка.
+/// Круглый аватар: фото по URL; пока фото грузится — мигающий кружок,
+/// если фото нет или оно не загрузилось — буква имени на градиенте.
 struct AvatarCircle: View {
     var url: URL? = nil
     var size: CGFloat = 56
@@ -66,6 +161,20 @@ struct AvatarCircle: View {
 
     var body: some View {
         ZStack {
+            if let url = url {
+                // Фото: пока грузится — мигающий кружок, без промелькивания буквы.
+                RemoteImage(url: url) { letterView }
+                    .frame(width: size, height: size)
+                    .clipShape(Circle())
+            } else {
+                letterView
+            }
+        }
+        .frame(width: size, height: size)
+    }
+
+    private var letterView: some View {
+        ZStack {
             Circle().fill(
                 LinearGradient(colors: [Color(hex: "#6b7350"), Color(hex: "#3f4a2c")],
                                startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -75,11 +184,7 @@ struct AvatarCircle: View {
                     .font(Theme.heading(size * 0.4))
                     .foregroundStyle(Theme.text)
             }
-            if let url = url {
-                RemoteImage(url: url).frame(width: size, height: size).clipShape(Circle())
-            }
         }
-        .frame(width: size, height: size)
     }
 }
 

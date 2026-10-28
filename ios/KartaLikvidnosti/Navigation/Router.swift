@@ -55,6 +55,9 @@ final class Router: ObservableObject {
     /// У каждой вкладки системного TabView свой стек pushed-экранов.
     @Published var paths: [Tab: [Route]] = [:]
     @Published var authPath: [AuthRoute] = []
+    /// «Поиск» на инфо-экране чата: возвращаемся в чат и открываем в нём поиск
+    /// по сообщениям (как в Телеграме). Значение — id чата.
+    @Published var chatSearchRequest: String? = nil
 
     init() {
         authed = TokenStore.isAuthenticated

@@ -9,7 +9,9 @@ import UniformTypeIdentifiers
 /// внутри поля). Запись голосового: удержание микрофона, влево — отмена, вверх —
 /// замок; в замке — пауза и отправка. Долгое нажатие — реакции и меню
 /// действий на размытом фоне; режим выбора — «Выбрано N / Отмена», удалить и
-/// переслать.
+/// переслать. Закрепов несколько (как в Телеграме): тап по плашке ведёт к
+/// сообщению и листает закрепы. Поиск по всем сообщениям — как в Телеграме:
+/// строка поиска сверху, внизу «N из M» со стрелками и список результатов.
 struct ChatView: View {
     @EnvironmentObject var router: Router
     @EnvironmentObject var session: Session
@@ -20,8 +22,25 @@ struct ChatView: View {
     @State private var draft = ""
     @State private var messages: [ChatMessage] = []
     @State private var serverChat: ChatItemDto? = nil
-    @State private var participants: [ParticipantDto] = []
-    @State private var pinned: MessageQuoteDto? = nil
+    /// Кандидаты для «@»: все, у кого есть доступ к чату (с сервера по мере ввода).
+    @State private var mentionCandidates: [ParticipantDto] = []
+    @State private var mentionTask: Task<Void, Never>? = nil
+    /// Закреплённые сообщения по порядку закрепления; на плашке — pins[pinIndex].
+    @State private var pins: [MessageQuoteDto] = []
+    @State private var pinIndex = 0
+    /// Открепление спрашивает подтверждение.
+    @State private var unpinConfirm: MessageQuoteDto? = nil
+    /// Попап «Удалить у всех / у меня» над корзиной в режиме выбора.
+    @State private var selectDeleteMenu = false
+    /// Переход к сообщению (закреп, поиск): прокрутка и короткая подсветка.
+    @State private var scrollRequest = ScrollRequest()
+    @State private var flashId: Int? = nil
+    // Поиск по сообщениям.
+    @State private var searchMode = false
+    @State private var searchQuery = ""
+    @State private var searchIndex = 0
+    @State private var searchListOpen = false
+    @FocusState private var searchFocused: Bool
     @State private var replyTo: ChatMessage? = nil
     @State private var menuFor: Int? = nil
     @State private var deleteMenu = false
@@ -37,7 +56,7 @@ struct ChatView: View {
     @State private var keyboardShown = false
     @State private var toast: String? = nil
     @State private var shareText: String? = nil
-    /// Сообщения, удалённые «у меня» (локально, по чату).
+    /// Сообщения, удалённые «у меня» на этом устройстве в старых версиях (теперь скрытие хранит сервер).
     @State private var hiddenIds: Set<Int> = []
 
     // Запись голосового.
@@ -61,25 +80,63 @@ struct ChatView: View {
 
     private var visibleMessages: [ChatMessage] { messages.filter { !hiddenIds.contains($0.id) } }
 
+    /// Набирается упоминание: «@» в начале слова в конце текста.
     private var mentionQuery: String? {
-        guard let r = draft.range(of: #"@\S*$"#, options: .regularExpression) else { return nil }
-        return String(draft[r]).dropFirst().lowercased()
+        guard let r = draft.range(of: #"(^|\s)@[^\s@]*$"#, options: .regularExpression) else { return nil }
+        let token = draft[r].trimmingCharacters(in: .whitespaces)
+        return String(token.dropFirst())
     }
 
     private var mentionMatches: [ParticipantDto] {
-        guard let q = mentionQuery else { return [] }
-        return participants.filter { p in
+        guard let q = mentionQuery?.lowercased() else { return [] }
+        let list = mentionCandidates.filter { p in
             q.isEmpty
                 || (p.username?.lowercased().contains(q) ?? false)
                 || (p.name?.lowercased().contains(q) ?? false)
         }
+        return Array(list.prefix(5))
     }
 
     private var showSend: Bool { !draft.trimmed.isEmpty || !pendingPhotos.isEmpty }
 
+    private var canPin: Bool { serverChat?.canPin ?? false }
+
+    /// Текущий закреп на плашке.
+    private var currentPin: MessageQuoteDto? {
+        guard !pins.isEmpty else { return nil }
+        return pins[min(max(pinIndex, 0), pins.count - 1)]
+    }
+
+    /// «/текст/» в чате отчёта уходит автору лично.
+    private var draftIsAuthorMessage: Bool {
+        guard serverChat?.authorMessages == true else { return false }
+        let t = draft.trimmed
+        return t.count >= 2 && t.hasPrefix("/")
+    }
+
     /// Высота шапки (и закрепа), под которой начинаются сообщения.
     private var contentTop: CGFloat {
-        Theme.topBarY + 42 + 24 + (pinned != nil && !selectMode ? 65 + 12 : 0)
+        Theme.topBarY + 42 + 24 + (currentPin != nil && !selectMode && !searchMode ? 65 + 12 : 0)
+    }
+
+    // MARK: Поиск
+
+    /// Найденные сообщения (id, от старых к новым): текст, подпись, имя файла.
+    private var searchResults: [Int] {
+        let q = searchQuery.trimmed
+        guard !q.isEmpty else { return [] }
+        return visibleMessages.filter { m in
+            guard !m.isSystem else { return false }
+            let haystack = [m.text, m.file?.name].compactMap { $0 }
+            return haystack.contains { $0.range(of: q, options: [.caseInsensitive, .diacriticInsensitive]) != nil }
+        }.map(\.id)
+    }
+
+    /// Текущий результат: счёт идёт от самого нового (1 из N), стрелка вверх — к более старым.
+    private var currentSearchId: Int? {
+        let r = searchResults
+        guard !r.isEmpty else { return nil }
+        return r[r.count - 1 - min(searchIndex, r.count - 1)]
     }
 
     var body: some View {
@@ -91,6 +148,7 @@ struct ChatView: View {
         .background(ChatBackdrop())
         .ignoresSafeArea(.container, edges: [.top, .bottom])
         .toolbar(.hidden, for: .navigationBar)
+        .overlay { if searchMode && searchListOpen { searchListOverlay.transition(.opacity) } }
         .overlay { if menuFor != nil { contextMenuOverlay.transition(.opacity) } }
         .overlay { if photoViewerURL != nil { photoViewerOverlay.transition(.opacity) } }
         .overlay(alignment: .top) {
@@ -103,6 +161,10 @@ struct ChatView: View {
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: menuFor)
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: deleteMenu)
         .animation(.spring(response: 0.32, dampingFraction: 0.85), value: selectMode)
+        .animation(.spring(response: 0.32, dampingFraction: 0.85), value: searchMode)
+        .animation(.easeOut(duration: 0.2), value: searchListOpen)
+        .animation(.easeOut(duration: 0.2), value: selectDeleteMenu)
+        .animation(Motion.standard, value: pins.count)
         // Прототип: запись голосового (Чат 495:16053 → 495:16591), замок/пауза и
         // попап «+» (popup/отправка) — SMART_ANIMATE / DISSOLVE 800 мс, ease-in-out-back.
         .animation(Motion.standard, value: audio.recording)
@@ -119,13 +181,29 @@ struct ChatView: View {
             ShareSheet(items: [item.text])
         }
         .onChange(of: photoItems) { _ in loadPickedPhotos() }
+        .onChange(of: mentionQuery) { q in fetchMentions(q) }
+        .onChange(of: searchQuery) { _ in
+            searchIndex = 0
+            if let id = currentSearchId { jump(to: id, flash: false) }
+        }
+        .onChange(of: router.chatSearchRequest) { req in if req == chatId { router.chatSearchRequest = nil; openSearch() } }
+        .alert("Открепить сообщение?", isPresented: Binding(get: { unpinConfirm != nil }, set: { if !$0 { unpinConfirm = nil } }),
+               presenting: unpinConfirm) { p in
+            Button("Открепить", role: .destructive) { unpin(p.id) }
+            Button("Отмена", role: .cancel) {}
+        } message: { p in
+            Text(p.text ?? "")
+        }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
             withAnimation(.easeOut(duration: 0.25)) { keyboardShown = true }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
             withAnimation(.easeOut(duration: 0.25)) { keyboardShown = false }
         }
-        .onAppear { hiddenIds = Self.loadHidden(chatId) }
+        .onAppear {
+            hiddenIds = Self.loadHidden(chatId)
+            if router.chatSearchRequest == chatId { router.chatSearchRequest = nil; openSearch() }
+        }
         .task { await load() }
     }
 
@@ -133,7 +211,9 @@ struct ChatView: View {
 
     private var topBar: some View {
         VStack(spacing: 24) {
-            if selectMode {
+            if searchMode {
+                searchTopBar
+            } else if selectMode {
                 HStack {
                     Text("Выбрано \(selected.count)")
                         .font(Theme.sans(Theme.fontBase, .semibold))
@@ -172,7 +252,7 @@ struct ChatView: View {
                     }
                     .buttonStyle(.plain)
                 }
-                if let pinned { pinnedBar(pinned).transition(.move(edge: .top).combined(with: .opacity)) }
+                if let pin = currentPin { pinnedBar(pin).transition(.move(edge: .top).combined(with: .opacity)) }
             }
         }
         .padding(.horizontal, Theme.screenX)
@@ -182,9 +262,11 @@ struct ChatView: View {
     @ViewBuilder private var chatAvatar: some View {
         Group {
             if let url = fileURL(serverChat?.avatarUrl) {
-                RemoteImage(url: url)
-            } else {
+                RemoteImage(url: url) { ReportCoverPlaceholder() }
+            } else if serverChat != nil {
                 ReportCoverPlaceholder()
+            } else {
+                LoadingBlock()
             }
         }
         .frame(width: 42, height: 42)
@@ -192,30 +274,204 @@ struct ChatView: View {
     }
 
     /// Закреплённое сообщение: стекло, радиус 24, линия 1 pt слева, заголовок
-    /// SemiBold 14 и текст 14; крестик 12 справа.
+    /// SemiBold 14 и текст 14; крестик 12 справа. Закрепов несколько — линия
+    /// делится на отрезки (как в Телеграме), текущий ярче; тап ведёт к сообщению
+    /// и переключает на предыдущий закреп. Крестик — только у админа и автора отчёта.
     private func pinnedBar(_ p: MessageQuoteDto) -> some View {
         HStack(spacing: 10) {
-            HStack(spacing: 12) {
-                Rectangle().fill(Color.white).frame(width: 1, height: 40)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Закрепленное сообщение").font(Theme.sans(Theme.fontBase, .semibold))
-                    Text(p.text ?? "").font(Theme.sans(Theme.fontBase)).lineLimit(1)
+            Button { openPin(p) } label: {
+                HStack(spacing: 12) {
+                    pinIndicator.frame(width: 2, height: 40)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(pins.count > 1 ? "Закрепленное сообщение #\(pinIndex + 1)" : "Закрепленное сообщение")
+                            .font(Theme.sans(Theme.fontBase, .semibold))
+                        Text(p.text ?? "").font(Theme.sans(Theme.fontBase)).lineLimit(1)
+                            .id(p.id)
+                            .transition(.asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity),
+                                                    removal: .move(edge: .top).combined(with: .opacity)))
+                    }
+                    .foregroundStyle(Theme.text)
+                    .clipped()
+                    Spacer(minLength: 0)
                 }
-                .foregroundStyle(Theme.text)
-                Spacer(minLength: 0)
-            }
-            Button { unpin(p.id) } label: {
-                Icon(AppIcons.close, size: 12, color: Theme.text)
-                    .frame(width: 38, height: 36)
-                    .contentShape(Rectangle())
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            if canPin {
+                Button { unpinConfirm = p } label: {
+                    Icon(AppIcons.close, size: 12, color: Theme.text)
+                        .frame(width: 38, height: 36)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
         }
+        .animation(.easeOut(duration: 0.22), value: p.id)
         .padding(.vertical, 12)
         .padding(.leading, 16)
         .padding(.trailing, 12)
         .frame(height: 65)
         .liquidGlass(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+    }
+
+    /// Линия слева у закрепа: при нескольких закрепах — отрезки, текущий белый.
+    private var pinIndicator: some View {
+        GeometryReader { geo in
+            let count = max(pins.count, 1)
+            let gap: CGFloat = count > 1 ? 2 : 0
+            let h = (geo.size.height - gap * CGFloat(count - 1)) / CGFloat(count)
+            VStack(spacing: gap) {
+                ForEach(0..<count, id: \.self) { i in
+                    Capsule().fill(Color.white.opacity(i == pinIndex || count == 1 ? 1 : 0.35))
+                        .frame(height: max(h, 2))
+                }
+            }
+        }
+    }
+
+    /// Шапка поиска: стеклянное поле с лупой и «Отмена».
+    private var searchTopBar: some View {
+        HStack(spacing: 12) {
+            HStack(spacing: 8) {
+                Icon(AppIcons.search, size: 18, color: secondary)
+                TextField("", text: $searchQuery, prompt: Text("Поиск").foregroundColor(Color.white.opacity(0.4)))
+                    .font(Theme.sans(Theme.fontBase))
+                    .foregroundStyle(Theme.text)
+                    .tint(Theme.green)
+                    .focused($searchFocused)
+                    .submitLabel(.search)
+                    .autocorrectionDisabled()
+                if !searchQuery.isEmpty {
+                    Button { searchQuery = "" } label: {
+                        Icon(AppIcons.close, size: 10, color: Theme.text)
+                            .frame(width: 20, height: 20)
+                            .background(Color.white.opacity(0.2), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 16)
+            .frame(height: 42)
+            .liquidGlass(RoundedRectangle(cornerRadius: 24, style: .continuous), interactive: true)
+            Button { closeSearch() } label: {
+                Text("Отмена").font(Theme.sans(Theme.fontBase)).glassPill()
+            }
+            .buttonStyle(PressableStyle())
+        }
+    }
+
+    /// Нижняя панель поиска (вместо поля ввода): список результатов, «N из M», стрелки.
+    private var searchBottomBar: some View {
+        let total = searchResults.count
+        return HStack(spacing: 12) {
+            Button {
+                searchFocused = false
+                searchListOpen.toggle()
+            } label: {
+                Image(systemName: searchListOpen ? "text.bubble" : "list.bullet")
+                    .font(.system(size: 18, weight: .regular))
+                    .foregroundStyle(Theme.text)
+                    .frame(width: 42, height: 42)
+                    .liquidGlass(Circle(), interactive: true)
+            }
+            .buttonStyle(PressableStyle())
+            .disabled(total == 0)
+            .opacity(total == 0 ? 0.5 : 1)
+
+            Spacer(minLength: 0)
+            Text(searchQuery.trimmed.isEmpty ? "Введите текст для поиска"
+                 : total == 0 ? "Ничего не найдено" : "\(min(searchIndex, total - 1) + 1) из \(total)")
+                .font(Theme.sans(Theme.fontBase))
+                .foregroundStyle(Theme.text)
+                .monospacedDigit()
+            Spacer(minLength: 0)
+
+            HStack(spacing: 0) {
+                searchArrow("chevron.up", enabled: searchIndex + 1 < total) { stepSearch(1) }
+                searchArrow("chevron.down", enabled: searchIndex > 0 && total > 0) { stepSearch(-1) }
+            }
+            .liquidGlass(Capsule(), interactive: true)
+        }
+    }
+
+    private func searchArrow(_ symbol: String, enabled: Bool, _ action: @escaping () -> Void) -> some View {
+        Button { Haptics.light(); action() } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(Theme.text.opacity(enabled ? 1 : 0.3))
+                .frame(width: 44, height: 42)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+    }
+
+    /// Результаты поиска списком (как в Телеграме): от новых к старым.
+    private var searchListOverlay: some View {
+        let ids = Array(searchResults.reversed())
+        return ScrollView(showsIndicators: false) {
+            LazyVStack(spacing: 0) {
+                ForEach(Array(ids.enumerated()), id: \.element) { idx, id in
+                    if let m = messages.first(where: { $0.id == id }) {
+                        Button {
+                            searchIndex = idx
+                            searchListOpen = false
+                            jump(to: id)
+                        } label: { searchRow(m) }
+                        .buttonStyle(.plain)
+                        if idx < ids.count - 1 {
+                            Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1).padding(.leading, 58)
+                        }
+                    }
+                }
+            }
+            .padding(.top, Theme.topBarY + 42 + 16)
+            .padding(.bottom, 120)
+        }
+        .background(Theme.background.ignoresSafeArea())
+        .ignoresSafeArea(.container, edges: [.top, .bottom])
+        .overlay(alignment: .top) { searchTopBar.padding(.horizontal, Theme.screenX).padding(.top, Theme.topBarY) }
+        .overlay(alignment: .bottom) {
+            searchBottomBar.padding(.horizontal, Theme.screenX).padding(.bottom, keyboardShown ? 12 : 45)
+        }
+    }
+
+    private func searchRow(_ m: ChatMessage) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            AvatarCircle(url: fileURL(m.avatarUrl), size: 36, name: m.mine ? (session.user?.name ?? "Вы") : m.author)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text(m.mine ? "Вы" : (m.author ?? "Участник"))
+                        .font(Theme.sans(Theme.fontBase, .semibold)).foregroundStyle(Theme.text).lineLimit(1)
+                    Spacer(minLength: 8)
+                    Text(searchDate(m)).font(Theme.sans(Theme.fontSm)).foregroundStyle(secondary)
+                }
+                Text(highlighted(m.text ?? m.file?.name ?? replyPreview(m)))
+                    .font(Theme.sans(Theme.fontBase)).foregroundStyle(secondary).lineLimit(2)
+            }
+        }
+        .padding(.horizontal, Theme.screenX)
+        .padding(.vertical, 10)
+        .contentShape(Rectangle())
+    }
+
+    private func searchDate(_ m: ChatMessage) -> String {
+        guard let iso = m.createdAt, let date = ISO8601DateFormatter().date(from: iso) else { return m.time ?? "" }
+        if Calendar.current.isDateInToday(date) { return m.time ?? "" }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "ru_RU")
+        f.dateFormat = Calendar.current.isDate(date, equalTo: Date(), toGranularity: .year) ? "d MMM" : "dd.MM.yy"
+        return f.string(from: date)
+    }
+
+    private func highlighted(_ text: String) -> AttributedString {
+        var result = AttributedString(text)
+        let q = searchQuery.trimmed
+        guard !q.isEmpty, let r = text.range(of: q, options: [.caseInsensitive, .diacriticInsensitive]),
+              let ar = Range(r, in: result) else { return result }
+        result[ar].foregroundColor = Theme.text
+        result[ar].font = Theme.sans(Theme.fontBase, .semibold)
+        return result
     }
 
     // MARK: - Сообщения
@@ -243,10 +499,16 @@ struct ChatView: View {
                             }
                             let list = visibleMessages
                             ForEach(Array(list.enumerated()), id: \.element.id) { idx, m in
-                                messageRow(m, prev: idx > 0 ? list[idx - 1] : nil,
-                                           next: idx + 1 < list.count ? list[idx + 1] : nil)
-                                    .padding(.top, idx == 0 ? 0 : (sameAuthor(list[idx - 1], m) ? 4 : 12))
-                                    .id(m.id)
+                                Group {
+                                    if m.isSystem {
+                                        systemRow(m)
+                                    } else {
+                                        messageRow(m, prev: idx > 0 ? list[idx - 1] : nil,
+                                                   next: idx + 1 < list.count ? list[idx + 1] : nil)
+                                    }
+                                }
+                                .padding(.top, idx == 0 ? 0 : (sameAuthor(list[idx - 1], m) ? 4 : 12))
+                                .id(m.id)
                             }
                         }
                         Color.clear.frame(height: 12).id("bottom")
@@ -260,19 +522,25 @@ struct ChatView: View {
                 }
                 .scrollDismissesKeyboard(.interactively)
                 .onChange(of: visibleMessages.count) { _ in
+                    guard !searchMode else { return }
                     withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("bottom", anchor: .bottom) }
                 }
                 .onChange(of: loaded) { _ in
                     DispatchQueue.main.async { proxy.scrollTo("bottom", anchor: .bottom) }
                 }
                 .onChange(of: keyboardShown) { _ in
+                    guard !searchMode else { return }
                     withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("bottom", anchor: .bottom) }
+                }
+                .onChange(of: scrollRequest) { req in
+                    withAnimation(.easeInOut(duration: 0.35)) { proxy.scrollTo(req.id, anchor: .center) }
                 }
             }
         }
     }
 
     private func sameAuthor(_ a: ChatMessage, _ b: ChatMessage) -> Bool {
+        if a.isSystem || b.isSystem { return false }
         if a.mine != b.mine { return false }
         if a.mine { return true }
         return a.userId != nil && a.userId == b.userId
@@ -304,6 +572,15 @@ struct ChatView: View {
                     .frame(width: 30, height: 30)
                 }
                 bubble(m, isTail: isTail, showHeader: isFirst && !isDirect)
+                    .overlay {
+                        // Подсветка сообщения после перехода к нему (закреп, поиск).
+                        if flashId == m.id {
+                            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                .fill(Color.white.opacity(0.18))
+                                .allowsHitTesting(false)
+                                .transition(.opacity)
+                        }
+                    }
                     .opacity(menuFor == m.id ? 0 : 1)
                     .onTapGesture { onTap(m) }
                     .onLongPressGesture(minimumDuration: 0.3) { onLongPress(m) }
@@ -312,6 +589,28 @@ struct ChatView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { if selectMode { toggleSelect(m.id) } }
+        .transition(.opacity)
+    }
+
+    /// Служебное сообщение по центру: «Имя зашел в чат» / «Имя вышел из чата»;
+    /// тап по имени открывает профиль пользователя.
+    private func systemRow(_ m: ChatMessage) -> some View {
+        HStack(spacing: 0) {
+            Spacer(minLength: 0)
+            HStack(spacing: 4) {
+                Button { openUser(m) } label: {
+                    Text(m.author ?? "Пользователь").font(Theme.sans(Theme.fontSm, .semibold)).lineLimit(1)
+                }
+                .buttonStyle(PressableStyle())
+                .disabled(m.userId == nil)
+                Text(m.eventText).font(Theme.sans(Theme.fontSm))
+            }
+            .foregroundStyle(Theme.text)
+            .padding(.horizontal, 12)
+            .frame(height: 24)
+            .liquidGlass(Capsule())
+            Spacer(minLength: 0)
+        }
         .transition(.opacity)
     }
 
@@ -337,7 +636,9 @@ struct ChatView: View {
                       voiceProgress: audio.playingId == m.id ? audio.progress : 0,
                       onPlayVoice: { audio.togglePlay(id: m.id, url: m.voice?.url) },
                       onOpenFile: { openURL(m.file?.url) },
-                      onOpenImage: { if !selectMode { photoViewerURL = m.image?.url } })
+                      onOpenImage: { if !selectMode { openPhoto(m.image?.url) } },
+                      onToggleReaction: m.pending || selectMode ? nil : { emoji in react(m.id, emoji) },
+                      highlight: searchMode ? searchQuery : nil)
     }
 
     /// Тап: в режиме выбора — отметить. Меню — только по долгому нажатию.
@@ -348,6 +649,7 @@ struct ChatView: View {
     /// Долгое нажатие — реакции и меню действий (как в макете «зажатие сообщения»).
     private func onLongPress(_ m: ChatMessage) {
         if selectMode { toggleSelect(m.id); return }
+        guard !m.pending, !m.isSystem else { return }
         inputFocused = false
         Haptics.medium()
         deleteMenu = false
@@ -363,9 +665,23 @@ struct ChatView: View {
 
     @ViewBuilder private var composer: some View {
         Group {
-            if selectMode {
+            if searchMode {
+                searchBottomBar
+            } else if selectMode {
                 HStack {
-                    GlassCircleButton(icon: AppIcons.trashX, iconSize: 24, iconColor: Theme.error) { deleteSelected() }
+                    GlassCircleButton(icon: AppIcons.trashX, iconSize: 24, iconColor: Theme.error) {
+                        guard !selected.isEmpty else { return }
+                        selectDeleteMenu.toggle()
+                    }
+                    .overlay(alignment: .bottomLeading) {
+                        if selectDeleteMenu {
+                            selectDeleteMenuPanel
+                                .fixedSize()
+                                .offset(y: -54)
+                                .transition(.scale(scale: 0.95, anchor: .bottomLeading).combined(with: .opacity))
+                        }
+                    }
+                    .zIndex(1)
                     Spacer()
                     GlassCircleButton(icon: AppIcons.forward, iconSize: 24) { forwardSelected() }
                 }
@@ -416,8 +732,22 @@ struct ChatView: View {
             .zIndex(1)
 
             VStack(alignment: .leading, spacing: 8) {
+                // Упоминание (Figma «Чат при Упоминании»): список над текстом в том же стекле.
+                if !mentionMatches.isEmpty {
+                    mentionsList
+                        .padding(.trailing, 12)
+                        .transition(.opacity)
+                }
                 if !pendingPhotos.isEmpty { pendingPhotosStrip }
                 if let reply = replyTo { composerQuote(reply) }
+                if draftIsAuthorMessage {
+                    HStack(spacing: 6) {
+                        Icon(AppIcons.lockOpen, size: 12, color: secondary)
+                        Text("Сообщение увидит только автор отчета").font(Theme.sans(Theme.fontSm)).foregroundStyle(secondary)
+                    }
+                    .padding(.top, 10)
+                    .transition(.opacity)
+                }
                 HStack(spacing: 10) {
                     TextField("", text: $draft, prompt: Text("Напишите что-нибудь").foregroundColor(Color.white.opacity(0.4)), axis: .vertical)
                         .lineLimit(1...5)
@@ -441,12 +771,10 @@ struct ChatView: View {
             .padding(.trailing, showSend ? 0 : 12)
             .padding(.top, replyTo != nil ? 12 : 0)
             .frame(minHeight: 42)
-            .liquidGlass(RoundedRectangle(cornerRadius: Theme.radiusInput, style: .continuous))
-            .overlay(alignment: .bottomLeading) {
-                if !mentionMatches.isEmpty {
-                    mentionsMenu.offset(y: -54).transition(.opacity)
-                }
-            }
+            .liquidGlass(RoundedRectangle(cornerRadius: mentionMatches.isEmpty ? Theme.radiusInput : Theme.radiusCard,
+                                          style: .continuous))
+            .animation(.easeOut(duration: 0.2), value: mentionMatches.map(\.id))
+            .animation(.easeOut(duration: 0.2), value: draftIsAuthorMessage)
 
             if !showSend {
                 micButton.transition(.opacity)
@@ -666,26 +994,27 @@ struct ChatView: View {
         .contentShape(Rectangle())
     }
 
-    private var mentionsMenu: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ForEach(mentionMatches.prefix(5)) { u in
+    /// Строки 40 pt: аватар 24, имя SemiBold 14 и тег 14 белый 60 %, между строками линия 10 %.
+    private var mentionsList: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(mentionMatches.enumerated()), id: \.element.id) { i, u in
                 Button { applyMention(u) } label: {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 12) {
                         AvatarCircle(url: fileURL(u.avatarUrl), size: 24, name: u.name ?? u.username)
-                        Text(u.name ?? "").font(Theme.sans(Theme.fontBase, .semibold)).foregroundStyle(Theme.text)
+                        Text(u.name ?? "").font(Theme.sans(Theme.fontBase, .semibold)).foregroundStyle(Theme.text).lineLimit(1)
                         if let un = u.username {
-                            Text(un).font(Theme.sans(Theme.fontBase)).foregroundStyle(secondary)
+                            Text(un).font(Theme.sans(Theme.fontBase)).foregroundStyle(secondary).lineLimit(1)
                         }
                         Spacer(minLength: 0)
                     }
+                    .frame(height: 40)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                Rectangle().fill(Color.white.opacity(0.1)).frame(height: 1).padding(.leading, -16).padding(.trailing, -12)
             }
         }
-        .padding(16)
-        .frame(width: 280, alignment: .leading)
-        .liquidGlass(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous), fill: Theme.black2)
+        .padding(.top, 4)
     }
 
     // MARK: - Меню сообщения
@@ -706,14 +1035,17 @@ struct ChatView: View {
             if let m {
                 VStack(alignment: m.mine ? .trailing : .leading, spacing: 4) {
                     HStack(spacing: 4) {
+                        // Уже поставленная реакция подсвечена: повторный тап её снимает.
+                        let mine = Set(m.reactions.filter(\.mine).map(\.emoji))
                         ForEach(reactions, id: \.self) { r in
-                            Button { react(m.id, r) } label: {
-                                Text(r).font(.system(size: 20)).frame(width: 24, height: 24)
+                            Button { react(m.id, r, closing: true) } label: {
+                                Text(r).font(.system(size: 20)).frame(width: 30, height: 30)
+                                    .background(mine.contains(r) ? Color.white.opacity(0.22) : .clear, in: Circle())
                             }
                             .buttonStyle(PressableStyle())
                         }
                     }
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, 9)
                     .frame(height: 40)
                     .background(Theme.surface, in: Capsule())
 
@@ -738,7 +1070,16 @@ struct ChatView: View {
             VStack(alignment: .leading, spacing: 12) {
                 menuButton("Ответить", AppIcons.reply) { replyTo = m; closeMenu(); inputFocused = true }
                 menuButton("Скопировать", AppIcons.copy) { copyText(m); closeMenu(); showToast("Скопировано") }
-                menuButton(m.pinned ? "Открепить" : "Закрепить", AppIcons.pin) { togglePin(m.id) }
+                if canPin && !m.isPrivate {
+                    menuButton(m.pinned ? "Открепить" : "Закрепить", AppIcons.pin) {
+                        if m.pinned {
+                            closeMenu()
+                            unpinConfirm = pins.first(where: { $0.id == m.id })
+                        } else {
+                            togglePin(m.id)
+                        }
+                    }
+                }
                 menuButton("Копировать ссылку", AppIcons.link) { copyLink(m); closeMenu(); showToast("Ссылка скопирована") }
                 if !session.isAdmin && !m.mine {
                     menuButton("Пожаловаться", AppIcons.report) { complain(m) }
@@ -755,15 +1096,38 @@ struct ChatView: View {
 
     private func deleteMenuPanel(_ m: ChatMessage) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            if canDelete(m) {
-                Button { delete(m.id) } label: {
+            if canDeleteAll(m) {
+                Button { delete(m.id, forAll: true) } label: {
                     Text("Удалить у всех").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.error)
                         .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 Rectangle().fill(Color.white.opacity(0.1)).frame(height: 1)
             }
-            Button { hideLocally([m.id]); closeMenu() } label: {
+            Button { delete(m.id, forAll: false) } label: {
+                Text("Удалить у меня").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.error)
+                    .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(16)
+        .frame(width: 193, alignment: .leading)
+        .liquidGlass(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+    }
+
+    /// «Чат Выбор сообщения Удаление» (Figma 337:29172): попап над корзиной.
+    private var selectDeleteMenuPanel: some View {
+        let chosen = messages.filter { selected.contains($0.id) }
+        return VStack(alignment: .leading, spacing: 12) {
+            if !chosen.isEmpty && chosen.allSatisfy(canDeleteAll) {
+                Button { deleteSelected(forAll: true) } label: {
+                    Text("Удалить у всех").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.error)
+                        .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                Rectangle().fill(Color.white.opacity(0.1)).frame(height: 1)
+            }
+            Button { deleteSelected(forAll: false) } label: {
                 Text("Удалить у меня").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.error)
                     .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
             }
@@ -821,30 +1185,27 @@ struct ChatView: View {
         selectMode = true
         inputFocused = false
     }
-    private func exitSelect() { selectMode = false; selected = [] }
+    private func exitSelect() { selectMode = false; selected = []; selectDeleteMenu = false }
     private func toggleSelect(_ id: Int) {
         Haptics.light()
         if selected.contains(id) { selected.remove(id) } else { selected.insert(id) }
     }
 
-    private func canDelete(_ m: ChatMessage) -> Bool { m.mine || session.isAdmin }
+    /// Удалить у всех: своё, а у админа и автора отчёта — любое (решает сервер).
+    private func canDeleteAll(_ m: ChatMessage) -> Bool {
+        if m.pending { return false }
+        return m.canDelete ?? (m.mine || session.isAdmin)
+    }
 
-    private func deleteSelected() {
-        let ids = selected
+    private func deleteSelected(forAll: Bool) {
+        let ids = selected.filter { id in messages.contains { $0.id == id && !$0.pending } }
         exitSelect()
+        withAnimation(Motion.standard) { messages.removeAll { ids.contains($0.id) } }
+        pins.removeAll { ids.contains($0.id) }
+        clampPinIndex()
         Task { @MainActor in
-            var local: [Int] = []
-            for id in ids {
-                guard let m = messages.first(where: { $0.id == id }) else { continue }
-                if canDelete(m) {
-                    try? await Api.deleteMessage(chatId, id)
-                    messages.removeAll { $0.id == id }
-                    if pinned?.id == id { pinned = nil }
-                } else {
-                    local.append(id)
-                }
-            }
-            if !local.isEmpty { hideLocally(local) }
+            for id in ids { try? await Api.deleteMessage(chatId, id, forAll: forAll) }
+            if forAll { await reloadMessages() }
         }
     }
 
@@ -936,8 +1297,24 @@ struct ChatView: View {
         }
     }
 
-    private func react(_ id: Int, _ emoji: String) {
-        closeMenu()
+    /// Реакция: поставить или снять свою (сервер переключает). Сразу меняем локально.
+    private func react(_ id: Int, _ emoji: String, closing: Bool = false) {
+        if closing { closeMenu() }
+        Haptics.light()
+        if let i = messages.firstIndex(where: { $0.id == id }) {
+            var list = messages[i].reactions
+            if let j = list.firstIndex(where: { $0.emoji == emoji }) {
+                let r = list[j]
+                if r.mine {
+                    if r.count <= 1 { list.remove(at: j) } else { list[j] = .init(emoji: emoji, count: r.count - 1, mine: false) }
+                } else {
+                    list[j] = .init(emoji: emoji, count: r.count + 1, mine: true)
+                }
+            } else {
+                list.append(.init(emoji: emoji, count: 1, mine: true))
+            }
+            withAnimation(.easeOut(duration: 0.2)) { messages[i].reactions = list }
+        }
         Task { @MainActor in
             if let dto = try? await Api.reactMessage(chatId, id, emoji: emoji) { replaceMessage(dto) }
         }
@@ -946,25 +1323,124 @@ struct ChatView: View {
     private func togglePin(_ id: Int) {
         closeMenu()
         Task { @MainActor in
-            pinned = try? await Api.pinMessage(chatId, id)
-            await reloadMessages()
+            do {
+                let list = try await Api.pinMessage(chatId, id)
+                pins = list
+                pinIndex = max(list.count - 1, 0)
+                await reloadMessages()
+            } catch {
+                showToast((error as? ApiError)?.message ?? "Не удалось закрепить")
+            }
         }
     }
 
     private func unpin(_ id: Int) {
         Task { @MainActor in
-            pinned = try? await Api.pinMessage(chatId, id)
-            await reloadMessages()
+            do {
+                pins = try await Api.pinMessage(chatId, id)
+                clampPinIndex()
+                await reloadMessages()
+            } catch {
+                showToast((error as? ApiError)?.message ?? "Не удалось открепить")
+            }
         }
     }
 
-    private func delete(_ id: Int) {
-        closeMenu()
-        Task { @MainActor in
-            try? await Api.deleteMessage(chatId, id)
-            messages.removeAll { $0.id == id }
-            if pinned?.id == id { pinned = nil }
+    private func clampPinIndex() {
+        pinIndex = pins.isEmpty ? 0 : min(max(pinIndex, 0), pins.count - 1)
+    }
+
+    /// Тап по закрепу: к сообщению, а плашка переключается на предыдущий закреп (как в Телеграме).
+    private func openPin(_ p: MessageQuoteDto) {
+        Haptics.light()
+        jump(to: p.id)
+        if pins.count > 1 {
+            pinIndex = pinIndex > 0 ? pinIndex - 1 : pins.count - 1
         }
+    }
+
+    /// Прокрутить к сообщению и коротко подсветить его.
+    private func jump(to id: Int, flash: Bool = true) {
+        guard messages.contains(where: { $0.id == id }) else {
+            showToast("Сообщение не найдено")
+            return
+        }
+        scrollRequest = ScrollRequest(id: id, token: scrollRequest.token + 1)
+        guard flash else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            withAnimation(.easeOut(duration: 0.2)) { flashId = id }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+                if flashId == id { withAnimation(.easeOut(duration: 0.4)) { flashId = nil } }
+            }
+        }
+    }
+
+    private func delete(_ id: Int, forAll: Bool) {
+        closeMenu()
+        withAnimation(Motion.standard) { messages.removeAll { $0.id == id } }
+        pins.removeAll { $0.id == id }
+        clampPinIndex()
+        Task { @MainActor in
+            do {
+                try await Api.deleteMessage(chatId, id, forAll: forAll)
+            } catch {
+                showToast((error as? ApiError)?.message ?? "Не удалось удалить")
+                await reloadMessages()
+            }
+        }
+    }
+
+    // MARK: Поиск
+
+    private func openSearch() {
+        closeMenu()
+        exitSelect()
+        inputFocused = false
+        searchQuery = ""
+        searchIndex = 0
+        searchListOpen = false
+        searchMode = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { searchFocused = true }
+    }
+
+    private func closeSearch() {
+        searchFocused = false
+        searchListOpen = false
+        searchMode = false
+        searchQuery = ""
+        flashId = nil
+    }
+
+    /// +1 — к более старому совпадению, −1 — к более новому.
+    private func stepSearch(_ delta: Int) {
+        let total = searchResults.count
+        guard total > 0 else { return }
+        searchIndex = min(max(searchIndex + delta, 0), total - 1)
+        searchFocused = false
+        if let id = currentSearchId { jump(to: id) }
+    }
+
+    // MARK: Упоминания
+
+    /// Кандидаты для «@» — с сервера (все, у кого есть доступ к чату), с небольшой задержкой.
+    private func fetchMentions(_ query: String?) {
+        mentionTask?.cancel()
+        guard let query else { return }
+        mentionTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 180_000_000)
+            guard !Task.isCancelled else { return }
+            if let list = try? await Api.chatMembers(chatId, query: query), !Task.isCancelled {
+                mentionCandidates = list
+            }
+        }
+    }
+
+    /// Открыть фото: клавиатура прячется, чтобы не закрывать просмотр.
+    private func openPhoto(_ url: URL?) {
+        inputFocused = false
+        searchFocused = false
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        photoViewerURL = url
     }
 
     /// «Пожаловаться»: жалоба уходит сообщением в чат с администратором.
@@ -979,11 +1455,6 @@ struct ChatView: View {
                 showToast("Не удалось отправить жалобу")
             }
         }
-    }
-
-    private func hideLocally(_ ids: [Int]) {
-        hiddenIds.formUnion(ids)
-        UserDefaults.standard.set(Array(hiddenIds), forKey: Self.hiddenKey(chatId))
     }
 
     private static func hiddenKey(_ chat: String) -> String { "kl_hidden_\(chat)" }
@@ -1010,8 +1481,11 @@ struct ChatView: View {
     }
 
     private func applyMention(_ u: ParticipantDto) {
-        let handle = u.username ?? ("@" + (u.name ?? ""))
-        draft = draft.replacingOccurrences(of: #"@\S*$"#, with: handle + " ", options: .regularExpression)
+        guard let raw = u.username, !raw.isEmpty else { return }
+        let handle = raw.hasPrefix("@") ? raw : "@" + raw
+        Haptics.light()
+        draft = draft.replacingOccurrences(of: #"@[^\s@]*$"#, with: handle + " ", options: .regularExpression)
+        mentionCandidates = []
     }
 
     private func replyPreview(_ m: ChatMessage) -> String {
@@ -1142,8 +1616,8 @@ struct ChatView: View {
 
     private func load() async {
         await reloadMessages()
+        pinIndex = max(pins.count - 1, 0)
         loaded = true
-        if let parts = try? await Api.chatParticipants(chatId) { participants = parts }
         #if DEBUG
         applyDebugState()
         #endif
@@ -1153,8 +1627,11 @@ struct ChatView: View {
         do {
             let resp = try await Api.fetchMessages(chatId)
             serverChat = resp.chat
-            pinned = resp.pinned
-            messages = resp.data.map(ChatMessage.init)
+            pins = resp.pins
+            clampPinIndex()
+            // Фото, которые ещё отправляются, не пропадают при обновлении ленты.
+            let pending = messages.filter(\.pending)
+            messages = resp.data.map(ChatMessage.init) + pending
         } catch {}
     }
 
@@ -1210,6 +1687,12 @@ struct ChatBackdrop: View {
         }
         .ignoresSafeArea()
     }
+}
+
+/// Запрос прокрутки к сообщению; token меняется, чтобы повторный переход к тому же сообщению срабатывал.
+struct ScrollRequest: Equatable {
+    var id: Int = 0
+    var token: Int = 0
 }
 
 private struct ShareItem: Identifiable {

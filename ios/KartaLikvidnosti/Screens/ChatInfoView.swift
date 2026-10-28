@@ -11,6 +11,8 @@ struct ChatInfoView: View {
     @State private var title = ""
     @State private var members = ""
     @State private var avatar: URL? = nil
+    /// Данные чата пришли: без фото показывается заглушка, до этого — мигающий блок.
+    @State private var loadedInfo = false
     @State private var tab = "members"
 
     @State private var participants: [ParticipantDto] = []
@@ -23,7 +25,6 @@ struct ChatInfoView: View {
     private let tabs = [("members", "Участники"), ("media", "Медиа"), ("voice", "Голосовые"), ("files", "Файлы"), ("links", "Ссылки")]
 
     @State private var muted = false
-    @State private var searchOpen = false
     @State private var query = ""
     @State private var reportId: Int? = nil
     @State private var permanent = false
@@ -71,17 +72,18 @@ struct ChatInfoView: View {
         ZStack(alignment: .topLeading) {
             Color(hex: "#383838")
             ZStack {
-                ReportCoverPlaceholder()
-                if let avatar { RemoteImage(url: avatar) }
+                if let avatar { RemoteImage(url: avatar) { ReportCoverPlaceholder() } }
+                else if loadedInfo { ReportCoverPlaceholder() }
+                else { LoadingBlock() }
             }
             .frame(height: 376)
             .clipped()
             .overlay { ZStack { BackdropBlur(radius: 50); Color.black.opacity(0.5) } }
 
             ZStack {
-                Circle().fill(Color(hex: "#d9d9d9"))
-                ReportCoverPlaceholder().clipShape(Circle())
-                if let avatar { RemoteImage(url: avatar).clipShape(Circle()) }
+                if let avatar { RemoteImage(url: avatar) { ReportCoverPlaceholder() }.clipShape(Circle()) }
+                else if loadedInfo { ReportCoverPlaceholder().clipShape(Circle()) }
+                else { Circle().fill(Color.white.opacity(0.06)).overlay(LoadingBlock().clipShape(Circle())) }
             }
             .frame(width: 148, height: 148)
             .frame(maxWidth: .infinity)
@@ -105,7 +107,11 @@ struct ChatInfoView: View {
                     muted.toggle()
                     UserDefaults.standard.set(muted, forKey: "kl_muted_\(chatId)")
                 }
-                actionButton(AppIcons.search) { searchOpen.toggle(); if !searchOpen { query = "" } }
+                // Поиск — как в Телеграме: возвращаемся в чат со строкой поиска по всем сообщениям.
+                actionButton(AppIcons.search) {
+                    router.chatSearchRequest = chatId
+                    router.pop()
+                }
                 if !permanent {
                     actionButton(AppIcons.leave) {
                         guard !leaving else { return }
@@ -122,13 +128,6 @@ struct ChatInfoView: View {
             }
             .padding(.top, 16)
             .padding(.horizontal, Theme.screenX)
-
-            if searchOpen {
-                AppInput(text: $query, placeholder: "Поиск")
-                    .padding(.horizontal, Theme.screenX)
-                    .padding(.top, 12)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            }
 
             tabsBar
                 .padding(.top, 40)
@@ -148,7 +147,6 @@ struct ChatInfoView: View {
             in: UnevenRoundedRectangle(topLeadingRadius: Theme.radiusCard, topTrailingRadius: Theme.radiusCard, style: .continuous)
         )
         .padding(.top, -24)
-        .animation(.easeOut(duration: 0.2), value: searchOpen)
     }
 
     private var tabsBar: some View {
@@ -393,6 +391,7 @@ struct ChatInfoView: View {
                 canManage = c.canManage
             }
         } catch {}
+        loadedInfo = true
         await loadTab(tab)
     }
 

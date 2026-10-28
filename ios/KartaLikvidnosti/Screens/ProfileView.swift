@@ -19,6 +19,9 @@ struct ProfileView: View {
     @State private var history: [ReportDto] = []
     @State private var sortOpen = false
     @State private var sort = "new"
+    /// Данные уже на экране: повторное появление (возврат с «Управления подпиской»)
+    /// не откатывает их к закэшированным, а только тихо обновляет.
+    @State private var seeded = false
 
     private let sortOptions = [("new", "Сначала новые"), ("old", "Сначала Старые"), ("name", "По названию")]
     /// «Сегодня» / «Вчера» и подписи в блоке подписки — белый 60 %.
@@ -422,10 +425,15 @@ struct ProfileView: View {
 
     /// Мгновенно наполняем экран предзагруженными данными, чтобы при открытии не было пустого кадра.
     private func seed() {
-        tag = session.user?.username ?? tag
-        avatar = fileURL(session.user?.avatarUrl)
-        if let p = appData.profile { apply(p) }
-        if history.isEmpty, !appData.reports.isEmpty { history = appData.reports }
+        guard !seeded else { return }
+        seeded = true
+        withoutAnimation {
+            tag = session.user?.username ?? tag
+            avatar = fileURL(session.user?.avatarUrl)
+            if let p = appData.profile { apply(p) }
+            if let s = appData.subscription { applySubscription(s) }
+            if history.isEmpty, !appData.reports.isEmpty { history = appData.reports }
+        }
         #if DEBUG
         if UserDefaults.standard.bool(forKey: "kl_sort") { sortOpen = true }
         #endif
@@ -433,8 +441,12 @@ struct ProfileView: View {
 
     private func apply(_ p: ProfileResponse) {
         if let u = p.user { tag = u.username ?? tag; if let a = u.avatarUrl { avatar = fileURL(a) } }
-        if let s = p.subscription { subActive = s.active; subUntil = s.until ?? ""; subPrice = s.price ?? "" }
+        if let s = p.subscription { applySubscription(s) }
         instruments = p.instruments
+    }
+
+    private func applySubscription(_ s: SubscriptionDto) {
+        subActive = s.active; subUntil = s.until ?? ""; subPrice = s.price ?? ""
     }
 
     private func load() async {
@@ -442,8 +454,9 @@ struct ProfileView: View {
         avatar = fileURL(session.user?.avatarUrl)
         do {
             let p = try await Api.fetchProfile()
-            apply(p)
-            if let s = p.subscription { session.setSubscription(s.active) }
+            withoutAnimation { apply(p) }
+            appData.profile = p
+            if let s = p.subscription { appData.subscription = s; session.setSubscription(s.active) }
         } catch {}
         do { history = try await Api.fetchReports() } catch { /* оставляем предзагруженную историю */ }
     }

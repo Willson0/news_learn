@@ -2,9 +2,16 @@ package app.karta.likvidnosti.ui.components
 
 import android.os.SystemClock
 import android.provider.Settings
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -13,6 +20,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameMillis
@@ -25,6 +34,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.translate
@@ -40,6 +50,7 @@ import app.karta.likvidnosti.ui.theme.AppFont
 import app.karta.likvidnosti.ui.theme.T
 import app.karta.likvidnosti.ui.theme.hex
 import coil.compose.AsyncImage
+import coil.compose.AsyncImagePainter
 import kotlin.math.max
 
 // Общие элементы — порт iOS `Components/Common.swift` и `Theme.swift` (ScreenBackdrop).
@@ -114,11 +125,58 @@ private fun DrawScope.drawGlowFrame(painter: Painter, glowPx: Float, alpha: Floa
 /** Фон экрана только градиентом (без свечения) — iOS `Theme.background`. */
 fun Modifier.plainBackground(): Modifier = this.background(T.Background)
 
-/** Загрузка картинки по URL (iOS RemoteImage): пока грузится — прозрачно. */
+/**
+ * Мигающий блок на месте картинки, пока она грузится (iOS LoadingBlock):
+ * белый 5 → 13 % и обратно — без заглушки, которая потом подменяется фото.
+ */
 @Composable
-fun RemoteImage(url: String?, modifier: Modifier = Modifier, contentScale: ContentScale = ContentScale.Crop) {
-    if (url == null) return
-    AsyncImage(model = url, contentDescription = null, contentScale = contentScale, modifier = modifier)
+fun LoadingBlock(modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition(label = "loading-block")
+    val alpha by transition.animateFloat(
+        initialValue = 0.05f,
+        targetValue = 0.13f,
+        animationSpec = infiniteRepeatable(tween(durationMillis = 800, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "loading-alpha",
+    )
+    Box(modifier.drawBehind { drawRect(Color.White.copy(alpha = alpha)) })
+}
+
+/**
+ * Загрузка картинки по URL (iOS RemoteImage). Пока грузится — прозрачно или
+ * мигающий блок (`loading`); если картинки нет или она не загрузилась — `fallback`.
+ * Уже загруженные картинки берутся из памяти Coil сразу, без мигания.
+ */
+@Composable
+fun RemoteImage(
+    url: String?,
+    modifier: Modifier = Modifier,
+    contentScale: ContentScale = ContentScale.Crop,
+    loading: Boolean = false,
+    fallback: (@Composable BoxScope.() -> Unit)? = null,
+) {
+    if (url == null) {
+        if (fallback != null) Box(modifier) { fallback() }
+        return
+    }
+    if (!loading && fallback == null) {
+        AsyncImage(model = url, contentDescription = null, contentScale = contentScale, modifier = modifier)
+        return
+    }
+    var state by remember(url) { mutableStateOf<AsyncImagePainter.State>(AsyncImagePainter.State.Empty) }
+    Box(modifier) {
+        when (state) {
+            is AsyncImagePainter.State.Error -> fallback?.invoke(this)
+            is AsyncImagePainter.State.Success -> Unit
+            else -> if (loading) LoadingBlock(Modifier.matchParentSize())
+        }
+        AsyncImage(
+            model = url,
+            contentDescription = null,
+            contentScale = contentScale,
+            modifier = Modifier.matchParentSize(),
+            onState = { state = it },
+        )
+    }
 }
 
 /** «Голографическая фольга» обложки (iOS HoloFoil) — приближение. */
@@ -150,11 +208,16 @@ fun AvatarCircle(
             .background(Brush.linearGradient(listOf(hex("#6b7350"), hex("#3f4a2c")))),
         contentAlignment = Alignment.Center,
     ) {
-        if (letter.isNotEmpty()) {
-            Text(letter, style = AppFont.heading(with(LocalDensity.current) { (size * 0.4f).toSp() }))
-        }
+        val fontSize = with(LocalDensity.current) { (size * 0.4f).toSp() }
         if (url != null) {
-            RemoteImage(url, Modifier.fillMaxSize().clip(CircleShape))
+            // Пока фото грузится — мигающий круг, без буквы, которая потом подменится фото.
+            RemoteImage(url, Modifier.fillMaxSize().clip(CircleShape), loading = true) {
+                if (letter.isNotEmpty()) {
+                    Text(letter, style = AppFont.heading(fontSize), modifier = Modifier.align(Alignment.Center))
+                }
+            }
+        } else if (letter.isNotEmpty()) {
+            Text(letter, style = AppFont.heading(fontSize))
         }
     }
 }
@@ -173,12 +236,21 @@ fun ReportCoverPlaceholder(modifier: Modifier = Modifier) {
     )
 }
 
-/** Обложка отчёта: заглушка из макета + картинка по URL поверх. */
+/**
+ * Обложка отчёта. Есть картинка — пока грузится, мигающий блок (без заглушки,
+ * чтобы не было подмены); заглушка из макета — только если картинки нет или
+ * она не загрузилась. `loading` — данные ещё не пришли: тоже мигающий блок.
+ */
 @Composable
-fun ReportCover(url: String?, modifier: Modifier = Modifier) {
+fun ReportCover(url: String?, modifier: Modifier = Modifier, loading: Boolean = false) {
     Box(modifier = modifier.clipToBounds()) {
-        ReportCoverPlaceholder(Modifier.fillMaxSize())
-        RemoteImage(url, Modifier.fillMaxSize())
+        when {
+            url != null -> RemoteImage(url, Modifier.fillMaxSize(), loading = true) {
+                ReportCoverPlaceholder(Modifier.fillMaxSize())
+            }
+            loading -> LoadingBlock(Modifier.fillMaxSize())
+            else -> ReportCoverPlaceholder(Modifier.fillMaxSize())
+        }
     }
 }
 

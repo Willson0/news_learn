@@ -8,10 +8,15 @@ import SwiftUI
 /// «Авто-платеж» со свитчем.
 struct SubscriptionView: View {
     @EnvironmentObject var session: Session
+    @EnvironmentObject var appData: AppData
+    /// Состояние подписки известно (из кэша или с сервера). До этого вместо статуса —
+    /// мигающие блоки: экран не «доезжает» из «Неактивна» и выключенного автоплатежа.
+    @State private var known = false
     @State private var active = false
     @State private var until = ""
     @State private var price = ""
     @State private var cardInfo: CardDto? = nil
+    @State private var cardKnown = false
     @State private var cardBusy = false
     @State private var cardError: String? = nil
     @State private var autoPay = false
@@ -28,10 +33,14 @@ struct SubscriptionView: View {
                         Text("Подписка").font(Theme.sans(Theme.fontMd, .bold)).foregroundStyle(Theme.text)
                         Spacer(minLength: 8)
                         VStack(alignment: .trailing, spacing: 4) {
+                            if !known {
+                                SkeletonBlock(width: 90, height: 18, radius: 6)
+                            } else {
                             Text(active ? "Активна" : "Неактивна")
                                 .font(Theme.sans(Theme.fontMd, .semibold))
                                 .foregroundStyle(active ? Theme.green : Theme.error)
-                            if active, !until.isEmpty {
+                            }
+                            if known, active, !until.isEmpty {
                                 Text("до \(until)").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
                             }
                         }
@@ -40,7 +49,11 @@ struct SubscriptionView: View {
                     HStack {
                         Text("Тарифный план").font(Theme.sans(Theme.fontMd, .bold)).foregroundStyle(Theme.text)
                         Spacer(minLength: 8)
-                        Text(price.isEmpty ? "—" : price).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
+                        if known {
+                            Text(price.isEmpty ? "—" : price).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
+                        } else {
+                            SkeletonBlock(width: 110, height: 16, radius: 6)
+                        }
                     }
                 }
                 .padding(16)
@@ -52,10 +65,16 @@ struct SubscriptionView: View {
                         Circle().fill(Color.white).frame(width: 32, height: 32)
                         if !isBound { Icon(AppIcons.plus, size: 20, color: Theme.green) }
                     }
-                    Text(cardTitle).font(Theme.sans(Theme.fontMd)).foregroundStyle(Theme.text)
-                        .lineLimit(1)
+                    if cardKnown {
+                        Text(cardTitle).font(Theme.sans(Theme.fontMd)).foregroundStyle(Theme.text)
+                            .lineLimit(1)
+                    } else {
+                        SkeletonBlock(width: 120, height: 16, radius: 6)
+                    }
                     Spacer(minLength: 8)
-                    if cardBusy {
+                    if !cardKnown {
+                        SkeletonBlock(width: 96, height: 36, radius: 18)
+                    } else if cardBusy {
                         ProgressView().frame(width: 96, height: 36)
                     } else {
                         PurplePillButton(title: isBound ? "Отвязать" : "Привязать") { isBound ? unbindCard() : bindCard() }
@@ -73,7 +92,9 @@ struct SubscriptionView: View {
                 HStack {
                     Text("Авто-платеж").font(Theme.sans(Theme.fontMd)).foregroundStyle(Theme.text)
                     Spacer(minLength: 8)
-                    AppToggle(isOn: $autoPay)
+                    // Переключение пользователем сразу уходит на сервер; значение с сервера
+                    // ставится без анимации и без повторной отправки.
+                    AppToggle(isOn: Binding(get: { autoPay }, set: { setAutoPay($0) }), disabled: !known)
                 }
                 .padding(.horizontal, 16)
                 .frame(height: 64)
@@ -85,21 +106,45 @@ struct SubscriptionView: View {
             .padding(.bottom, 40)
         }
         .screenBackground()
+        .onAppear {
+            withoutAnimation {
+                if !known, let s = appData.subscription { apply(s) }
+                if !cardKnown, let c = appData.card { cardInfo = c; cardKnown = true }
+            }
+        }
         .task {
             await load()
             await reloadCard()
         }
-        .onChange(of: autoPay) { v in Task { try? await Api.updateSubscription(["auto_pay": v]) } }
+    }
+
+    private func apply(_ s: SubscriptionDto) {
+        active = s.active; until = s.until ?? ""; price = s.price ?? ""
+        autoPay = s.autoPay
+        known = true
+    }
+
+    private func setAutoPay(_ value: Bool) {
+        autoPay = value
+        Task {
+            do {
+                try await Api.updateSubscription(["auto_pay": value])
+                await load()
+            } catch {
+                withoutAnimation { autoPay = !value }
+            }
+        }
     }
 
     private func load() async {
         do {
             if let s = try await Api.fetchSubscription() {
-                active = s.active; until = s.until ?? ""; price = s.price ?? ""
-                autoPay = s.autoPay
+                withoutAnimation { apply(s) }
+                appData.subscription = s
                 session.setSubscription(s.active)
             }
         } catch {}
+        if !known { withoutAnimation { known = true } }
     }
 
     private var isBound: Bool { cardInfo?.bound == true }
@@ -111,7 +156,11 @@ struct SubscriptionView: View {
     }
 
     private func reloadCard() async {
-        cardInfo = try? await Api.fetchCard()
+        let info = try? await Api.fetchCard()
+        withoutAnimation {
+            if let info { cardInfo = info; appData.card = info }
+            cardKnown = true
+        }
     }
 
     private func bindCard() {

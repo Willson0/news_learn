@@ -230,7 +230,9 @@ private fun ChatRow(item: ChatItemDto, modifier: Modifier = Modifier, onClick: (
             ) {
                 val url = fileUrl(item.avatarUrl)
                 if (url != null) {
-                    RemoteImage(url, Modifier.size(64.dp).clip(CircleShape))
+                    RemoteImage(url, Modifier.size(64.dp).clip(CircleShape), loading = true) {
+                        Text(item.title.take(1).uppercase(), style = AppFont.heading(24.sp), modifier = Modifier.align(Alignment.Center))
+                    }
                 } else {
                     Text(item.title.take(1).uppercase(), style = AppFont.heading(24.sp))
                 }

@@ -116,12 +116,18 @@ class ChatItemDto(
     /** Личный чат и чат отчёта нельзя покинуть вручную. */
     val permanent: Boolean = false,
     @SerialName("can_manage") val canManage: Boolean? = null,
+    /** Закреплять и откреплять может администратор или автор отчёта. */
+    @SerialName("can_pin") val canPin: Boolean = false,
+    /** В чате отчёта можно написать автору лично: «/текст/». */
+    @SerialName("author_messages") val authorMessages: Boolean = false,
 )
 
 @Serializable
 class MessagesResponse(
     val chat: ChatItemDto? = null,
     val pinned: MessageQuoteDto? = null,
+    /** Все закрепы в порядке закрепления (последний — самый новый). */
+    val pins: List<MessageQuoteDto>? = null,
     val data: List<MessageDto> = emptyList(),
 )
 
@@ -145,6 +151,13 @@ class MessageDto(
     val reactions: List<ReactionDto> = emptyList(),
     val pinned: Boolean = false,
     val read: Boolean = false,
+    /** Служебное сообщение: join — зашёл в чат, leave — вышел. */
+    val event: String? = null,
+    /** Личное сообщение автору отчёта (или ответ на него): видят только двое. */
+    @SerialName("private") val isPrivate: Boolean = false,
+    @SerialName("private_label") val privateLabel: String? = null,
+    /** Можно ли удалить сообщение у всех. */
+    @SerialName("can_delete") val canDelete: Boolean = false,
 )
 
 @Serializable
@@ -172,7 +185,7 @@ class MsgVoiceDto(val url: String = "", val duration: String? = null)
 class ReactionDto(val emoji: String = "", val count: Int = 0, val mine: Boolean = false)
 
 @Serializable
-class PinResponse(val pinned: MessageQuoteDto? = null)
+class PinResponse(val pinned: MessageQuoteDto? = null, val pins: List<MessageQuoteDto>? = null)
 
 @Serializable
 class ParticipantDto(
@@ -245,6 +258,9 @@ class ResetBody(val email: String, val password: String, val code: String)
 
 @Serializable
 class MessageBody(val body: String, @SerialName("reply_to") val replyTo: Long? = null)
+
+@Serializable
+class DeleteMessageBody(@SerialName("for") val forWhom: String)
 
 @Serializable
 class ReactBody(val emoji: String)

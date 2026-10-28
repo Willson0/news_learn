@@ -102,7 +102,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
@@ -124,6 +127,7 @@ import app.karta.likvidnosti.ui.components.figmaTween
 import app.karta.likvidnosti.ui.components.BackdropBox
 import app.karta.likvidnosti.ui.components.CapsuleShape
 import app.karta.likvidnosti.ui.components.ChatMessage
+import app.karta.likvidnosti.ui.components.ConfirmDialog
 import app.karta.likvidnosti.ui.components.Fills
 import app.karta.likvidnosti.ui.components.GlassBackButton
 import app.karta.likvidnosti.ui.components.GlassCircleButton
@@ -148,12 +152,18 @@ import app.karta.likvidnosti.ui.theme.designBottom
 import app.karta.likvidnosti.ui.theme.designTop
 import app.karta.likvidnosti.ui.theme.hex
 import app.karta.likvidnosti.ui.theme.statusBarTop
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import java.io.File
+import java.time.LocalDate
+import java.time.OffsetDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -188,17 +198,20 @@ private fun MessageDto.toUi() = ChatMessage(
     replyText = reply?.text,
     reactions = reactions.map { Reaction(it.emoji, it.count, it.mine) },
     pinned = pinned,
+    createdAt = createdAt,
+    event = event,
+    isPrivate = isPrivate,
+    privateLabel = privateLabel,
+    canDelete = canDelete,
 )
 
-// Сообщения, удалённые «у меня» (локально, по чату) — как UserDefaults kl_hidden_<chat> в iOS.
-private fun hiddenPrefs(context: Context) = context.getSharedPreferences("kl_chat", Context.MODE_PRIVATE)
-private fun loadHidden(context: Context, slug: String): Set<Long> =
-    hiddenPrefs(context).getStringSet("kl_hidden_$slug", emptySet()).orEmpty().mapNotNull { it.toLongOrNull() }.toSet()
-private fun saveHidden(context: Context, slug: String, ids: Collection<Long>) {
-    hiddenPrefs(context).edit().putStringSet("kl_hidden_$slug", ids.map { it.toString() }.toSet()).apply()
+/** Запрос «открыть поиск» из инфо чата: экран чата открывает поиск, когда к нему возвращаются. */
+object ChatSearchBus {
+    var request by mutableStateOf<String?>(null)
 }
 
 private fun sameAuthor(a: ChatMessage, b: ChatMessage): Boolean {
+    if (a.isSystem || b.isSystem) return false
     if (a.mine != b.mine) return false
     if (a.mine) return true
     return a.userId != null && a.userId == b.userId
@@ -211,7 +224,19 @@ private fun replyPreview(m: ChatMessage): String = when {
     else -> "Сообщение"
 }
 
-private val MentionRegex = Regex("@\\S*$")
+// «@» в начале слова у курсора (в конце текста) — открывает список упоминаний.
+private val MentionRegex = Regex("(^|\\s)@[^\\s@]*$")
+// «/текст/» — личное сообщение автору отчёта.
+private val AuthorMessageRegex = Regex("^/(.*\\S.*)/$", RegexOption.DOT_MATCHES_ALL)
+
+private fun searchDate(m: ChatMessage): String {
+    val date = m.createdAt?.let { runCatching { OffsetDateTime.parse(it) }.getOrNull() } ?: return m.time ?: ""
+    val local = date.atZoneSameInstant(ZoneId.systemDefault()).toLocalDate()
+    val today = LocalDate.now()
+    if (local == today) return m.time ?: ""
+    val pattern = if (local.year == today.year) "d MMM" else "dd.MM.yy"
+    return local.format(DateTimeFormatter.ofPattern(pattern, Locale("ru")))
+}
 
 /**
  * «Чат» (Figma 337:27172 и состояния 337:27570 … 337:36316) — порт iOS
@@ -234,18 +259,33 @@ fun ChatScreen(
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
     val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val inputFocus = remember { FocusRequester() }
+    val searchFocus = remember { FocusRequester() }
 
     val messages = remember { mutableStateListOf<ChatMessage>() }
     var chatTitle by remember { mutableStateOf("Чат") }
     var chatSubtitle by remember { mutableStateOf("") }
     var chatAvatar by remember { mutableStateOf<String?>(null) }
     var chatType by remember { mutableStateOf<String?>(null) }
-    var pinnedQuote by remember { mutableStateOf<MessageQuoteDto?>(null) }
-    val participants = remember { mutableStateListOf<ParticipantDto>() }
+    // Закрепы по порядку закрепления; в шапке — текущий (сначала самый новый).
+    val pins = remember { mutableStateListOf<MessageQuoteDto>() }
+    var pinIndex by remember { mutableIntStateOf(0) }
+    var canPin by remember { mutableStateOf(false) }
+    var authorMessages by remember { mutableStateOf(false) }
+    var unpinConfirm by remember { mutableStateOf<MessageQuoteDto?>(null) }
+    val mentionCandidates = remember { mutableStateListOf<ParticipantDto>() }
+    var mentionJob by remember { mutableStateOf<Job?>(null) }
+    // Подсветка сообщения после перехода к нему (закреп, поиск).
+    var flashId by remember { mutableStateOf<Long?>(null) }
+    // Поиск по чату (как в Телеграме).
+    var searchMode by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var searchIndex by remember { mutableIntStateOf(0) }
+    var searchListOpen by remember { mutableStateOf(false) }
     var loaded by remember { mutableStateOf(false) }
     // Сообщения первой загрузки появляются без анимации «всплытия».
     val initialIds = remember { HashSet<Long>() }
@@ -256,12 +296,12 @@ fun ChatScreen(
     var replyTo by remember { mutableStateOf<ChatMessage?>(null) }
     var menuFor by remember { mutableStateOf<Long?>(null) }
     var deleteMenu by remember { mutableStateOf(false) }
+    var selectDeleteMenu by remember { mutableStateOf(false) }
     var selectMode by remember { mutableStateOf(false) }
     val selected = remember { mutableStateListOf<Long>() }
     var attachOpen by remember { mutableStateOf(false) }
     var viewerMsg by remember { mutableStateOf<ChatMessage?>(null) }
     var toast by remember { mutableStateOf<String?>(null) }
-    val hiddenIds = remember { mutableStateListOf<Long>().apply { addAll(loadHidden(context, slug)) } }
 
     // Запись голосового
     var recording by remember { mutableStateOf(false) }
@@ -281,14 +321,27 @@ fun ChatScreen(
     var composerHeight by remember { mutableIntStateOf(0) }
 
     val isDirect = slug == "admin" || slug.startsWith("dm-") || chatType == "direct"
-    val visible = messages.filter { it.id !in hiddenIds }
+    val visible: List<ChatMessage> = messages
     val showSend = draft.text.trim().isNotEmpty() || pendingImages.isNotEmpty()
-    val mentionQuery = MentionRegex.find(draft.text)?.value?.drop(1)?.lowercase()
-    val mentionMatches: List<ParticipantDto> = if (mentionQuery == null) emptyList() else participants.filter { p ->
-        mentionQuery.isEmpty() ||
-            (p.username?.lowercase()?.contains(mentionQuery) == true) ||
-            p.name.lowercase().contains(mentionQuery)
+    val mentionQuery = MentionRegex.find(draft.text)?.value?.trim()?.drop(1)
+    val mentionMatches: List<ParticipantDto> = if (mentionQuery == null) emptyList() else {
+        val q = mentionQuery.lowercase()
+        mentionCandidates.filter { p ->
+            q.isEmpty() ||
+                (p.username?.lowercase()?.contains(q) == true) ||
+                p.name.lowercase().contains(q)
+        }.take(5)
     }
+    val draftIsAuthorMessage = authorMessages && AuthorMessageRegex.matches(draft.text.trim())
+    val currentPin = pins.getOrNull(pinIndex.coerceIn(0, (pins.size - 1).coerceAtLeast(0)))
+    // Результаты поиска по всем сообщениям чата: от старых к новым.
+    val searchResults: List<Long> = searchQuery.trim().let { q ->
+        if (q.isEmpty()) emptyList() else visible.filter { m ->
+            !m.isSystem && listOfNotNull(m.text, m.fileName).any { it.contains(q, ignoreCase = true) }
+        }.map { it.id }
+    }
+    // Текущий результат: счёт от самого нового (1 из N), стрелка вверх — к более старым.
+    val currentSearchId = searchResults.takeIf { it.isNotEmpty() }?.let { it[it.size - 1 - searchIndex.coerceAtMost(it.size - 1)] }
 
     // MARK: - Загрузка
 
@@ -300,19 +353,26 @@ fun ChatScreen(
                 chatAvatar = fileUrl(it.avatarUrl)
                 chatType = it.type
             }
-            pinnedQuote = resp.pinned
+            resp.chat?.let {
+                canPin = it.canPin
+                authorMessages = it.authorMessages
+            }
+            val newPins = resp.pins ?: listOfNotNull(resp.pinned)
+            pins.clear(); pins.addAll(newPins)
+            pinIndex = pinIndex.coerceIn(0, (pins.size - 1).coerceAtLeast(0))
+            // Фото, которые ещё отправляются, остаются в ленте.
+            val pending = messages.filter { it.uploading }
             messages.clear()
             messages.addAll(resp.data.map { it.toUi() })
+            messages.addAll(pending)
         }
     }
 
     LaunchedEffect(slug) {
         reloadMessages()
+        pinIndex = (pins.size - 1).coerceAtLeast(0)
         initialIds.addAll(messages.map { it.id })
         loaded = true
-        runCatching { Repository.participants(slug) }.getOrNull()?.let {
-            participants.clear(); participants.addAll(it)
-        }
     }
 
     val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
@@ -320,7 +380,7 @@ fun ChatScreen(
     val bottomPad = if (keyboardShown) imeBottom + 12.dp else designBottom(45.dp)
 
     LaunchedEffect(visible.size, loaded, keyboardShown) {
-        if (loaded && visible.isNotEmpty()) {
+        if (loaded && visible.isNotEmpty() && !searchMode) {
             runCatching { listState.animateScrollToItem(visible.size) }
         }
     }
@@ -485,7 +545,12 @@ fun ChatScreen(
         draft = TextFieldValue("")
         replyTo = null
         scope.launch {
-            runCatching { Repository.sendMessage(slug, body, reply) }.getOrNull()?.let { messages.add(it.toUi()) }
+            runCatching { Repository.sendMessage(slug, body, reply) }
+                .onSuccess { sent -> sent?.let { messages.add(it.toUi()) } }
+                .onFailure { e ->
+                    if (draft.text.isEmpty()) draft = TextFieldValue(body, TextRange(body.length))
+                    showToast(e.message?.takeIf { it.isNotBlank() && it.length < 120 } ?: "Не удалось отправить сообщение")
+                }
         }
     }
 
@@ -626,17 +691,89 @@ fun ChatScreen(
         if (i >= 0) messages[i] = dto.toUi()
     }
 
+    /** Реакция: повторный выбор своей снимает её (сразу на экране, затем ответ сервера). */
     fun react(id: Long, emoji: String) {
         closeMenu()
-        scope.launch { runCatching { Repository.reactMessage(slug, id, emoji) }.getOrNull()?.let { replaceMessage(it) } }
+        val i = messages.indexOfFirst { it.id == id }
+        if (i >= 0) {
+            val m = messages[i]
+            val existing = m.reactions.firstOrNull { it.emoji == emoji }
+            val updated = when {
+                existing == null -> m.reactions + Reaction(emoji, 1, true)
+                existing.mine -> m.reactions.mapNotNull {
+                    if (it.emoji != emoji) it else if (it.count > 1) it.copy(count = it.count - 1, mine = false) else null
+                }
+                else -> m.reactions.map { if (it.emoji == emoji) it.copy(count = it.count + 1, mine = true) else it }
+            }
+            messages[i] = m.copy(reactions = updated)
+        }
+        scope.launch {
+            runCatching { Repository.reactMessage(slug, id, emoji) }
+                .onSuccess { dto -> dto?.let { replaceMessage(it) } }
+                .onFailure { reloadMessages() }
+        }
     }
 
+    fun clampPinIndex() {
+        pinIndex = pinIndex.coerceIn(0, (pins.size - 1).coerceAtLeast(0))
+    }
+
+    fun applyPins(list: List<MessageQuoteDto>, focusNewest: Boolean) {
+        pins.clear(); pins.addAll(list)
+        if (focusNewest) pinIndex = (pins.size - 1).coerceAtLeast(0) else clampPinIndex()
+        val ids = list.map { it.id }.toSet()
+        for (idx in messages.indices) {
+            val m = messages[idx]
+            val p = m.id in ids
+            if (m.pinned != p) messages[idx] = m.copy(pinned = p)
+        }
+    }
+
+    /** Закрепить (сразу) или открепить (после подтверждения). */
     fun togglePin(id: Long) {
         closeMenu()
-        scope.launch {
-            runCatching { Repository.pinMessage(slug, id) }.onSuccess { pinnedQuote = it }
-            reloadMessages()
+        if (!canPin) return
+        val m = messages.firstOrNull { it.id == id }
+        if (m?.pinned == true || pins.any { it.id == id }) {
+            unpinConfirm = pins.firstOrNull { it.id == id } ?: MessageQuoteDto(id, m?.author, m?.text)
+            return
         }
+        scope.launch {
+            runCatching { Repository.pinMessage(slug, id) }
+                .onSuccess { applyPins(it, focusNewest = true); showToast("Сообщение закреплено") }
+                .onFailure { showToast("Не удалось закрепить") }
+        }
+    }
+
+    fun unpin(id: Long) {
+        unpinConfirm = null
+        scope.launch {
+            runCatching { Repository.pinMessage(slug, id) }
+                .onSuccess { applyPins(it, focusNewest = false) }
+                .onFailure { showToast("Не удалось открепить") }
+        }
+    }
+
+    /** Прокрутить к сообщению (по центру экрана) и коротко подсветить его. */
+    fun jump(id: Long, flash: Boolean = true) {
+        val idx = visible.indexOfFirst { it.id == id }
+        if (idx < 0) { showToast("Сообщение не найдено"); return }
+        scope.launch {
+            // Первый элемент ленты — плашка «Сегодня».
+            val viewport = listState.layoutInfo.viewportSize.height
+            runCatching { listState.animateScrollToItem(idx + 1, -viewport / 3) }
+            if (flash) {
+                flashId = id
+                delay(1100)
+                if (flashId == id) flashId = null
+            }
+        }
+    }
+
+    fun openPin(p: MessageQuoteDto) {
+        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        jump(p.id)
+        if (pins.size > 1) pinIndex = if (pinIndex > 0) pinIndex - 1 else pins.size - 1
     }
 
     fun copyToClipboard(text: String) {
@@ -649,19 +786,21 @@ fun ChatScreen(
         copyToClipboard("${origin}community/chat/$slug?message=${m.id}")
     }
 
-    fun canDelete(m: ChatMessage) = m.mine || Session.isAdmin
+    /** Удалить у всех: сервер разрешает автору сообщения и модератору чата. */
+    fun canDeleteAll(m: ChatMessage) = !m.isSystem && m.canDelete
 
-    fun hideLocally(ids: Collection<Long>) {
-        ids.forEach { if (it !in hiddenIds) hiddenIds.add(it) }
-        saveHidden(context, slug, hiddenIds.toList())
+    fun dropLocally(id: Long) {
+        messages.removeAll { it.id == id }
+        if (pins.removeAll { it.id == id }) clampPinIndex()
     }
 
-    fun delete(id: Long) {
+    /** «Удалить у всех» или «Удалить у меня» (скрывается только для себя на всех устройствах). */
+    fun delete(id: Long, forAll: Boolean) {
         closeMenu()
         scope.launch {
-            runCatching { Repository.deleteMessage(slug, id) }
-            messages.removeAll { it.id == id }
-            if (pinnedQuote?.id == id) pinnedQuote = null
+            runCatching { Repository.deleteMessage(slug, id, forAll) }
+                .onSuccess { dropLocally(id) }
+                .onFailure { showToast("Не удалось удалить сообщение") }
         }
     }
 
@@ -684,29 +823,25 @@ fun ChatScreen(
         focusManager.clearFocus()
     }
 
-    fun exitSelect() { selectMode = false; selected.clear() }
+    fun exitSelect() { selectMode = false; selectDeleteMenu = false; selected.clear() }
 
     fun toggleSelect(id: Long) {
+        if (messages.firstOrNull { it.id == id }?.isSystem == true) return
         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         if (id in selected) selected.remove(id) else selected.add(id)
     }
 
-    fun deleteSelected() {
+    fun deleteSelected(forAll: Boolean) {
         val ids = selected.toList()
         exitSelect()
         scope.launch {
-            val local = mutableListOf<Long>()
+            var failed = false
             for (id in ids) {
-                val m = messages.firstOrNull { it.id == id } ?: continue
-                if (canDelete(m)) {
-                    runCatching { Repository.deleteMessage(slug, id) }
-                    messages.removeAll { it.id == id }
-                    if (pinnedQuote?.id == id) pinnedQuote = null
-                } else {
-                    local.add(id)
-                }
+                runCatching { Repository.deleteMessage(slug, id, forAll) }
+                    .onSuccess { dropLocally(id) }
+                    .onFailure { failed = true }
             }
-            if (local.isNotEmpty()) hideLocally(local)
+            if (failed) showToast("Не все сообщения удалось удалить")
         }
     }
 
@@ -724,7 +859,7 @@ fun ChatScreen(
     }
 
     fun onLongPress(m: ChatMessage) {
-        if (m.uploading) return
+        if (m.uploading || m.isSystem || searchMode) return
         if (selectMode) { toggleSelect(m.id); return }
         focusManager.clearFocus()
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -734,15 +869,84 @@ fun ChatScreen(
     }
 
     fun applyMention(p: ParticipantDto) {
-        val handle = p.username ?: ("@" + p.name)
-        val text = draft.text.replace(MentionRegex, "$handle ")
+        val handle = p.username?.let { if (it.startsWith("@")) it else "@$it" } ?: return
+        val text = draft.text.replace(MentionRegex) { r -> (if (r.value.firstOrNull()?.isWhitespace() == true) r.value.first().toString() else "") + "$handle " }
         draft = TextFieldValue(text, TextRange(text.length))
     }
 
-    BackHandler(enabled = menuFor != null || selectMode || attachOpen || viewerMsg != null || recLocked) {
+    // Кандидаты для «@» — с сервера (все, у кого есть доступ к чату), с небольшой задержкой.
+    LaunchedEffect(mentionQuery) {
+        mentionJob?.cancel()
+        val q = mentionQuery ?: return@LaunchedEffect
+        mentionJob = scope.launch {
+            delay(180)
+            runCatching { Repository.chatMembers(slug, q) }.getOrNull()?.let {
+                mentionCandidates.clear(); mentionCandidates.addAll(it)
+            }
+        }
+    }
+
+    fun openSearch() {
+        closeMenu()
+        exitSelect()
+        attachOpen = false
+        focusManager.clearFocus()
+        searchQuery = ""
+        searchIndex = 0
+        searchListOpen = false
+        searchMode = true
+    }
+
+    fun closeSearch() {
+        focusManager.clearFocus()
+        searchMode = false
+        searchListOpen = false
+        searchQuery = ""
+        searchIndex = 0
+    }
+
+    fun stepSearch(delta: Int) {
+        val total = searchResults.size
+        if (total == 0) return
+        searchIndex = (searchIndex + delta).coerceIn(0, total - 1)
+        focusManager.clearFocus()
+        // Переход к результату — в LaunchedEffect(currentSearchId) ниже.
+    }
+
+    // Переход к текущему результату поиска при вводе и стрелках.
+    LaunchedEffect(currentSearchId, searchMode) {
+        if (searchMode) currentSearchId?.let { jump(it, flash = false) }
+    }
+
+    // Из инфо чата нажали «Поиск» — открываем поиск здесь.
+    LaunchedEffect(ChatSearchBus.request, loaded) {
+        if (loaded && ChatSearchBus.request == slug) {
+            ChatSearchBus.request = null
+            openSearch()
+        }
+    }
+
+    LaunchedEffect(searchMode) {
+        if (searchMode) {
+            delay(250)
+            runCatching { searchFocus.requestFocus() }
+        }
+    }
+
+    /** Открыть фото: клавиатура прячется, чтобы не закрывать просмотр. */
+    fun openPhoto(m: ChatMessage) {
+        focusManager.clearFocus()
+        keyboard?.hide()
+        viewerMsg = m
+    }
+
+    BackHandler(enabled = menuFor != null || selectMode || attachOpen || viewerMsg != null || recLocked || searchMode || unpinConfirm != null) {
         when {
             viewerMsg != null -> viewerMsg = null
+            unpinConfirm != null -> unpinConfirm = null
             menuFor != null -> closeMenu()
+            searchListOpen -> searchListOpen = false
+            searchMode -> closeSearch()
             recLocked -> cancelVoice()
             selectMode -> exitSelect()
             else -> attachOpen = false
@@ -750,7 +954,7 @@ fun ChatScreen(
     }
 
     val contentTop = designTop(T.TopBarY) + 42.dp + 24.dp +
-        (if (pinnedQuote != null && !selectMode) 65.dp + 12.dp else 0.dp)
+        (if (currentPin != null && !selectMode && !searchMode) 65.dp + 12.dp else 0.dp)
     val composerH = with(density) { composerHeight.toDp() }
     val recordClock = "%02d:%02d".format(recSeconds / 60, recSeconds % 60)
 
@@ -796,17 +1000,25 @@ fun ChatScreen(
                                     sameAuthor(prev, m) -> 4.dp
                                     else -> 12.dp
                                 }
+                                if (m.isSystem) {
+                                    SystemRow(
+                                        m,
+                                        Modifier.fillMaxWidth().animateItem(placementSpec = figmaTween()).padding(top = if (prev == null) 0.dp else 12.dp),
+                                    ) { if (!selectMode) m.userId?.let { onUser(it) } }
+                                } else {
                                 val showAvatarColumn = !m.mine && !isDirect
                                 // Появление: новое сообщение проявляется на месте, остальные сдвигаются
                                 // вверх (прототип: Чат 495:16591 → 495:17748 → 495:19021, SMART_ANIMATE
                                 // 800 мс, ease-in-out-back).
                                 val appear = remember(m.id) { Animatable(if (m.id in initialIds) 1f else 0f) }
                                 LaunchedEffect(m.id) { appear.animateTo(1f, figmaTween()) }
+                                val flash by animateFloatAsState(if (flashId == m.id) 1f else 0f, tween(if (flashId == m.id) 200 else 450), label = "flash")
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .animateItem(placementSpec = figmaTween())
                                         .padding(top = topPad)
+                                        .background(T.Green.copy(alpha = 0.18f * flash), RoundedCornerShape(12.dp))
                                         .then(if (selectMode) Modifier.pressable(pressAlpha = 1f) { toggleSelect(m.id) } else Modifier),
                                     verticalAlignment = Alignment.Bottom,
                                 ) {
@@ -859,10 +1071,13 @@ fun ChatScreen(
                                             voiceProgress = if (playingId == m.id) voiceProgress else 0f,
                                             onPlayVoice = { if (selectMode) toggleSelect(m.id) else playVoice(m) },
                                             onOpenFile = { if (selectMode) toggleSelect(m.id) else openUrl(fileUrl(m.fileUrl)) },
-                                            onOpenImage = { if (selectMode) toggleSelect(m.id) else viewerMsg = m },
+                                            onOpenImage = { if (selectMode) toggleSelect(m.id) else openPhoto(m) },
                                             onLongPress = { onLongPress(m) },
+                                            onToggleReaction = if (selectMode || m.uploading) null else { e -> react(m.id, e) },
+                                            highlight = if (searchMode) searchQuery else null,
                                         )
                                     }
+                                }
                                 }
                             }
                         }
@@ -876,11 +1091,21 @@ fun ChatScreen(
                         title = chatTitle,
                         subtitle = chatSubtitle,
                         avatar = chatAvatar,
-                        pinned = pinnedQuote,
+                        loaded = loaded,
+                        pinned = currentPin,
+                        pinCount = pins.size,
+                        pinIndex = pinIndex,
+                        canPin = canPin,
+                        searchMode = searchMode,
+                        searchQuery = searchQuery,
+                        searchFocus = searchFocus,
+                        onSearchQuery = { searchQuery = it; searchIndex = 0 },
+                        onCloseSearch = { closeSearch() },
                         onBack = onBack,
                         onInfo = onInfo,
                         onCancelSelect = { exitSelect() },
-                        onUnpin = { togglePin(it) },
+                        onOpenPin = { openPin(it) },
+                        onUnpin = { unpinConfirm = it },
                     )
 
                     // MARK: Нижняя панель
@@ -894,8 +1119,19 @@ fun ChatScreen(
                             .padding(top = 12.dp),
                     ) {
                         when {
+                            searchMode -> SearchBottomBar(
+                                query = searchQuery,
+                                total = searchResults.size,
+                                index = searchIndex,
+                                listOpen = searchListOpen,
+                                onToggleList = { focusManager.clearFocus(); searchListOpen = !searchListOpen },
+                                onUp = { stepSearch(1) },
+                                onDown = { stepSearch(-1) },
+                            )
                             selectMode -> Row(Modifier.fillMaxWidth()) {
-                                GlassCircleButton(AppIcons.trashX, iconSize = 24.dp, iconColor = T.Error) { deleteSelected() }
+                                GlassCircleButton(AppIcons.trashX, iconSize = 24.dp, iconColor = T.Error) {
+                                    if (selected.isNotEmpty()) selectDeleteMenu = !selectDeleteMenu
+                                }
                                 Spacer(Modifier.weight(1f))
                                 GlassCircleButton(AppIcons.forward, iconSize = 24.dp) { forwardSelected() }
                             }
@@ -939,10 +1175,25 @@ fun ChatScreen(
                                             .padding(
                                                 start = 16.dp,
                                                 end = if (showSend) 0.dp else 12.dp,
-                                                top = if (replyTo != null || pendingImages.isNotEmpty()) 12.dp else 0.dp,
+                                                top = if (replyTo != null || pendingImages.isNotEmpty() || draftIsAuthorMessage ||
+                                                    (mentionMatches.isNotEmpty() && !attachOpen)
+                                                ) 12.dp else 0.dp,
                                             ),
                                         verticalArrangement = Arrangement.spacedBy(8.dp),
                                     ) {
+                                        // Упоминания (Figma 337:34963): список в том же стекле, над текстом.
+                                        if (mentionMatches.isNotEmpty() && !attachOpen) {
+                                            MentionList(mentionMatches) { applyMention(it) }
+                                        }
+                                        if (draftIsAuthorMessage) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            ) {
+                                                AppIcon(AppIcons.eyeClosed, size = 14.dp, tint = Secondary)
+                                                Text("Сообщение увидит только автор отчета", style = AppFont.sans(T.FsSm, color = Secondary))
+                                            }
+                                        }
                                         if (pendingImages.isNotEmpty()) {
                                             PendingPhotosStrip(
                                                 uris = pendingImages,
@@ -1081,36 +1332,21 @@ fun ChatScreen(
                         }
                     }
 
-                    // Упоминания: над полем ввода.
+                    // Режим выбора: «Удалить у всех» / «Удалить у меня» над корзиной (Figma 337:29172).
                     AnimatedVisibility(
-                        visible = mentionMatches.isNotEmpty() && !selectMode && !recording && !attachOpen,
+                        visible = selectMode && selectDeleteMenu,
                         modifier = Modifier
                             .align(Alignment.BottomStart)
-                            .padding(start = T.ScreenX + 42.dp + 12.dp, bottom = bottomPad + 54.dp),
-                        enter = fadeIn(),
-                        exit = fadeOut(),
+                            .padding(start = T.ScreenX, bottom = bottomPad + 54.dp),
+                        enter = fadeIn(figmaFade()) + scaleIn(initialScale = 0.95f, transformOrigin = TransformOrigin(0f, 1f)),
+                        exit = fadeOut(figmaFade()),
                     ) {
-                        Column(
-                            modifier = Modifier
-                                .width(280.dp)
-                                .liquidGlass(T.ShapeCard, Fills.Black2)
-                                .padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            mentionMatches.take(5).forEach { u ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().pressable(pressAlpha = 1f) { applyMention(u) },
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    AvatarCircle(fileUrl(u.avatarUrl), size = 24.dp, name = u.name.ifEmpty { u.username })
-                                    Text(u.name, style = AppFont.sans(T.FsBase, FontWeight.SemiBold), maxLines = 1)
-                                    u.username?.let {
-                                        Text(it, style = AppFont.sans(T.FsBase, color = Secondary), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    }
-                                }
-                            }
-                        }
+                        val chosen = messages.filter { it.id in selected }
+                        DeleteChoicePanel(
+                            canDeleteAll = chosen.isNotEmpty() && chosen.all { canDeleteAll(it) },
+                            onDeleteAll = { deleteSelected(forAll = true) },
+                            onDeleteMine = { deleteSelected(forAll = false) },
+                        )
                     }
                 },
             )
@@ -1127,7 +1363,8 @@ fun ChatScreen(
                         message = m,
                         isDirect = isDirect,
                         deleteMenu = deleteMenu,
-                        canDelete = canDelete(m),
+                        canDelete = canDeleteAll(m),
+                        canPin = canPin && !m.isPrivate,
                         canComplain = !Session.isAdmin && !m.mine,
                         onClose = { closeMenu() },
                         onReact = { react(m.id, it) },
@@ -1149,12 +1386,38 @@ fun ChatScreen(
                         },
                         onComplain = { complain(m) },
                         onDeleteMenu = { deleteMenu = true },
-                        onDeleteAll = { delete(m.id) },
-                        onDeleteMine = { hideLocally(listOf(m.id)); closeMenu() },
+                        onDeleteAll = { delete(m.id, forAll = true) },
+                        onDeleteMine = { delete(m.id, forAll = false) },
                         onSelect = { enterSelect() },
                     )
                 }
             }
+
+            // MARK: Результаты поиска списком
+            AnimatedVisibility(visible = searchMode && searchListOpen, enter = fadeIn(tween(200)), exit = fadeOut(tween(180))) {
+                SearchResultsList(
+                    results = searchResults.asReversed().mapNotNull { id -> messages.firstOrNull { it.id == id } },
+                    query = searchQuery,
+                    topPad = designTop(T.TopBarY) + 42.dp + 16.dp,
+                    bottomPad = bottomPad + 42.dp + 24.dp,
+                    myName = Session.user?.name,
+                    onPick = { idx, m ->
+                        searchIndex = idx
+                        searchListOpen = false
+                        jump(m.id, flash = false)
+                    },
+                )
+            }
+
+            // MARK: Подтверждение открепления
+            ConfirmDialog(
+                open = unpinConfirm != null,
+                title = "Открепить сообщение?",
+                text = "Сообщение пропадёт из закреплённых у всех участников",
+                confirmLabel = "Открепить",
+                onConfirm = { unpinConfirm?.let { unpin(it.id) } },
+                onCancel = { unpinConfirm = null },
+            )
 
             // MARK: Просмотр фото
             // Прототип: сообщение с фото → «Чат нажатие на фото» и назад — 800 мс.
@@ -1166,10 +1429,10 @@ fun ChatScreen(
                         imageUrl = fileUrl(m.imageUrl),
                         author = if (m.mine) "Вы" else (m.author ?: ""),
                         time = m.time ?: "",
-                        canDelete = canDelete(m),
+                        canDelete = canDeleteAll(m),
                         onClose = { viewerMsg = null },
                         onDownload = { openUrl(fileUrl(m.imageUrl)) },
-                        onDelete = { viewerMsg = null; delete(m.id) },
+                        onDelete = { viewerMsg = null; delete(m.id, forAll = true) },
                     )
                 }
             }
@@ -1201,11 +1464,21 @@ private fun BoxScope.ChatTopBar(
     title: String,
     subtitle: String,
     avatar: String?,
+    loaded: Boolean,
     pinned: MessageQuoteDto?,
+    pinCount: Int,
+    pinIndex: Int,
+    canPin: Boolean,
+    searchMode: Boolean,
+    searchQuery: String,
+    searchFocus: FocusRequester,
+    onSearchQuery: (String) -> Unit,
+    onCloseSearch: () -> Unit,
     onBack: () -> Unit,
     onInfo: () -> Unit,
     onCancelSelect: () -> Unit,
-    onUnpin: (Long) -> Unit,
+    onOpenPin: (MessageQuoteDto) -> Unit,
+    onUnpin: (MessageQuoteDto) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -1214,19 +1487,24 @@ private fun BoxScope.ChatTopBar(
             .padding(top = designTop(T.TopBarY))
             .padding(horizontal = T.ScreenX),
     ) {
+        val mode = when {
+            searchMode -> 2
+            selectMode -> 1
+            else -> 0
+        }
         AnimatedContent(
-            targetState = selectMode,
+            targetState = mode,
             transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(180)) },
             label = "chat-top",
-        ) { select ->
-            if (select) {
-                Row(Modifier.fillMaxWidth().height(42.dp), verticalAlignment = Alignment.CenterVertically) {
+        ) { m ->
+            when (m) {
+                2 -> SearchTopBar(searchQuery, searchFocus, onSearchQuery, onCloseSearch)
+                1 -> Row(Modifier.fillMaxWidth().height(42.dp), verticalAlignment = Alignment.CenterVertically) {
                     GlassPill { Text("Выбрано $selectedCount", style = AppFont.sans(T.FsBase, FontWeight.SemiBold)) }
                     Spacer(Modifier.weight(1f))
                     GlassPill(Modifier.pressable { onCancelSelect() }) { Text("Отмена", style = AppFont.sans(T.FsBase)) }
                 }
-            } else {
-                Row(Modifier.fillMaxWidth().height(42.dp), verticalAlignment = Alignment.CenterVertically) {
+                else -> Row(Modifier.fillMaxWidth().height(42.dp), verticalAlignment = Alignment.CenterVertically) {
                     GlassBackButton(onClick = onBack)
                     Box(
                         modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
@@ -1247,19 +1525,278 @@ private fun BoxScope.ChatTopBar(
                             }
                         }
                     }
-                    ReportCover(avatar, Modifier.size(42.dp).clip(CircleShape).pressable(pressAlpha = 1f) { onInfo() })
+                    // Иконка чата открывает то же инфо, что и название.
+                    ReportCover(avatar, Modifier.size(42.dp).clip(CircleShape).pressable { onInfo() }, loading = !loaded)
                 }
             }
         }
         AnimatedVisibility(
-            visible = pinned != null && !selectMode,
+            visible = pinned != null && !selectMode && !searchMode,
             enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
             exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
         ) {
             val last = remember { mutableStateOf<MessageQuoteDto?>(null) }
             pinned?.let { last.value = it }
-            last.value?.let { p -> PinnedBar(p, onUnpin) }
+            last.value?.let { p -> PinnedBar(p, pinCount, pinIndex, canPin, onOpenPin, onUnpin) }
         }
+    }
+}
+
+/** Шапка поиска: стеклянное поле с лупой и «Отмена». */
+@Composable
+private fun SearchTopBar(
+    query: String,
+    focus: FocusRequester,
+    onQuery: (String) -> Unit,
+    onClose: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().height(42.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .height(42.dp)
+                .liquidGlass(RoundedCornerShape(24.dp))
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            AppIcon(AppIcons.search, size = 18.dp, tint = Secondary)
+            BasicTextField(
+                value = query,
+                onValueChange = onQuery,
+                singleLine = true,
+                textStyle = AppFont.sans(T.FsBase),
+                cursorBrush = SolidColor(T.Green),
+                modifier = Modifier.weight(1f).focusRequester(focus),
+                decorationBox = { inner ->
+                    Box(contentAlignment = Alignment.CenterStart) {
+                        if (query.isEmpty()) {
+                            Text("Поиск", style = AppFont.sans(T.FsBase, color = Color.White.copy(alpha = 0.4f)), maxLines = 1)
+                        }
+                        inner()
+                    }
+                },
+            )
+            if (query.isNotEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .background(Color.White.copy(alpha = 0.2f), CircleShape)
+                        .pressable { onQuery("") },
+                    contentAlignment = Alignment.Center,
+                ) { AppIcon(AppIcons.close, size = 10.dp) }
+            }
+        }
+        GlassPill(Modifier.pressable { onClose() }) { Text("Отмена", style = AppFont.sans(T.FsBase)) }
+    }
+}
+
+/** Нижняя панель поиска (вместо поля ввода): список результатов, «N из M», стрелки. */
+@Composable
+private fun SearchBottomBar(
+    query: String,
+    total: Int,
+    index: Int,
+    listOpen: Boolean,
+    onToggleList: () -> Unit,
+    onUp: () -> Unit,
+    onDown: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(42.dp)
+                .alpha(if (total == 0) 0.5f else 1f)
+                .liquidGlass(CircleShape)
+                .then(if (total > 0) Modifier.pressable { onToggleList() } else Modifier),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (listOpen) {
+                AppIcon(AppIcons.chat, size = 20.dp)
+            } else {
+                // «Список»: три полоски.
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    repeat(3) { Box(Modifier.size(16.dp, 1.5.dp).background(Color.White, CapsuleShape)) }
+                }
+            }
+        }
+        Text(
+            when {
+                query.trim().isEmpty() -> "Введите текст для поиска"
+                total == 0 -> "Ничего не найдено"
+                else -> "${index.coerceAtMost(total - 1) + 1} из $total"
+            },
+            style = AppFont.sans(T.FsBase),
+            modifier = Modifier.weight(1f),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            maxLines = 1,
+        )
+        Row(Modifier.height(42.dp).liquidGlass(CapsuleShape), verticalAlignment = Alignment.CenterVertically) {
+            SearchArrow(up = true, enabled = index + 1 < total, onClick = onUp)
+            SearchArrow(up = false, enabled = index > 0 && total > 0, onClick = onDown)
+        }
+    }
+}
+
+@Composable
+private fun SearchArrow(up: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(44.dp, 42.dp)
+            .then(if (enabled) Modifier.pressable { onClick() } else Modifier),
+        contentAlignment = Alignment.Center,
+    ) {
+        AppIcon(
+            AppIcons.chevronRight,
+            size = 20.dp,
+            tint = Color.White.copy(alpha = if (enabled) 1f else 0.3f),
+            modifier = Modifier.rotate(if (up) -90f else 90f),
+        )
+    }
+}
+
+/** Результаты поиска списком (как в Телеграме): от новых к старым. */
+@Composable
+private fun SearchResultsList(
+    results: List<ChatMessage>,
+    query: String,
+    topPad: androidx.compose.ui.unit.Dp,
+    bottomPad: androidx.compose.ui.unit.Dp,
+    myName: String?,
+    onPick: (Int, ChatMessage) -> Unit,
+) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .screenBackground()
+            .padding(top = topPad),
+        contentPadding = PaddingValues(bottom = bottomPad),
+    ) {
+        itemsIndexed(results, key = { _, m -> m.id }) { idx, m ->
+            Column {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .pressable(pressAlpha = 0.7f) { onPick(idx, m) }
+                        .padding(horizontal = T.ScreenX, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    AvatarCircle(fileUrl(m.avatarUrl), size = 36.dp, name = if (m.mine) (myName ?: "Вы") else m.author)
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                if (m.mine) "Вы" else (m.author ?: "Участник"),
+                                style = AppFont.sans(T.FsBase, FontWeight.SemiBold),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text(searchDate(m), style = AppFont.sans(T.FsSm, color = Secondary), modifier = Modifier.padding(start = 8.dp))
+                        }
+                        val text = m.text ?: m.fileName ?: replyPreview(m)
+                        Text(
+                            buildAnnotatedString {
+                                append(text)
+                                val q = query.trim()
+                                val i = if (q.isEmpty()) -1 else text.indexOf(q, ignoreCase = true)
+                                if (i >= 0) addStyle(SpanStyle(color = T.Text, fontWeight = FontWeight.SemiBold), i, i + q.length)
+                            },
+                            style = AppFont.sans(T.FsBase, color = Secondary),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                if (idx < results.size - 1) {
+                    Box(Modifier.padding(start = T.ScreenX + 48.dp).fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.08f)))
+                }
+            }
+        }
+    }
+}
+
+/** Служебное сообщение «Имя зашел в чат / вышел из чата»: имя открывает профиль. */
+@Composable
+private fun SystemRow(m: ChatMessage, modifier: Modifier, onUser: () -> Unit) {
+    Box(modifier, contentAlignment = Alignment.Center) {
+        Row(
+            modifier = Modifier
+                .heightIn(min = 24.dp)
+                .liquidGlass(CapsuleShape)
+                .padding(horizontal = 12.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                m.author ?: "Пользователь",
+                style = AppFont.sans(T.FsSm, FontWeight.SemiBold),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .then(if (m.userId != null) Modifier.pressable { onUser() } else Modifier),
+            )
+            Text(m.eventText, style = AppFont.sans(T.FsSm), maxLines = 1)
+        }
+    }
+}
+
+/** Список упоминаний внутри поля ввода (Figma 337:34963): аватар, имя, @ник, разделители. */
+@Composable
+private fun MentionList(users: List<ParticipantDto>, onPick: (ParticipantDto) -> Unit) {
+    Column(Modifier.padding(end = 12.dp)) {
+        users.forEachIndexed { i, u ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(40.dp)
+                    .pressable(pressAlpha = 0.7f) { onPick(u) },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                AvatarCircle(fileUrl(u.avatarUrl), size = 28.dp, name = u.name.ifEmpty { u.username })
+                Text(u.name, style = AppFont.sans(T.FsBase, FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                u.username?.let {
+                    Text(it, style = AppFont.sans(T.FsBase, color = Secondary), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            if (i < users.size - 1) MenuDivider()
+        }
+    }
+}
+
+/** «Удалить у всех» / «Удалить у меня»: стекло 193, красный текст, разделитель. */
+@Composable
+private fun DeleteChoicePanel(canDeleteAll: Boolean, onDeleteAll: () -> Unit, onDeleteMine: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .width(193.dp)
+            .liquidGlass(T.ShapeCard, Fills.Black2)
+            .pressable(pressAlpha = 1f) {}
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        if (canDeleteAll) {
+            Text(
+                "Удалить у всех",
+                style = AppFont.sans(T.FsBase, color = T.Error),
+                modifier = Modifier.fillMaxWidth().pressable { onDeleteAll() },
+            )
+            MenuDivider()
+        }
+        Text(
+            "Удалить у меня",
+            style = AppFont.sans(T.FsBase, color = T.Error),
+            modifier = Modifier.fillMaxWidth().pressable { onDeleteMine() },
+        )
     }
 }
 
@@ -1274,10 +1811,19 @@ private fun GlassPill(modifier: Modifier = Modifier, content: @Composable () -> 
 
 /**
  * Закреплённое сообщение: стекло, радиус 24, линия 1 dp слева, заголовок
- * SemiBold 14 и текст 14; крестик 12 справа.
+ * SemiBold 14 и текст 14; крестик 12 справа. Закрепов несколько — линия
+ * делится на отрезки (как в Телеграме), текущий ярче; тап ведёт к сообщению
+ * и переключает на предыдущий закреп. Крестик — только у админа и автора отчёта.
  */
 @Composable
-private fun PinnedBar(p: MessageQuoteDto, onUnpin: (Long) -> Unit) {
+private fun PinnedBar(
+    p: MessageQuoteDto,
+    count: Int,
+    index: Int,
+    canPin: Boolean,
+    onOpen: (MessageQuoteDto) -> Unit,
+    onUnpin: (MessageQuoteDto) -> Unit,
+) {
     Row(
         modifier = Modifier
             .padding(top = 24.dp)
@@ -1289,20 +1835,43 @@ private fun PinnedBar(p: MessageQuoteDto, onUnpin: (Long) -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).pressable(pressAlpha = 1f) { onOpen(p) },
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Box(Modifier.width(1.dp).height(40.dp).background(Color.White))
+            val n = count.coerceAtLeast(1)
+            Column(Modifier.width(2.dp).height(40.dp), verticalArrangement = Arrangement.spacedBy(if (n > 1) 2.dp else 0.dp)) {
+                repeat(n) { i ->
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .background(Color.White.copy(alpha = if (i == index || n == 1) 1f else 0.35f), CapsuleShape),
+                    )
+                }
+            }
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Закрепленное сообщение", style = AppFont.sans(T.FsBase, FontWeight.SemiBold), maxLines = 1)
-                Text(p.text ?: "", style = AppFont.sans(T.FsBase), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    if (count > 1) "Закрепленное сообщение #${index + 1}" else "Закрепленное сообщение",
+                    style = AppFont.sans(T.FsBase, FontWeight.SemiBold),
+                    maxLines = 1,
+                )
+                AnimatedContent(
+                    targetState = p,
+                    transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(160)) },
+                    contentKey = { it.id },
+                    label = "pin-text",
+                ) { q ->
+                    Text(q.text ?: "", style = AppFont.sans(T.FsBase), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
         }
-        Box(
-            modifier = Modifier.size(38.dp, 36.dp).pressable(pressAlpha = 1f) { onUnpin(p.id) },
-            contentAlignment = Alignment.Center,
-        ) { AppIcon(AppIcons.close, size = 12.dp) }
+        if (canPin) {
+            Box(
+                modifier = Modifier.size(38.dp, 36.dp).pressable(pressAlpha = 1f) { onUnpin(p) },
+                contentAlignment = Alignment.Center,
+            ) { AppIcon(AppIcons.close, size = 12.dp) }
+        }
     }
 }
 
@@ -1310,16 +1879,15 @@ private fun PinnedBar(p: MessageQuoteDto, onUnpin: (Long) -> Unit) {
 
 @Composable
 private fun MessageAvatar(url: String?, name: String?, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier.size(30.dp).clip(CircleShape).background(hex("#d9d9d9")),
-        contentAlignment = Alignment.Center,
-    ) {
-        val photo = fileUrl(url)
-        if (photo != null) {
-            RemoteImage(photo, Modifier.fillMaxSize())
-        } else {
+    val photo = fileUrl(url)
+    val letter: @Composable BoxScope.() -> Unit = {
+        Box(Modifier.fillMaxSize().background(hex("#d9d9d9")), contentAlignment = Alignment.Center) {
             Text((name ?: "?").take(1).uppercase(), style = AppFont.heading(13.sp))
         }
+    }
+    Box(modifier = modifier.size(30.dp).clip(CircleShape)) {
+        // Пока фото грузится — мигающий круг; буква на сером — только если фото нет.
+        if (photo != null) RemoteImage(photo, Modifier.fillMaxSize(), loading = true, fallback = letter) else letter()
     }
 }
 
@@ -1569,6 +2137,7 @@ private fun MessageMenuOverlay(
     isDirect: Boolean,
     deleteMenu: Boolean,
     canDelete: Boolean,
+    canPin: Boolean,
     canComplain: Boolean,
     onClose: () -> Unit,
     onReact: (String) -> Unit,
@@ -1618,8 +2187,13 @@ private fun MessageMenuOverlay(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 REACTIONS.forEach { r ->
+                    // Своя реакция подсвечена: повторное нажатие снимает её.
+                    val mineReaction = message.reactions.any { it.emoji == r && it.mine }
                     Box(
-                        modifier = Modifier.size(24.dp).pressable { onReact(r) },
+                        modifier = Modifier
+                            .size(28.dp)
+                            .background(if (mineReaction) Color.White.copy(alpha = 0.2f) else Color.Transparent, CircleShape)
+                            .pressable { onReact(r) },
                         contentAlignment = Alignment.Center,
                     ) { Text(r, fontSize = 20.sp, maxLines = 1, softWrap = false) }
                 }
@@ -1660,7 +2234,7 @@ private fun MessageMenuOverlay(
                     } else {
                         MenuLabel("Ответить", AppIcons.reply, onClick = onReply)
                         MenuLabel("Скопировать", AppIcons.copy, onClick = onCopy)
-                        MenuLabel(if (message.pinned) "Открепить" else "Закрепить", AppIcons.pin, onClick = onPin)
+                        if (canPin) MenuLabel(if (message.pinned) "Открепить" else "Закрепить", AppIcons.pin, onClick = onPin)
                         MenuLabel("Копировать ссылку", AppIcons.link, onClick = onCopyLink)
                         if (canComplain) MenuLabel("Пожаловаться", AppIcons.report, onClick = onComplain)
                         MenuLabel("Удалить", AppIcons.trashX, color = T.Error, onClick = onDeleteMenu)

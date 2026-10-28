@@ -40,7 +40,6 @@ import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -54,7 +53,10 @@ import app.karta.likvidnosti.data.Session
 import app.karta.likvidnosti.data.api.ReportDto
 import app.karta.likvidnosti.data.fileUrl
 import app.karta.likvidnosti.ui.components.BackdropBox
-import app.karta.likvidnosti.ui.components.CandlestickChart
+import app.karta.likvidnosti.data.AppData
+import app.karta.likvidnosti.ui.components.ChartEmbedView
+import app.karta.likvidnosti.ui.components.ChartSource
+import app.karta.likvidnosti.ui.components.SkeletonBox
 import app.karta.likvidnosti.ui.components.GlassCircleButton
 import app.karta.likvidnosti.ui.components.figmaSlow
 import app.karta.likvidnosti.ui.components.GlassLabel
@@ -68,14 +70,6 @@ import app.karta.likvidnosti.ui.theme.AppFont
 import app.karta.likvidnosti.ui.theme.T
 import app.karta.likvidnosti.ui.theme.designBottom
 import kotlin.math.max
-
-private val DEMO_REPORT = ReportDto(
-    title = "Нефть в 2026 году, как она?",
-    date = "12.02.26",
-    badge = "Актуальный",
-    description = "Здесь мы расскажем о состоянии нефти на момент 2026 года и возможное ее будущее",
-    material = "wti",
-)
 
 /** Прототип: «Аналитика отчет» 484:13666 ↔ 484:13689 — SMART_ANIMATE, пружина SLOW (≈1.25 с). */
 private val HeroSpring = figmaSlow<Dp>()
@@ -93,19 +87,24 @@ fun ReportDetailScreen(
     onEdit: (Long) -> Unit,
     onDiscuss: (String?) -> Unit,
 ) {
-    var report by remember { mutableStateOf(DEMO_REPORT) }
+    // Отчёт из ленты (уже загруженной) показывается сразу; до данных — мигающие блоки,
+    // а не демо-заглушка, которая сменялась бы настоящим отчётом.
+    val seeded = remember(id) { id?.let { rid -> AppData.reports?.firstOrNull { it.id == rid } } }
+    var report by remember(id) { mutableStateOf(seeded ?: ReportDto()) }
+    var loaded by remember(id) { mutableStateOf(seeded != null) }
     var reportOpen by rememberSaveable { mutableStateOf(false) }
     // HTML-отчёт открывается на весь экран; без html остаётся текстовый блок.
     var htmlOpen by rememberSaveable { mutableStateOf(false) }
     var graphOpen by rememberSaveable { mutableStateOf(false) }
-    val uriHandler = LocalUriHandler.current
     val isAdmin = Session.isAdmin
 
     LaunchedEffect(id) {
         if (id != null) {
             runCatching { Repository.report(id) }.getOrNull()?.let { report = it }
         }
+        loaded = true
     }
+    val chartSource = remember(report.chartUrl) { ChartSource.parse(report.chartUrl) }
 
     val expanded = graphOpen || reportOpen
     val heroHeight by animateDpAsState(if (expanded) 302.dp else 465.dp, HeroSpring, label = "hero")
@@ -118,7 +117,8 @@ fun ReportDetailScreen(
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val viewport = maxHeight
                 // Кнопки (3 × 48 + 2 × 12) прижаты к низу, пока обложка свёрнута не раскрыта.
-                val actionsH = 48.dp * 3 + 12.dp * 2
+                val buttons = if (chartSource != null) 3 else 2
+                val actionsH = 48.dp * buttons + 12.dp * (buttons - 1)
                 val spacer = if (expanded) 24.dp else max(24f, (viewport - heroHeight - actionsH - bottomPad).value).dp
                 Column(
                     modifier = Modifier
@@ -126,7 +126,7 @@ fun ReportDetailScreen(
                         .verticalScroll(rememberScrollState())
                         .padding(bottom = bottomPad),
                 ) {
-                    Hero(report, heroHeight)
+                    Hero(report, heroHeight, loaded)
                     Spacer(Modifier.height(spacer))
                     Column(
                         modifier = Modifier.padding(horizontal = T.ScreenX),
@@ -138,20 +138,25 @@ fun ReportDetailScreen(
                         ReportActionButton("Обсудить", AppIcons.chat, variant = ReportActionVariant.Pink) {
                             onDiscuss(report.chat)
                         }
-                        ReportActionButton(
-                            if (graphOpen) "Закрыть график" else "Открыть график",
-                            AppIcons.chartBadge,
-                            variant = if (graphOpen) ReportActionVariant.ChartOn else ReportActionVariant.ChartOff,
-                        ) {
-                            val url = report.chartUrl
-                            if (!url.isNullOrEmpty()) runCatching { uriHandler.openUri(url) } else graphOpen = !graphOpen
+                        // Без ссылки на график кнопки нет (Figma «Аналитика отчет без графика»).
+                        if (chartSource != null) {
+                            ReportActionButton(
+                                if (graphOpen) "Закрыть график" else "Открыть график",
+                                AppIcons.chartBadge,
+                                variant = if (graphOpen) ReportActionVariant.ChartOn else ReportActionVariant.ChartOff,
+                            ) {
+                                graphOpen = !graphOpen
+                            }
                         }
                     }
                     AnimatedVisibility(visible = reportOpen, enter = expandVertically(figmaSlow()) + fadeIn(figmaSlow()), exit = shrinkVertically(figmaSlow()) + fadeOut(figmaSlow())) {
                         ReportBody(report, Modifier.padding(horizontal = T.ScreenX).padding(top = 24.dp))
                     }
-                    AnimatedVisibility(visible = graphOpen, enter = expandVertically(figmaSlow()) + fadeIn(figmaSlow()), exit = shrinkVertically(figmaSlow()) + fadeOut(figmaSlow())) {
-                        CandlestickChart(modifier = Modifier.fillMaxWidth().padding(top = 24.dp))
+                    // Прототип: «Аналитика отчет график внутри» — блок графика во всю ширину.
+                    AnimatedVisibility(visible = graphOpen && chartSource != null, enter = expandVertically(figmaSlow()) + fadeIn(figmaSlow()), exit = shrinkVertically(figmaSlow()) + fadeOut(figmaSlow())) {
+                        chartSource?.let { src ->
+                            ChartEmbedView(src, Modifier.fillMaxWidth().padding(top = 24.dp).height(600.dp))
+                        }
                     }
                 }
             }
@@ -181,7 +186,7 @@ fun ReportDetailScreen(
 }
 
 @Composable
-private fun Hero(report: ReportDto, height: Dp) {
+private fun Hero(report: ReportDto, height: Dp, loaded: Boolean) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -192,9 +197,20 @@ private fun Hero(report: ReportDto, height: Dp) {
         ReportCover(
             fileUrl(report.coverUrl),
             Modifier.fillMaxSize().blur(25.dp, BlurredEdgeTreatment.Rectangle),
+            loading = !loaded,
         )
         Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f)))
-        Column(
+        if (!loaded) {
+            Column(
+                modifier = Modifier.padding(horizontal = T.ScreenX).padding(bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                SkeletonBox(Modifier.width(220.dp).height(20.dp))
+                SkeletonBox(Modifier.width(80.dp).height(14.dp))
+                SkeletonBox(Modifier.width(300.dp).height(14.dp))
+                SkeletonBox(Modifier.width(240.dp).height(14.dp))
+            }
+        } else Column(
             modifier = Modifier.padding(horizontal = T.ScreenX).padding(bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {

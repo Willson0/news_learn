@@ -55,7 +55,7 @@ struct ReportFormView: View {
                 AuthField(error: errors["description"]) { descriptionInput }
 
                 AuthField(error: errors["chart_url"]) {
-                    AppInput(text: $chartUrl, placeholder: "Ссылка на график", label: "График",
+                    AppInput(text: $chartUrl, placeholder: "Ссылка на график TradingView", label: "График",
                              keyboard: .URL, height: 63)
                 }
 

@@ -35,9 +35,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.karta.likvidnosti.BillingReturn
 import app.karta.likvidnosti.data.Session
+import app.karta.likvidnosti.data.AppData
 import app.karta.likvidnosti.data.Repository
 import app.karta.likvidnosti.data.api.BillingCardDto
 import app.karta.likvidnosti.ui.components.AppToggle
+import app.karta.likvidnosti.ui.components.SkeletonBox
 import app.karta.likvidnosti.ui.components.HairlineDivider
 import app.karta.likvidnosti.ui.components.InnerScreen
 import app.karta.likvidnosti.ui.components.PurplePillButton
@@ -59,16 +61,24 @@ import kotlinx.coroutines.launch
 fun SubscriptionScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    var active by remember { mutableStateOf(false) }
-    var until by remember { mutableStateOf("") }
-    var price by remember { mutableStateOf("") }
-    var autoPay by remember { mutableStateOf(false) }
-    var card by remember { mutableStateOf<BillingCardDto?>(null) }
+    // Экран сразу открывается в состоянии пользователя (из кэша AppData); пока
+    // данных нет совсем — плашки-скелетоны, а не «Неактивна» и выключенный свитч,
+    // которые потом анимированно переключились бы.
+    val cached = AppData.subscription ?: AppData.profile?.subscription
+    var known by remember { mutableStateOf(cached != null) }
+    var active by remember { mutableStateOf(cached?.active ?: false) }
+    var until by remember { mutableStateOf(cached?.until ?: "") }
+    var price by remember { mutableStateOf(cached?.price ?: "") }
+    var autoPay by remember { mutableStateOf(cached?.autoPay ?: false) }
+    var card by remember { mutableStateOf(AppData.card) }
     var cardError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     suspend fun refreshCard() {
-        runCatching { Repository.billingCard() }.getOrNull()?.let { card = it }
+        runCatching { Repository.billingCard() }
+            .onSuccess { card = it; AppData.card = it }
+            // Не удалось узнать — показываем «Привязать карту», а не вечный скелетон.
+            .onFailure { if (card == null) card = BillingCardDto() }
     }
 
     LaunchedEffect(Unit) {
@@ -77,8 +87,11 @@ fun SubscriptionScreen(onBack: () -> Unit) {
             until = it.until ?: ""
             price = it.price ?: ""
             autoPay = it.autoPay
+            known = true
+            AppData.subscription = it
             Session.setSubscription(it.active)
         }
+        known = true
         refreshCard()
     }
 
@@ -112,7 +125,9 @@ fun SubscriptionScreen(onBack: () -> Unit) {
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                 Text("Подписка", style = AppFont.sans(T.FsMd, FontWeight.Bold))
                 Spacer(Modifier.weight(1f).width(8.dp))
-                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (!known) {
+                    SkeletonBox(Modifier.width(90.dp).height(20.dp))
+                } else Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
                         if (active) "Активна" else "Неактивна",
                         style = AppFont.sans(T.FsMd, FontWeight.SemiBold, if (active) T.Green else T.Error),
@@ -126,12 +141,27 @@ fun SubscriptionScreen(onBack: () -> Unit) {
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("Тарифный план", style = AppFont.sans(T.FsMd, FontWeight.Bold))
                 Spacer(Modifier.weight(1f).width(8.dp))
-                Text(price.ifEmpty { "—" }, style = AppFont.sans(T.FsBase, color = T.TextSecondary))
+                if (!known) {
+                    SkeletonBox(Modifier.width(110.dp).height(16.dp))
+                } else {
+                    Text(price.ifEmpty { "—" }, style = AppFont.sans(T.FsBase, color = T.TextSecondary))
+                }
             }
         }
 
         Column(modifier = Modifier.padding(top = 12.dp).then(cardModifier).padding(horizontal = 16.dp)) {
-            Row(
+            if (card == null) {
+                // Карта ещё не известна: скелетон вместо «Привязать карту», которое сменилось бы картой.
+                Row(
+                    modifier = Modifier.fillMaxWidth().height(64.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    SkeletonBox(Modifier.size(32.dp), shape = CircleShape)
+                    SkeletonBox(Modifier.weight(1f).height(18.dp))
+                    SkeletonBox(Modifier.width(96.dp).height(36.dp), shape = CircleShape)
+                }
+            } else Row(
                 modifier = Modifier.fillMaxWidth().height(64.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -177,10 +207,18 @@ fun SubscriptionScreen(onBack: () -> Unit) {
         ) {
             Text("Авто-платеж", style = AppFont.sans(T.FsMd), modifier = Modifier.weight(1f))
             Spacer(Modifier.width(8.dp))
-            AppToggle(checked = autoPay, onCheckedChange = {
-                autoPay = it
-                scope.launch { runCatching { Repository.updateSubscription(autoPay = it) } }
-            })
+            if (!known) {
+                SkeletonBox(Modifier.size(50.dp, 30.dp), shape = CircleShape)
+            } else {
+                AppToggle(checked = autoPay, onCheckedChange = { on ->
+                    autoPay = on
+                    scope.launch {
+                        runCatching { Repository.updateSubscription(autoPay = on) }
+                            .onSuccess { runCatching { Repository.subscription() }.getOrNull()?.let { AppData.subscription = it } }
+                            .onFailure { autoPay = !on }
+                    }
+                })
+            }
         }
     }
 }

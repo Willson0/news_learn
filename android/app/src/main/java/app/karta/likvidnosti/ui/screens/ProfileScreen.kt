@@ -146,10 +146,17 @@ fun ProfileScreen(
 ) {
     var tag by remember { mutableStateOf(Session.user?.username ?: "") }
     var avatar by remember { mutableStateOf(Session.user?.avatarUrl) }
-    var subActive by remember { mutableStateOf(false) }
-    var subUntil by remember { mutableStateOf("") }
-    var subPrice by remember { mutableStateOf("") }
-    val instruments = remember { mutableStateListOf<ProfInstrument>() }
+    // Сразу в состоянии пользователя (кэш AppData): без анимации подписки и
+    // инструментов из «нулевого» состояния при переходах между экранами.
+    val cachedSub = AppData.subscription ?: AppData.profile?.subscription
+    var subActive by remember { mutableStateOf(cachedSub?.active ?: (Session.subscriptionActive == true)) }
+    var subUntil by remember { mutableStateOf(cachedSub?.until ?: "") }
+    var subPrice by remember { mutableStateOf(cachedSub?.price ?: "") }
+    val instruments = remember {
+        mutableStateListOf<ProfInstrument>().apply {
+            AppData.profile?.instruments?.let { list -> addAll(list.map { ProfInstrument(it.key, it.label, it.on) }) }
+        }
+    }
     var history by remember { mutableStateOf(AppData.reports ?: emptyList<ReportDto>()) }
     var sortOpen by remember { mutableStateOf(false) }
     var sort by rememberSaveable { mutableStateOf("new") }
@@ -162,13 +169,19 @@ fun ProfileScreen(
 
     suspend fun fetch() {
         runCatching { Repository.profile() }.getOrNull()?.let { p ->
+            AppData.profile = p
             p.user?.let { tag = it.username ?: tag; avatar = it.avatarUrl ?: avatar }
             p.subscription?.let {
+                AppData.subscription = it
                 subActive = it.active; subUntil = it.until ?: ""; subPrice = it.price ?: ""
                 Session.setSubscription(it.active)
             }
-            instruments.clear()
-            instruments.addAll(p.instruments.map { ProfInstrument(it.key, it.label, it.on) })
+            val fresh = p.instruments.map { ProfInstrument(it.key, it.label, it.on) }
+            // Список меняется только если что-то правда поменялось — без перерисовки «с нуля».
+            if (fresh != instruments.toList()) {
+                instruments.clear()
+                instruments.addAll(fresh)
+            }
         }
         runCatching { Repository.reports() }.onSuccess { history = it }
     }
@@ -179,7 +192,10 @@ fun ProfileScreen(
     }
 
     fun saveInstruments() {
-        scope.launch { runCatching { Repository.syncInstruments(instruments.filter { it.on }.map { it.key }) } }
+        scope.launch {
+            runCatching { Repository.syncInstruments(instruments.filter { it.on }.map { it.key }) }
+            AppData.refreshProfile()
+        }
     }
 
     val avatarInitial = tag.removePrefix("@").take(1).uppercase()

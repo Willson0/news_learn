@@ -111,7 +111,7 @@ class ReportController extends Controller
         return $request->validate([
             'title' => ['required', 'string', 'max:255'],
             'description' => ['required', 'string', 'max:250'],
-            'chart_url' => ['nullable', 'string', 'max:2048'],
+            'chart_url' => ['nullable', 'string', 'max:20000'],
             'instrument' => ['required', 'string', 'exists:instruments,key'],
             'html' => ['nullable', 'file', 'extensions:html,htm', 'max:10240'],
             'cover' => [$creating ? 'required' : 'nullable', 'image', 'max:8192'],

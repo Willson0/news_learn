@@ -167,7 +167,12 @@ struct CommunityView: View {
         ZStack {
             Circle().fill(Color(hex: "#797979"))
             if let url = fileURL(item.avatarUrl) {
-                RemoteImage(url: url).clipShape(Circle())
+                RemoteImage(url: url) {
+                    Text(String(item.title.prefix(1)).uppercased())
+                        .font(Theme.heading(24))
+                        .foregroundStyle(Theme.text)
+                }
+                .clipShape(Circle())
             } else {
                 Text(String(item.title.prefix(1)).uppercased())
                     .font(Theme.heading(24))

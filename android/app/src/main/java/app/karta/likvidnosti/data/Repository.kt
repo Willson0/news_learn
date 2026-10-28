@@ -161,9 +161,14 @@ object Repository {
         apiCall { api.sendMessageMultipart(slug, parts).data }
     suspend fun reactMessage(slug: String, id: Long, emoji: String): MessageDto? =
         apiCall { api.reactMessage(slug, id, ReactBody(emoji)).data }
-    suspend fun pinMessage(slug: String, id: Long): MessageQuoteDto? =
-        apiCall { api.pinMessage(slug, id).pinned }
-    suspend fun deleteMessage(slug: String, id: Long) = apiCall { api.deleteMessage(slug, id) }
+    /** Закрепить/открепить; возвращает все закрепы чата по порядку. */
+    suspend fun pinMessage(slug: String, id: Long): List<MessageQuoteDto> =
+        apiCall { api.pinMessage(slug, id).let { it.pins ?: listOfNotNull(it.pinned) } }
+    /** forAll = true — «Удалить у всех», иначе «Удалить у меня» (скрыть только для себя). */
+    suspend fun deleteMessage(slug: String, id: Long, forAll: Boolean = true) =
+        apiCall { api.deleteMessage(slug, id, if (forAll) "all" else "me") }
+    suspend fun chatMembers(slug: String, query: String): List<ParticipantDto> =
+        apiCall { api.chatMembers(slug, query).data ?: emptyList() }
     suspend fun participants(slug: String): List<ParticipantDto> =
         apiCall { api.participants(slug).data ?: emptyList() }
     suspend fun chatAttachments(slug: String, kind: String): List<ChatAttachmentDto> =
