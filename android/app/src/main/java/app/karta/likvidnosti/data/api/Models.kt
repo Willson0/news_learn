@@ -101,7 +101,7 @@ class ChatSectionDto(
 )
 
 @Serializable
-class ChatItemDto(
+data class ChatItemDto(
     val id: String = "",
     val type: String? = null,
     val title: String = "",
