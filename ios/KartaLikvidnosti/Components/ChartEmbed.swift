@@ -3,27 +3,37 @@ import WebKit
 
 /// Что показывать в блоке «График» отчёта по значению поля «График» из админки.
 enum ChartSource: Equatable {
-    /// Готовая html-страница: виджет TradingView по тикеру или вставленный код виджета.
+    /// Страница графика TradingView (виджет по тикеру) или обычная ссылка — грузится как есть.
+    case url(URL, original: URL)
+    /// Вставленный код виджета без тикера — показывается как html.
     case html(String)
-    /// Обычная ссылка (например, сохранённый график TradingView) — открывается внутри блока.
-    case url(URL)
 
-    /// Ссылка TradingView с тикером (`/symbols/OANDA-XAUUSD/`, `?symbol=OANDA:XAUUSD`)
-    /// превращается в виджет графика: в блоке остаётся только график, без сайта вокруг.
-    /// Код виджета («Get a widget») вставляется как есть.
+    /// Ссылка, которую можно открыть в браузере, если график не загрузился.
+    var externalURL: URL? {
+        if case .url(_, let original) = self { return original }
+        return nil
+    }
+
+    /// Ссылка TradingView с тикером (`/symbols/OANDA-XAUUSD/`, `/chart/?symbol=OANDA:XAUUSD`)
+    /// и код виджета («Get a widget») с `"symbol": "…"` превращаются в страницу виджета
+    /// графика: в блоке только график, без сайта вокруг. Страница грузится напрямую,
+    /// без скрипта-загрузчика tv.js, поэтому не зависит от его подгрузки.
     static func parse(_ raw: String?) -> ChartSource? {
         let value = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return nil }
         if value.contains("<") {
+            if let symbol = symbol(inWidgetCode: value), let url = widgetURL(symbol: symbol) {
+                return .url(url, original: url)
+            }
             return .html(page(body: value))
         }
         var text = value
         if !text.lowercased().hasPrefix("http") { text = "https://" + text }
         guard let url = URL(string: text), let host = url.host?.lowercased() else { return nil }
-        if host.hasSuffix("tradingview.com"), let symbol = symbol(in: url) {
-            return .html(widgetPage(symbol: symbol))
+        if host.hasSuffix("tradingview.com"), let symbol = symbol(in: url), let widget = widgetURL(symbol: symbol) {
+            return .url(widget, original: url)
         }
-        return .url(url)
+        return .url(url, original: url)
     }
 
     private static func symbol(in url: URL) -> String? {
@@ -43,23 +53,34 @@ enum ChartSource: Equatable {
         return nil
     }
 
-    private static func widgetPage(symbol: String) -> String {
+    /// `"symbol": "OANDA:XAUUSD"` из кода виджета.
+    private static func symbol(inWidgetCode code: String) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: #"["']?symbol["']?\s*:\s*["']([^"']+)["']"#) else { return nil }
+        let ns = code as NSString
+        guard let m = regex.firstMatch(in: code, range: NSRange(location: 0, length: ns.length)), m.numberOfRanges > 1 else { return nil }
+        let s = ns.substring(with: m.range(at: 1)).trimmingCharacters(in: .whitespaces)
+        return s.isEmpty ? nil : s
+    }
+
+    /// Страница виджета «Advanced chart» TradingView: тёмная тема, русский, без боковой панели.
+    private static func widgetURL(symbol: String) -> URL? {
         let safe = symbol.filter { $0.isLetter || $0.isNumber || ":._!-".contains($0) }
-        let body = """
-        <div class="tradingview-widget-container" style="height:100%;width:100%">
-          <div id="tv_chart" style="height:100%;width:100%"></div>
-        </div>
-        <script src="https://s3.tradingview.com/tv.js"></script>
-        <script>
-          new TradingView.widget({
-            autosize: true, symbol: "\(safe)", interval: "D", timezone: "Europe/Moscow",
-            theme: "dark", style: "1", locale: "ru", backgroundColor: "#25262A",
-            gridColor: "rgba(255,255,255,0.06)", hide_side_toolbar: true,
-            allow_symbol_change: false, save_image: false, container_id: "tv_chart"
-          });
-        </script>
-        """
-        return page(body: body)
+        guard !safe.isEmpty else { return nil }
+        var c = URLComponents(string: "https://s.tradingview.com/widgetembed/")
+        c?.queryItems = [
+            URLQueryItem(name: "symbol", value: safe),
+            URLQueryItem(name: "interval", value: "D"),
+            URLQueryItem(name: "hidesidetoolbar", value: "1"),
+            URLQueryItem(name: "symboledit", value: "0"),
+            URLQueryItem(name: "saveimage", value: "0"),
+            URLQueryItem(name: "toolbarbg", value: "25262A"),
+            URLQueryItem(name: "theme", value: "dark"),
+            URLQueryItem(name: "style", value: "1"),
+            URLQueryItem(name: "timezone", value: "Europe/Moscow"),
+            URLQueryItem(name: "locale", value: "ru"),
+            URLQueryItem(name: "hideideas", value: "1"),
+        ]
+        return c?.url
     }
 
     private static func page(body: String) -> String {
@@ -75,73 +96,121 @@ enum ChartSource: Equatable {
 
 /// Блок «График» под кнопками отчёта (Figma «Аналитика отчет график внутри»):
 /// плашка #25262A со скруглением 24, внутри — график из ссылки админа.
-/// Пока страница грузится — мигающий блок.
+/// Пока страница грузится — мигающий блок; не загрузилась — сообщение и «Открыть в TradingView».
 struct ChartEmbedView: View {
     let source: ChartSource
-    @State private var loading = true
+    @Environment(\.openURL) private var openURL
+    @State private var state: ChartWebView.LoadState = .loading
 
     var body: some View {
         ZStack {
-            ChartWebView(source: source, loading: $loading)
-                .opacity(loading ? 0 : 1)
-            if loading { LoadingBlock() }
+            ChartWebView(source: source, state: $state)
+                .opacity(state == .loaded ? 1 : 0)
+            switch state {
+            case .loading:
+                LoadingBlock()
+            case .failed:
+                VStack(spacing: 12) {
+                    Text("Не удалось загрузить график")
+                        .font(Theme.sans(Theme.fontBase))
+                        .foregroundStyle(Theme.textSecondary)
+                    if let url = source.externalURL {
+                        Button { openURL(url) } label: {
+                            Text("Открыть в TradingView")
+                                .font(Theme.sans(Theme.fontBase, .semibold))
+                                .foregroundStyle(Theme.text)
+                                .padding(.horizontal, 16)
+                                .frame(height: 40)
+                                .liquidGlass(Capsule())
+                        }
+                        .buttonStyle(PressableStyle())
+                    }
+                }
+            case .loaded:
+                EmptyView()
+            }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.surface)
         .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
-        .animation(.easeOut(duration: 0.25), value: loading)
+        .animation(.easeOut(duration: 0.25), value: state)
     }
 }
 
-private struct ChartWebView: UIViewRepresentable {
-    let source: ChartSource
-    @Binding var loading: Bool
+struct ChartWebView: UIViewRepresentable {
+    enum LoadState: Equatable { case loading, loaded, failed }
 
-    func makeCoordinator() -> Coordinator { Coordinator(loading: $loading) }
+    let source: ChartSource
+    @Binding var state: LoadState
+
+    func makeCoordinator() -> Coordinator { Coordinator(state: $state) }
 
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.allowsInlineMediaPlayback = true
-        let web = WKWebView(frame: .zero, configuration: config)
+        config.websiteDataStore = .default()
+        let web = WKWebView(frame: CGRect(x: 0, y: 0, width: 360, height: 600), configuration: config)
         web.isOpaque = false
         web.backgroundColor = .clear
         web.scrollView.backgroundColor = .clear
         web.scrollView.contentInsetAdjustmentBehavior = .never
+        web.scrollView.isScrollEnabled = false
         web.navigationDelegate = context.coordinator
-        context.coordinator.load(source, in: web)
+        DispatchQueue.main.async { context.coordinator.load(source, in: web) }
         return web
     }
 
     func updateUIView(_ web: WKWebView, context: Context) {
-        context.coordinator.loading = $loading
-        if context.coordinator.loaded != source { context.coordinator.load(source, in: web) }
+        context.coordinator.state = $state
+        if context.coordinator.loaded != nil, context.coordinator.loaded != source {
+            context.coordinator.load(source, in: web)
+        }
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate {
-        var loading: Binding<Bool>
+        var state: Binding<LoadState>
         var loaded: ChartSource?
+        private var attempt = 0
 
-        init(loading: Binding<Bool>) { self.loading = loading }
+        init(state: Binding<LoadState>) { self.state = state }
 
         func load(_ source: ChartSource, in web: WKWebView) {
             loaded = source
-            loading.wrappedValue = true
+            attempt += 1
+            let current = attempt
+            state.wrappedValue = .loading
             switch source {
             case .html(let html): web.loadHTMLString(html, baseURL: URL(string: "https://www.tradingview.com"))
-            case .url(let url): web.load(URLRequest(url: url))
+            case .url(let url, _): web.load(URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 20))
+            }
+            // Страница так и не ответила — не мигаем бесконечно.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
+                guard let self, self.attempt == current, self.state.wrappedValue == .loading else { return }
+                self.state.wrappedValue = .failed
             }
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            // Виджету нужно мгновение, чтобы нарисовать график после загрузки скрипта.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { self.loading.wrappedValue = false }
+            let current = attempt
+            // Виджету нужно мгновение, чтобы нарисовать график после загрузки страницы.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                guard let self, self.attempt == current, self.state.wrappedValue == .loading else { return }
+                self.state.wrappedValue = .loaded
+            }
         }
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-            loading.wrappedValue = false
+            fail(error)
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-            loading.wrappedValue = false
+            fail(error)
+        }
+
+        private func fail(_ error: Error) {
+            // Отменённая загрузка (переход внутри виджета) — не ошибка.
+            if (error as NSError).code == NSURLErrorCancelled { return }
+            state.wrappedValue = .failed
         }
     }
 }

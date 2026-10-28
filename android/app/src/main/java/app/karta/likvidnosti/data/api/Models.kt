@@ -118,7 +118,7 @@ class ChatItemDto(
     @SerialName("can_manage") val canManage: Boolean? = null,
     /** Закреплять и откреплять может администратор или автор отчёта. */
     @SerialName("can_pin") val canPin: Boolean = false,
-    /** В чате отчёта можно написать автору лично: «/текст/». */
+    /** «/текст/» — личное сообщение администрации (в чате отчёта — и автору отчёта). */
     @SerialName("author_messages") val authorMessages: Boolean = false,
 )
 

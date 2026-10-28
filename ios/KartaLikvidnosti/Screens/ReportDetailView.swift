@@ -56,12 +56,12 @@ struct ReportDetailView: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
                     hero
-                    if !(graphOpen || reportOpen) {
-                        Spacer(minLength: 24)
-                    }
+                    // Кнопки прижаты к низу, а при раскрытии идут сразу под обложкой. Отступ —
+                    // явная высота, которая анимируется той же пружиной, что и обложка: все
+                    // кнопки поднимаются одним блоком, без скачков.
+                    Color.clear.frame(height: actionsGap(screenHeight: geo.size.height + geo.safeAreaInsets.top + geo.safeAreaInsets.bottom))
                     actions
                         .padding(.horizontal, Theme.screenX)
-                        .padding(.top, (graphOpen || reportOpen) ? 24 : 0)
                     if reportOpen {
                         reportBody.padding(.horizontal, Theme.screenX).padding(.top, 24)
                     }
@@ -100,6 +100,13 @@ struct ReportDetailView: View {
         }
         .onAppear { seedFromFeed() }
         .task { await load() }
+    }
+
+    private func actionsGap(screenHeight: CGFloat) -> CGFloat {
+        if graphOpen || reportOpen { return 24 }
+        let count: CGFloat = chartSource != nil ? 3 : 2
+        let actionsHeight = 48 * count + 12 * (count - 1)
+        return max(24, screenHeight - 465 - actionsHeight - 45)
     }
 
     private var actions: some View {

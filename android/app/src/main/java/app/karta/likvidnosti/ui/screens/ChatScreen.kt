@@ -94,6 +94,15 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalView
+import android.view.HapticFeedbackConstants
+import android.view.View
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -227,6 +236,21 @@ private fun replyPreview(m: ChatMessage): String = when {
 // «@» в начале слова у курсора (в конце текста) — открывает список упоминаний.
 private val MentionRegex = Regex("(^|\\s)@[^\\s@]*$")
 // «/текст/» — личное сообщение автору отчёта.
+/** Вибрация записи голосового: системные паттерны, где они есть (Android 11+). */
+private enum class VoiceHaptic { Tick, Lock, Cancel, Send, Toggle }
+
+private fun View.voiceHaptic(kind: VoiceHaptic) {
+    val modern = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+    val constant = when (kind) {
+        VoiceHaptic.Tick -> HapticFeedbackConstants.CLOCK_TICK
+        VoiceHaptic.Lock -> if (modern) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.LONG_PRESS
+        VoiceHaptic.Cancel -> if (modern) HapticFeedbackConstants.REJECT else HapticFeedbackConstants.LONG_PRESS
+        VoiceHaptic.Send -> if (modern) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.KEYBOARD_TAP
+        VoiceHaptic.Toggle -> HapticFeedbackConstants.VIRTUAL_KEY
+    }
+    performHapticFeedback(constant)
+}
+
 private val AuthorMessageRegex = Regex("^/(.*\\S.*)/$", RegexOption.DOT_MATCHES_ALL)
 
 private fun searchDate(m: ChatMessage): String {
@@ -258,6 +282,7 @@ fun ChatScreen(
 ) {
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
+    val view = LocalView.current
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val density = LocalDensity.current
@@ -333,6 +358,13 @@ fun ChatScreen(
         }.take(5)
     }
     val draftIsAuthorMessage = authorMessages && AuthorMessageRegex.matches(draft.text.trim())
+    // Кто увидит личное сообщение «/текст/» или ответ в личной ветке.
+    val privateHint = when {
+        replyTo?.isPrivate == true -> "Ответ увидят только участники личной переписки"
+        !draftIsAuthorMessage -> null
+        chatType == "report" -> "Сообщение увидят только автор отчета и администраторы"
+        else -> "Сообщение увидят только администраторы"
+    }
     val currentPin = pins.getOrNull(pinIndex.coerceIn(0, (pins.size - 1).coerceAtLeast(0)))
     // Результаты поиска по всем сообщениям чата: от старых к новым.
     val searchResults: List<Long> = searchQuery.trim().let { q ->
@@ -611,6 +643,7 @@ fun ChatScreen(
     }
 
     fun cancelVoice() {
+        view.voiceHaptic(VoiceHaptic.Cancel)
         stopRecorder()
         recFile?.delete(); recFile = null
         recording = false; recPaused = false; recLocked = false
@@ -624,6 +657,7 @@ fun ChatScreen(
         val seconds = max(recSeconds, 1)
         recFile = null; recording = false; recPaused = false; recSeconds = 0
         if (!ok || file == null || !file.exists() || file.length() == 0L) { file?.delete(); return }
+        view.voiceHaptic(VoiceHaptic.Send)
         val reply = replyTo?.id; replyTo = null
         scope.launch {
             val body = file.asRequestBody("audio/mp4".toMediaTypeOrNull())
@@ -637,12 +671,12 @@ fun ChatScreen(
 
     fun pauseRecording() {
         if (!recording || recPaused) return
-        if (recorder?.runCatching { pause() }?.isSuccess == true) recPaused = true
+        if (recorder?.runCatching { pause() }?.isSuccess == true) { recPaused = true; view.voiceHaptic(VoiceHaptic.Toggle) }
     }
 
     fun resumeRecording() {
         if (!recording || !recPaused) return
-        if (recorder?.runCatching { resume() }?.isSuccess == true) recPaused = false
+        if (recorder?.runCatching { resume() }?.isSuccess == true) { recPaused = false; view.voiceHaptic(VoiceHaptic.Toggle) }
     }
 
     LaunchedEffect(recording, recPaused) {
@@ -665,12 +699,15 @@ fun ChatScreen(
     })
     val onMicDrag by rememberUpdatedState<(Offset, Float, Float) -> Unit>({ d, cancelPx, lockPx ->
         if (recording && !recLocked) {
+            // Половина пути до отмены или замка — лёгкий щелчок-подсказка.
+            val prev = recordDrag
+            if (d.x < -cancelPx / 2 && prev.x >= -cancelPx / 2) view.voiceHaptic(VoiceHaptic.Tick)
+            if (d.y < -lockPx / 2 && prev.y >= -lockPx / 2) view.voiceHaptic(VoiceHaptic.Tick)
             recordDrag = d
             if (d.x < -cancelPx) {
-                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 cancelVoice()
             } else if (d.y < -lockPx) {
-                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                view.voiceHaptic(VoiceHaptic.Lock)
                 recLocked = true
                 recordDrag = Offset.Zero
             }
@@ -1185,13 +1222,13 @@ fun ChatScreen(
                                         if (mentionMatches.isNotEmpty() && !attachOpen) {
                                             MentionList(mentionMatches) { applyMention(it) }
                                         }
-                                        if (draftIsAuthorMessage) {
+                                        if (privateHint != null) {
                                             Row(
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                             ) {
                                                 AppIcon(AppIcons.eyeClosed, size = 14.dp, tint = Secondary)
-                                                Text("Сообщение увидит только автор отчета", style = AppFont.sans(T.FsSm, color = Secondary))
+                                                Text(privateHint, style = AppFont.sans(T.FsSm, color = Secondary))
                                             }
                                         }
                                         if (pendingImages.isNotEmpty()) {
@@ -1294,7 +1331,10 @@ fun ChatScreen(
                                     RecordingBar(
                                         clock = recordClock,
                                         locked = recLocked,
-                                        drag = recordDrag,
+                                        // Лямбды читаются только при раскладке и отрисовке: движение
+                                        // пальца не перекомпоновывает весь экран чата.
+                                        drag = { recordDrag },
+                                        amplitude = { recorder?.runCatching { maxAmplitude }?.getOrNull() ?: 0 },
                                         onCancel = { cancelVoice() },
                                         onPause = { pauseRecording() },
                                         onSend = { stopAndSendVoice() },
@@ -1954,12 +1994,38 @@ private fun MenuLabel(
 private fun RecordingBar(
     clock: String,
     locked: Boolean,
-    drag: Offset,
+    drag: () -> Offset,
+    amplitude: () -> Int,
     onCancel: () -> Unit,
     onPause: () -> Unit,
     onSend: () -> Unit,
 ) {
-    val dragDp = with(LocalDensity.current) { min(0f, drag.x).toDp().value }
+    val density = LocalDensity.current
+    val pulse = rememberInfiniteTransition(label = "rec-pulse")
+    val dotAlpha by pulse.animateFloat(
+        1f, 0.25f,
+        infiniteRepeatable(tween(800, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "dot",
+    )
+    val arrowBounce by pulse.animateFloat(
+        1f, -3f,
+        infiniteRepeatable(tween(900, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "arrow",
+    )
+    // Ореол «дышит» в такт голосу: громкость сглаживается покадрово, читается при отрисовке.
+    val level = remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            withFrameNanos { }
+            val raw = (amplitude() / 22000f).coerceIn(0f, 1f)
+            level.floatValue += (raw * raw - level.floatValue) * 0.2f
+        }
+    }
+    val breath by pulse.animateFloat(
+        -0.03f, 0.03f,
+        infiniteRepeatable(tween(1300, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "breath",
+    )
     Box(modifier = Modifier.fillMaxWidth().height(44.dp)) {
         Row(
             modifier = Modifier
@@ -1971,7 +2037,7 @@ private fun RecordingBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Box(Modifier.padding(end = 4.dp).size(8.dp).background(T.Error, CircleShape))
+            Box(Modifier.padding(end = 4.dp).size(8.dp).graphicsLayer { alpha = dotAlpha }.background(T.Error, CircleShape))
             Text(clock, style = AppFont.sans(T.FsBase))
             Spacer(Modifier.width(8.dp))
             if (locked) {
@@ -1982,8 +2048,11 @@ private fun RecordingBar(
                 Spacer(Modifier.weight(1f))
                 Row(
                     modifier = Modifier
-                        .offset { IntOffset((min(0f, drag.x) / 3f).roundToInt(), 0) }
-                        .alpha((1f + dragDp / 160f).coerceIn(0f, 1f)),
+                        .offset { IntOffset((min(0f, drag().x) / 2.2f).roundToInt(), 0) }
+                        .graphicsLayer {
+                            val dx = min(0f, drag().x) / density.density
+                            alpha = (1f + dx / 130f).coerceIn(0f, 1f)
+                        },
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
@@ -2002,7 +2071,17 @@ private fun RecordingBar(
                 .requiredSize(96.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Box(Modifier.fillMaxSize().alpha(0.55f).fillShape(Fills.Active, CircleShape))
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        val k = 1f + breath + 0.28f * level.floatValue
+                        scaleX = k
+                        scaleY = k
+                        alpha = 0.55f
+                    }
+                    .fillShape(Fills.Active, CircleShape),
+            )
             Box(
                 modifier = Modifier
                     .size(75.dp)
@@ -2035,11 +2114,13 @@ private fun RecordingBar(
                 }
             }
         } else {
-            val lift = with(LocalDensity.current) { (drag.y / 3f).coerceIn(-30.dp.toPx(), 0f).toDp() }
             Column(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .offset(x = (-13).dp, y = (-118).dp + lift)
+                    .offset {
+                        val lift = (drag().y / 2.5f).coerceIn(-36.dp.toPx(), 0f)
+                        IntOffset((-13).dp.roundToPx(), ((-118).dp.toPx() + lift).roundToInt())
+                    }
                     .width(48.dp)
                     .liquidGlass(CapsuleShape)
                     .padding(vertical = 12.dp),
@@ -2047,7 +2128,10 @@ private fun RecordingBar(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 AppIcon(AppIcons.lockOpen, size = 20.dp)
-                AppIcon(AppIcons.back, size = 16.dp, modifier = Modifier.rotate(90f))
+                AppIcon(
+                    AppIcons.back, size = 16.dp,
+                    modifier = Modifier.graphicsLayer { translationY = arrowBounce * density.density }.rotate(90f),
+                )
             }
         }
     }

@@ -1,24 +1,72 @@
 import SwiftUI
 
-/// Загруженные картинки в памяти: при повторном показе (возврат на экран, скролл
-/// ленты) картинка рисуется сразу, без мигания загрузки.
+/// Кэш картинок: в памяти (мгновенно при возврате на экран) и на диске
+/// (Caches/RemoteImages — переживает перезапуск приложения, картинка не
+/// скачивается заново). Ключ — адрес без query: у обложек и вложений подписанные
+/// ссылки с меняющимися `signature`/`expires`, а сам файл тот же.
 enum RemoteImageCache {
-    static let shared: NSCache<NSURL, UIImage> = {
-        let cache = NSCache<NSURL, UIImage>()
-        cache.totalCostLimit = 120 * 1024 * 1024
+    private static let memory: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.totalCostLimit = 150 * 1024 * 1024
         return cache
     }()
 
-    static func image(for url: URL) -> UIImage? { shared.object(forKey: url as NSURL) }
+    private static let directory: URL = {
+        let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        let dir = base.appendingPathComponent("RemoteImages", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }()
 
-    static func store(_ image: UIImage, for url: URL) {
-        let cost = Int(image.size.width * image.size.height * image.scale * image.scale * 4)
-        shared.setObject(image, forKey: url as NSURL, cost: cost)
+    private static let io = DispatchQueue(label: "remote-image-cache", qos: .utility)
+
+    /// Стабильный ключ: схема, хост и путь.
+    static func key(for url: URL) -> String {
+        var c = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        c?.query = nil
+        c?.fragment = nil
+        return c?.string ?? url.absoluteString
+    }
+
+    private static func fileURL(for key: String) -> URL {
+        // Имя файла — безопасная для ФС версия ключа (base64 без «/»).
+        let name = Data(key.utf8).base64EncodedString()
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "+", with: "-")
+        return directory.appendingPathComponent(String(name.suffix(200)))
+    }
+
+    private static func cost(_ image: UIImage) -> Int {
+        Int(image.size.width * image.size.height * image.scale * image.scale * 4)
+    }
+
+    /// Только память — для первого кадра.
+    static func image(for url: URL) -> UIImage? { memory.object(forKey: key(for: url) as NSString) }
+
+    /// Память, затем диск (вне главного потока).
+    static func cachedImage(for url: URL) async -> UIImage? {
+        if let img = image(for: url) { return img }
+        let k = key(for: url)
+        let file = fileURL(for: k)
+        let data: Data? = await withCheckedContinuation { cont in
+            io.async { cont.resume(returning: try? Data(contentsOf: file)) }
+        }
+        guard let data, let decoded = UIImage(data: data) else { return nil }
+        let ready = await decoded.byPreparingForDisplay() ?? decoded
+        memory.setObject(ready, forKey: k as NSString, cost: cost(ready))
+        return ready
+    }
+
+    static func store(_ image: UIImage, data: Data, for url: URL) {
+        let k = key(for: url)
+        memory.setObject(image, forKey: k as NSString, cost: cost(image))
+        let file = fileURL(for: k)
+        io.async { try? data.write(to: file, options: .atomic) }
     }
 }
 
-/// Загрузчик одной картинки: кэш проверяется синхронно, поэтому уже загруженная
-/// картинка появляется в первом же кадре.
+/// Загрузчик одной картинки: память проверяется синхронно (картинка в первом же
+/// кадре), затем диск и только потом сеть.
 @MainActor
 final class RemoteImageLoader: ObservableObject {
     @Published private(set) var image: UIImage?
@@ -41,6 +89,12 @@ final class RemoteImageLoader: ObservableObject {
         }
         guard let url, image == nil, !failed, task == nil else { return }
         task = Task { [weak self] in
+            if let cached = await RemoteImageCache.cachedImage(for: url) {
+                guard let self, self.url == url else { return }
+                self.image = cached
+                self.task = nil
+                return
+            }
             do {
                 let (data, response) = try await URLSession.shared.data(from: url)
                 if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
@@ -49,7 +103,7 @@ final class RemoteImageLoader: ObservableObject {
                 guard let decoded = UIImage(data: data) else { throw URLError(.cannotDecodeContentData) }
                 // Декодируем заранее, чтобы первый кадр с картинкой не подтормаживал.
                 let ready = await decoded.byPreparingForDisplay() ?? decoded
-                RemoteImageCache.store(ready, for: url)
+                RemoteImageCache.store(ready, data: data, for: url)
                 guard let self, self.url == url else { return }
                 self.image = ready
                 self.task = nil
@@ -108,7 +162,8 @@ struct RemoteImage<Fallback: View>: View {
             }
         }
         .clipped()
-        .allowsHitTesting(false)
+        // Картинка — часть кнопки (аватар чата, обложка), поэтому нажатия не пропускает насквозь.
+        .contentShape(Rectangle())
         .onAppear { loader.load(url) }
         .onChange(of: url) { loader.load($0) }
     }

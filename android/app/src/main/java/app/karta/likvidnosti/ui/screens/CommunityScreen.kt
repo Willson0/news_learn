@@ -1,6 +1,26 @@
 package app.karta.likvidnosti.ui.screens
 
+import android.content.Context
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExperimentalAnimationApi
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import app.karta.likvidnosti.ui.components.ConfirmDialog
+import app.karta.likvidnosti.ui.components.backdropBlur
+import app.karta.likvidnosti.ui.icons.IconDef
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -87,7 +107,11 @@ private val Caption = Color.White.copy(alpha = 0.6f)
  * общий чат под заголовком «Чаты», без поиска.
  */
 @Composable
-fun CommunityScreen(onOpenChat: (String) -> Unit, navBar: @Composable () -> Unit) {
+fun CommunityScreen(
+    onOpenChat: (String) -> Unit,
+    onOpenInfo: (String) -> Unit,
+    navBar: @Composable () -> Unit,
+) {
     var query by rememberSaveable { mutableStateOf("") }
     var tab by rememberSaveable { mutableStateOf("all") }
     // Предзагруженные чаты показываем сразу; пока их нет — скелетоны.
@@ -111,6 +135,32 @@ fun CommunityScreen(onOpenChat: (String) -> Unit, navBar: @Composable () -> Unit
 
     LaunchedEffect(Unit) { fetch() }
 
+    // Меню по долгому нажатию на чат (как в Телеграме) и подтверждение выхода.
+    val context = LocalContext.current
+    var menuItem by remember { mutableStateOf<ChatItemDto?>(null) }
+    var leaveTarget by remember { mutableStateOf<ChatItemDto?>(null) }
+
+    fun updateSections(next: List<ChatSectionDto>) {
+        sections = next
+        AppData.chats = next
+    }
+
+    fun markRead(item: ChatItemDto) {
+        updateSections(sections.map { s -> ChatSectionDto(s.key, s.title, s.items.map { if (it.id == item.id) it.copy(unread = 0) else it }) })
+        scope.launch { runCatching { Repository.markChatRead(item.id) } }
+    }
+
+    fun leave(item: ChatItemDto) {
+        val before = sections
+        updateSections(
+            sections.map { s -> ChatSectionDto(s.key, s.title, s.items.filter { it.id != item.id }) }.filter { it.items.isNotEmpty() },
+        )
+        scope.launch {
+            // Не получилось — возвращаем чат в список.
+            runCatching { Repository.leaveChat(item.id) }.onFailure { updateSections(before) }
+        }
+    }
+
     val visible = remember(query, tab, sections, isAdmin, restricted) {
         if (restricted) {
             sections.filter { it.key == "main" }.map { ChatSectionDto(it.key, "Чаты", it.items) }
@@ -127,7 +177,29 @@ fun CommunityScreen(onOpenChat: (String) -> Unit, navBar: @Composable () -> Unit
         }
     }
 
-    TabScaffold(navBar = navBar) {
+    TabScaffold(
+        navBar = navBar,
+        overlay = {
+            ChatListMenu(
+                item = menuItem,
+                muted = menuItem?.let { chatMuted(context, it.id) } ?: false,
+                onClose = { menuItem = null },
+                onOpen = { item -> menuItem = null; onOpenChat(item.id) },
+                onRead = { item -> menuItem = null; markRead(item) },
+                onMute = { item -> menuItem = null; setChatMuted(context, item.id, !chatMuted(context, item.id)) },
+                onInfo = { item -> menuItem = null; onOpenInfo(item.id) },
+                onLeave = { item -> menuItem = null; leaveTarget = item },
+            )
+            ConfirmDialog(
+                open = leaveTarget != null,
+                title = "Выйти из чата?",
+                text = leaveTarget?.let { "Вы больше не будете видеть «${it.title}» в списке чатов." } ?: "",
+                confirmLabel = "Выйти",
+                onConfirm = { leaveTarget?.let { leave(it) }; leaveTarget = null },
+                onCancel = { leaveTarget = null },
+            )
+        },
+    ) {
         PullToRefreshBox(
             isRefreshing = refreshing,
             scrollState = scrollState,
@@ -181,7 +253,11 @@ fun CommunityScreen(onOpenChat: (String) -> Unit, navBar: @Composable () -> Unit
                                 Column {
                                     section.items.forEachIndexed { idx, item ->
                                         if (idx > 0) HairlineDivider(Modifier.padding(vertical = 12.dp))
-                                        ChatRow(item, Modifier.padding(horizontal = T.ScreenX)) { onOpenChat(item.id) }
+                                        ChatRow(
+                                            item,
+                                            Modifier.padding(horizontal = T.ScreenX),
+                                            onLongPress = { menuItem = item },
+                                        ) { onOpenChat(item.id) }
                                     }
                                 }
                             }
@@ -206,16 +282,33 @@ fun CommunityScreen(onOpenChat: (String) -> Unit, navBar: @Composable () -> Unit
  * превью 14 белый 60 %; справа время 14 (и скрепка 12 у закреплённого) и
  * стеклянный счётчик непрочитанных (Regular 10).
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ChatRow(item: ChatItemDto, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun ChatRow(
+    item: ChatItemDto,
+    modifier: Modifier = Modifier,
+    onLongPress: (() -> Unit)? = null,
+    onClick: () -> Unit,
+) {
     val sender = item.sender
     val preview = item.preview
     val hasDetails = !sender.isNullOrEmpty() || !preview.isNullOrEmpty()
+    val haptics = LocalHapticFeedback.current
     Row(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 65.dp)
-            .pressable(pressAlpha = 1f, onClick = onClick),
+            .combinedClickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+                onLongClick = onLongPress?.let { open ->
+                    {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        open()
+                    }
+                },
+            ),
         verticalAlignment = if (hasDetails) Alignment.Top else Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
@@ -276,5 +369,99 @@ private fun ChatRow(item: ChatItemDto, modifier: Modifier = Modifier, onClick: (
                 }
             }
         }
+    }
+}
+
+private fun chatPrefs(context: Context) = context.getSharedPreferences("kl_chat", Context.MODE_PRIVATE)
+
+/** «Без звука» — тот же флаг, что в инфо чата. */
+private fun chatMuted(context: Context, slug: String) = chatPrefs(context).getBoolean("kl_muted_$slug", false)
+
+private fun setChatMuted(context: Context, slug: String, muted: Boolean) =
+    chatPrefs(context).edit().putBoolean("kl_muted_$slug", muted).apply()
+
+/**
+ * Меню чата по долгому нажатию (как в Телеграме): фон размывается и
+ * затемняется, чат поднимается карточкой, под ним — стеклянное меню.
+ */
+@OptIn(ExperimentalAnimationApi::class)
+@Composable
+private fun ChatListMenu(
+    item: ChatItemDto?,
+    muted: Boolean,
+    onClose: () -> Unit,
+    onOpen: (ChatItemDto) -> Unit,
+    onRead: (ChatItemDto) -> Unit,
+    onMute: (ChatItemDto) -> Unit,
+    onInfo: (ChatItemDto) -> Unit,
+    onLeave: (ChatItemDto) -> Unit,
+) {
+    // Последний показанный чат держим, пока меню плавно закрывается.
+    var shown by remember { mutableStateOf<ChatItemDto?>(null) }
+    if (item != null) shown = item
+    BackHandler(enabled = item != null) { onClose() }
+    AnimatedVisibility(
+        visible = item != null,
+        enter = fadeIn(tween(200)),
+        exit = fadeOut(tween(160)),
+    ) {
+        shown?.let { chat -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .backdropBlur(13.dp)
+                    .background(hex("#070707").copy(alpha = 0.7f))
+                    .pressable(pressAlpha = 1f) { onClose() },
+            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = T.ScreenX)
+                    .animateEnterExit(
+                        enter = scaleIn(tween(240, easing = FastOutSlowInEasing), initialScale = 0.94f),
+                        exit = scaleOut(tween(160), targetScale = 0.96f),
+                    ),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(T.ShapeCard)
+                        .background(T.Surface)
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                ) {
+                    ChatRow(chat) { onOpen(chat) }
+                }
+                Column(
+                    modifier = Modifier
+                        .width(240.dp)
+                        .liquidGlass(T.ShapeCard)
+                        .pressable(pressAlpha = 1f) {}
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    ChatMenuRow("Открыть", AppIcons.chat) { onOpen(chat) }
+                    if (chat.unread > 0) ChatMenuRow("Отметить прочитанным", AppIcons.check) { onRead(chat) }
+                    ChatMenuRow(if (muted) "Включить звук" else "Без звука", if (muted) AppIcons.bell else AppIcons.bellSlash) { onMute(chat) }
+                    ChatMenuRow("Информация о чате", AppIcons.dots) { onInfo(chat) }
+                    if (!chat.permanent) {
+                        Box(Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.1f)))
+                        ChatMenuRow("Выйти из чата", AppIcons.leave, color = T.Error) { onLeave(chat) }
+                    }
+                }
+            }
+        } }
+    }
+}
+
+@Composable
+private fun ChatMenuRow(title: String, icon: IconDef, color: Color = T.Text, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().pressable(onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) { AppIcon(icon, size = 20.dp, tint = color) }
+        Text(title, style = AppFont.sans(T.FsBase, color = color), maxLines = 1)
     }
 }

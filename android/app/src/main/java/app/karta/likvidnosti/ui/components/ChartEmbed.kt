@@ -12,7 +12,19 @@ import android.webkit.WebViewClient
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import app.karta.likvidnosti.ui.theme.AppFont
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -27,27 +39,31 @@ import app.karta.likvidnosti.ui.theme.T
 
 /** Что показывать в блоке «График» отчёта по значению поля «График» из админки (iOS ChartSource). */
 sealed class ChartSource {
-    /** Готовая html-страница: виджет TradingView по тикеру или вставленный код виджета. */
+    /** Вставленный код виджета без тикера — показывается как html. */
     data class Html(val html: String) : ChartSource()
 
-    /** Обычная ссылка (например, сохранённый график TradingView) — открывается внутри блока. */
-    data class Url(val url: String) : ChartSource()
+    /** Страница графика TradingView (виджет по тикеру) или обычная ссылка; [original] — для браузера. */
+    data class Url(val url: String, val original: String = url) : ChartSource()
 
     companion object {
         /**
-         * Ссылка TradingView с тикером (`/symbols/OANDA-XAUUSD/`, `?symbol=OANDA:XAUUSD`)
-         * превращается в виджет графика: в блоке остаётся только график, без сайта вокруг.
-         * Код виджета («Get a widget») вставляется как есть.
+         * Ссылка TradingView с тикером (`/symbols/OANDA-XAUUSD/`, `/chart/?symbol=OANDA:XAUUSD`)
+         * и код виджета («Get a widget») с `"symbol": "…"` превращаются в страницу виджета
+         * графика: в блоке только график, без сайта вокруг. Страница грузится напрямую,
+         * без скрипта-загрузчика tv.js.
          */
         fun parse(raw: String?): ChartSource? {
             val value = raw?.trim().orEmpty()
             if (value.isEmpty()) return null
-            if (value.contains("<")) return Html(page(value))
+            if (value.contains("<")) {
+                symbolInWidgetCode(value)?.let { widgetUrl(it) }?.let { return Url(it) }
+                return Html(page(value))
+            }
             val text = if (value.lowercase().startsWith("http")) value else "https://$value"
             val uri = runCatching { Uri.parse(text) }.getOrNull() ?: return null
             val host = uri.host?.lowercase() ?: return null
             if (host.endsWith("tradingview.com")) {
-                symbol(uri)?.let { return Html(widgetPage(it)) }
+                symbol(uri)?.let { widgetUrl(it) }?.let { return Url(it, text) }
             }
             return Url(text)
         }
@@ -67,23 +83,30 @@ sealed class ChartSource {
             return null
         }
 
-        private fun widgetPage(symbol: String): String {
+        private val WidgetSymbol = Regex("""["']?symbol["']?\s*:\s*["']([^"']+)["']""")
+
+        /** `"symbol": "OANDA:XAUUSD"` из кода виджета. */
+        private fun symbolInWidgetCode(code: String): String? =
+            WidgetSymbol.find(code)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotEmpty() }
+
+        /** Страница виджета «Advanced chart» TradingView: тёмная тема, русский, без боковой панели. */
+        private fun widgetUrl(symbol: String): String? {
             val safe = symbol.filter { it.isLetterOrDigit() || it in ":._!-" }
-            val body = """
-                <div class="tradingview-widget-container" style="height:100%;width:100%">
-                  <div id="tv_chart" style="height:100%;width:100%"></div>
-                </div>
-                <script src="https://s3.tradingview.com/tv.js"></script>
-                <script>
-                  new TradingView.widget({
-                    autosize: true, symbol: "$safe", interval: "D", timezone: "Europe/Moscow",
-                    theme: "dark", style: "1", locale: "ru", backgroundColor: "#25262A",
-                    gridColor: "rgba(255,255,255,0.06)", hide_side_toolbar: true,
-                    allow_symbol_change: false, save_image: false, container_id: "tv_chart"
-                  });
-                </script>
-            """.trimIndent()
-            return page(body)
+            if (safe.isEmpty()) return null
+            return Uri.parse("https://s.tradingview.com/widgetembed/").buildUpon()
+                .appendQueryParameter("symbol", safe)
+                .appendQueryParameter("interval", "D")
+                .appendQueryParameter("hidesidetoolbar", "1")
+                .appendQueryParameter("symboledit", "0")
+                .appendQueryParameter("saveimage", "0")
+                .appendQueryParameter("toolbarbg", "25262A")
+                .appendQueryParameter("theme", "dark")
+                .appendQueryParameter("style", "1")
+                .appendQueryParameter("timezone", "Europe/Moscow")
+                .appendQueryParameter("locale", "ru")
+                .appendQueryParameter("hideideas", "1")
+                .build()
+                .toString()
         }
 
         private fun page(body: String): String = """
@@ -103,25 +126,55 @@ sealed class ChartSource {
  */
 @Composable
 fun ChartEmbedView(source: ChartSource, modifier: Modifier = Modifier) {
-    var loading by remember(source) { mutableStateOf(true) }
-    val shown by animateFloatAsState(if (loading) 0f else 1f, tween(250), label = "chart")
-    Box(modifier = modifier.clip(T.ShapeCard).background(T.Surface)) {
-        ChartWebView(source, Modifier.fillMaxSize().alpha(shown)) { loading = false }
-        if (loading) LoadingBlock(Modifier.fillMaxSize())
+    // 0 — грузится, 1 — показан, 2 — не загрузился.
+    var state by remember(source) { mutableStateOf(0) }
+    val shown by animateFloatAsState(if (state == 1) 1f else 0f, tween(250), label = "chart")
+    val uriHandler = LocalUriHandler.current
+    LaunchedEffect(source) {
+        // Страница так и не ответила — не мигаем бесконечно.
+        delay(20_000)
+        if (state == 0) state = 2
+    }
+    Box(modifier = modifier.clip(T.ShapeCard).background(T.Surface), contentAlignment = Alignment.Center) {
+        ChartWebView(
+            source,
+            Modifier.fillMaxSize().alpha(shown),
+            onLoaded = { if (state == 0) state = 1 },
+            onFailed = { state = 2 },
+        )
+        when (state) {
+            0 -> LoadingBlock(Modifier.fillMaxSize())
+            2 -> Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Не удалось загрузить график", style = AppFont.sans(T.FsBase, color = T.TextSecondary))
+                (source as? ChartSource.Url)?.let { src ->
+                    Box(
+                        modifier = Modifier
+                            .height(40.dp)
+                            .liquidGlass(CapsuleShape)
+                            .pressable { runCatching { uriHandler.openUri(src.original) } }
+                            .padding(horizontal = 16.dp),
+                        contentAlignment = Alignment.Center,
+                    ) { Text("Открыть в TradingView", style = AppFont.sans(T.FsBase, FontWeight.SemiBold)) }
+                }
+            }
+        }
     }
 }
 
 @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
 @Composable
-private fun ChartWebView(source: ChartSource, modifier: Modifier, onLoaded: () -> Unit) {
+private fun ChartWebView(source: ChartSource, modifier: Modifier, onLoaded: () -> Unit, onFailed: () -> Unit) {
     val onLoadedState = remember { mutableStateOf(onLoaded) }
     onLoadedState.value = onLoaded
+    val onFailedState = remember { mutableStateOf(onFailed) }
+    onFailedState.value = onFailed
     AndroidView(
         modifier = modifier,
         factory = { ctx ->
             WebView(ctx).apply {
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
+                settings.mediaPlaybackRequiresUserGesture = false
                 setBackgroundColor(android.graphics.Color.TRANSPARENT)
                 // Жесты внутри графика (сдвиг, масштаб) не прокручивают экран отчёта.
                 setOnTouchListener { v, event ->
@@ -131,11 +184,11 @@ private fun ChartWebView(source: ChartSource, modifier: Modifier, onLoaded: () -
                 webViewClient = object : WebViewClient() {
                     override fun onPageFinished(view: WebView?, url: String?) {
                         // Виджету нужно мгновение, чтобы нарисовать график после загрузки скрипта.
-                        Handler(Looper.getMainLooper()).postDelayed({ onLoadedState.value() }, 400)
+                        Handler(Looper.getMainLooper()).postDelayed({ onLoadedState.value() }, 600)
                     }
 
                     override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
-                        if (request?.isForMainFrame == true) onLoadedState.value()
+                        if (request?.isForMainFrame == true) onFailedState.value()
                     }
                 }
                 tag = source

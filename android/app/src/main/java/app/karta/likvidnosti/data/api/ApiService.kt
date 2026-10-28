@@ -87,6 +87,9 @@ interface ApiService {
     @POST("chats/{slug}/leave")
     suspend fun leaveChat(@Path("slug") slug: String): StatusResponse
 
+    @POST("chats/{slug}/read")
+    suspend fun markChatRead(@Path("slug") slug: String): StatusResponse
+
     @PUT("subscription")
     suspend fun updateSubscription(@Body body: SubscriptionBody): StatusResponse
 

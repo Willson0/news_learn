@@ -25,8 +25,11 @@ class ChatController extends Controller
     /** Может ли зритель удалять чужие сообщения у всех (админ, создатель отчёта). */
     private bool $moderator = false;
 
-    /** Автор отчёта этого чата — адресат личных сообщений «/текст/». */
-    private ?int $reportAuthorId = null;
+    /** Зритель видит все личные ветки «/текст/» (админ, создатель отчёта). */
+    private bool $staff = false;
+
+    /** Чат отчёта: своя личная ветка подписывается «Автору», иначе «Администраторам». */
+    private bool $reportChat = false;
 
     public function __construct(private PushService $push) {}
 
@@ -34,7 +37,8 @@ class ChatController extends Controller
     private function context(Chat $chat, User $user): void
     {
         $this->moderator = $user->isAdmin() || $chat->canBeManagedBy($user);
-        $this->reportAuthorId = $chat->reportAuthorId();
+        $this->staff = $chat->isStaff($user);
+        $this->reportChat = $chat->type === 'report';
     }
 
     /**
@@ -105,8 +109,8 @@ class ChatController extends Controller
         $this->ensureJoined($chat, $user);
 
         $messages = $chat->messages()
-            ->visibleTo($user)
-            ->with(['user', 'privateTo', 'replyTo.user', 'replyTo.attachments', 'attachments', 'reactions'])
+            ->visibleTo($user, $this->staff)
+            ->with(['user', 'privateOwner', 'replyTo.user', 'replyTo.attachments', 'attachments', 'reactions'])
             ->oldest('id')
             ->get();
 
@@ -135,6 +139,26 @@ class ChatController extends Controller
             'pins' => $pins,
             'data' => $payload,
         ]);
+    }
+
+    /**
+     * Отметить чат прочитанным без открытия (меню чата в списке, как в Телеграме).
+     */
+    public function markRead(Request $request, string $slug): JsonResponse
+    {
+        $user = $request->user();
+        $chat = self::resolve($slug, $user);
+        $this->context($chat, $user);
+
+        $lastId = (int) $chat->messages()->visibleTo($user, $this->staff)->max('id');
+        if ($lastId > 0) {
+            ChatRead::updateOrCreate(
+                ['chat_id' => $chat->id, 'user_id' => $user->id],
+                ['last_read_message_id' => $lastId],
+            );
+        }
+
+        return response()->json(['status' => 'ok']);
     }
 
     /**
@@ -190,37 +214,30 @@ class ChatController extends Controller
         // Ответ допустим только на видимое пользователю обычное сообщение этого же чата.
         $replyTo = null;
         if (! empty($data['reply_to'])) {
-            $replyTo = $chat->messages()->visibleTo($user)->whereKey($data['reply_to'])->first();
+            $replyTo = $chat->messages()->visibleTo($user, $this->staff)->whereKey($data['reply_to'])->first();
             if ($replyTo?->isSystem()) {
                 $replyTo = null;
             }
         }
 
-        // Личная переписка с автором отчёта: «/текст/» уходит только автору, ответы на личное
-        // сообщение тоже личные — их видят только двое участников.
-        $privateTo = null;
+        // Личная ветка: «/текст/» участника видят только он и staff чата (админы, создатель
+        // отчёта). Ответ на сообщение ветки на любой глубине остаётся в ней же.
+        $privateOwner = null;
         if ($replyTo?->isPrivate()) {
-            $privateTo = $replyTo->user_id === $user->id ? $replyTo->private_to_id : $replyTo->user_id;
-        } elseif ($body !== null && $chat->type === 'report' && preg_match('#^/(.*\S.*)/$#su', $body, $m)) {
-            $authorId = $this->reportAuthorId;
-            if ($authorId === null) {
-                throw ValidationException::withMessages([
-                    'body' => 'У этого отчёта не указан автор, личное сообщение отправить некому.',
-                ]);
-            }
-            if ($authorId !== $user->id) {
-                $privateTo = $authorId;
-                $body = trim($m[1]);
-            }
+            $privateOwner = $replyTo->private_owner_id;
+        } elseif ($body !== null && $chat->type !== 'direct' && ! $this->staff
+            && preg_match('#^/(.*\S.*)/$#su', $body, $m)) {
+            $privateOwner = $user->id;
+            $body = trim($m[1]);
         }
 
         $this->ensureJoined($chat, $user);
 
-        $message = DB::transaction(function () use ($chat, $user, $data, $body, $replyTo, $privateTo, $files) {
+        $message = DB::transaction(function () use ($chat, $user, $data, $body, $replyTo, $privateOwner, $files) {
             $message = $chat->messages()->create([
                 'user_id' => $user->id,
                 'reply_to_id' => $replyTo?->id,
-                'private_to_id' => $privateTo,
+                'private_owner_id' => $privateOwner,
                 'author_name' => $user->name,
                 'author_role' => $user->isAdmin() ? 'Админ' : 'Участник',
                 'body' => $body,
@@ -233,7 +250,7 @@ class ChatController extends Controller
             return $message;
         });
 
-        $message->load(['user', 'privateTo', 'replyTo.user', 'replyTo.attachments', 'attachments', 'reactions']);
+        $message->load(['user', 'privateOwner', 'replyTo.user', 'replyTo.attachments', 'attachments', 'reactions']);
 
         $this->notifyRecipients($chat, $user, $message);
 
@@ -248,7 +265,7 @@ class ChatController extends Controller
         $user = $request->user();
         $chat = self::resolve($slug, $user);
         $this->context($chat, $user);
-        $msg = $chat->messages()->visibleTo($user)->whereKey($message)->firstOrFail();
+        $msg = $chat->messages()->visibleTo($user, $this->staff)->whereKey($message)->firstOrFail();
         abort_if($msg->isSystem(), 422, 'На служебное сообщение нельзя поставить реакцию.');
 
         $data = $request->validate([
@@ -266,7 +283,7 @@ class ChatController extends Controller
             $msg->reactions()->create(['user_id' => $user->id, 'emoji' => $data['emoji']]);
         }
 
-        $msg->load(['user', 'privateTo', 'replyTo.user', 'replyTo.attachments', 'attachments', 'reactions']);
+        $msg->load(['user', 'privateOwner', 'replyTo.user', 'replyTo.attachments', 'attachments', 'reactions']);
 
         return response()->json(['data' => $this->toArray($msg, $user)]);
     }
@@ -279,9 +296,10 @@ class ChatController extends Controller
     {
         $user = $request->user();
         $chat = self::resolve($slug, $user);
+        $this->context($chat, $user);
         abort_unless($chat->canPinBy($user), 403, 'Закреплять сообщения могут только администратор и автор отчёта.');
 
-        $msg = $chat->messages()->visibleTo($user)->whereKey($message)->firstOrFail();
+        $msg = $chat->messages()->visibleTo($user, $this->staff)->whereKey($message)->firstOrFail();
         abort_if($msg->isSystem() || $msg->isPrivate(), 422, 'Это сообщение нельзя закрепить.');
 
         $makePinned = ! $msg->pinned;
@@ -303,9 +321,9 @@ class ChatController extends Controller
     private function pinsOf(Chat $chat, User $user): array
     {
         return $chat->messages()
-            ->visibleTo($user)
+            ->visibleTo($user, $this->staff)
             ->where('pinned', true)
-            ->whereNull('private_to_id')
+            ->whereNull('private_owner_id')
             ->with(['user', 'attachments'])
             ->orderBy('pinned_at')
             ->orderBy('id')
@@ -323,7 +341,7 @@ class ChatController extends Controller
         $user = $request->user();
         $chat = self::resolve($slug, $user);
         $this->context($chat, $user);
-        $msg = $chat->messages()->visibleTo($user)->whereKey($message)->firstOrFail();
+        $msg = $chat->messages()->visibleTo($user, $this->staff)->whereKey($message)->firstOrFail();
 
         if ($request->input('for', $request->query('for')) === 'me') {
             DB::table('message_hides')->insertOrIgnore([
@@ -353,8 +371,9 @@ class ChatController extends Controller
     {
         $user = $request->user();
         $chat = self::resolve($slug, $user);
+        $this->context($chat, $user);
 
-        $userIds = $chat->messages()->visibleTo($user)->whereNotNull('user_id')->distinct()->pluck('user_id');
+        $userIds = $chat->messages()->visibleTo($user, $this->staff)->whereNotNull('user_id')->distinct()->pluck('user_id');
         $leftIds = DB::table('chat_leaves')->where('chat_id', $chat->id)->pluck('user_id');
         $members = User::whereIn('id', $userIds)->whereNotIn('id', $leftIds)->get()
             ->map(fn (User $u) => [
@@ -380,6 +399,7 @@ class ChatController extends Controller
     {
         $user = $request->user();
         $chat = self::resolve($slug, $user);
+        $this->context($chat, $user);
 
         if ($kind === 'link') {
             return response()->json(['data' => $this->collectLinks($chat, $user)]);
@@ -387,7 +407,7 @@ class ChatController extends Controller
 
         abort_unless(in_array($kind, ['image', 'file', 'voice'], true), 404);
 
-        $items = MessageAttachment::whereIn('message_id', $chat->messages()->visibleTo($user)->select('id'))
+        $items = MessageAttachment::whereIn('message_id', $chat->messages()->visibleTo($user, $this->staff)->select('id'))
             ->where('kind', $kind)
             ->with('message.user')
             ->orderByDesc('id')
@@ -537,17 +557,7 @@ class ChatController extends Controller
 
         try {
             if ($message->isPrivate()) {
-                $to = $message->privateTo;
-                if ($to) {
-                    $title = $to->id === $this->reportAuthorId
-                        ? "Сообщение автору · {$chat->title}"
-                        : "Ответ автора отчёта · {$chat->title}";
-                    $this->push->sendToUser($to, $title, "{$sender->name}: {$text}", [
-                        'type' => 'chat',
-                        'chat' => $chat->slug,
-                        'message' => (string) $message->id,
-                    ]);
-                }
+                $this->notifyPrivate($chat, $sender, $message, $text);
 
                 return;
             }
@@ -575,6 +585,27 @@ class ChatController extends Controller
             // Сбой push не должен мешать отправке сообщения.
             Log::warning('Push о сообщении не отправлен', ['message' => $message->id, 'error' => $e->getMessage()]);
         }
+    }
+
+    /**
+     * Push по личной ветке: сообщение участника — всем staff чата (админам, создателю
+     * отчёта), ответ staff — владельцу ветки.
+     */
+    private function notifyPrivate(Chat $chat, User $sender, Message $message, string $text): void
+    {
+        $data = ['type' => 'chat', 'chat' => $chat->slug, 'message' => (string) $message->id];
+        $owner = $message->privateOwner;
+
+        if ($owner && $owner->id !== $sender->id) {
+            $this->push->sendToUser($owner, "Личный ответ · {$chat->title}", "{$sender->name}: {$text}", $data);
+
+            return;
+        }
+
+        $title = ($chat->type === 'report' ? 'Сообщение автору' : 'Сообщение администраторам')." · {$chat->title}";
+        User::whereKeyNot($sender->id)->get()
+            ->filter(fn (User $u) => $chat->isStaff($u) && self::canAccess($chat, $u))
+            ->each(fn (User $u) => $this->push->sendToUser($u, $title, "{$sender->name}: {$text}", $data));
     }
 
     /** Текст служебного сообщения для превью и цитат. */
@@ -684,7 +715,7 @@ class ChatController extends Controller
     private function collectLinks(Chat $chat, User $user): array
     {
         $links = [];
-        $messages = $chat->messages()->visibleTo($user)->with('user')->whereNotNull('body')->orderByDesc('id')->get();
+        $messages = $chat->messages()->visibleTo($user, $this->staff)->with('user')->whereNotNull('body')->orderByDesc('id')->get();
 
         foreach ($messages as $m) {
             if (preg_match_all('#https?://[^\s]+#iu', (string) $m->body, $matches)) {
@@ -742,11 +773,12 @@ class ChatController extends Controller
         $direct = $chat->type === 'direct';
         $ownDirect = $direct && $chat->user_id === $viewer->id;
         $last = $chat->latestMessage;
+        $staff = $chat->isStaff($viewer);
 
         // Последнее сообщение может быть чужим личным или скрытым у зрителя — тогда берём видимое.
-        if ($last && (! $last->isVisibleTo($viewer)
+        if ($last && (! $last->isVisibleTo($viewer, $staff)
             || DB::table('message_hides')->where('user_id', $viewer->id)->where('message_id', $last->id)->exists())) {
-            $last = $chat->messages()->visibleTo($viewer)->latest('id')->first();
+            $last = $chat->messages()->visibleTo($viewer, $staff)->latest('id')->first();
         }
 
         $preview = $last?->body;
@@ -766,14 +798,34 @@ class ChatController extends Controller
             'report' => $chat->report_id,
             'can_manage' => $chat->canBeManagedBy($viewer),
             'can_pin' => $chat->canPinBy($viewer),
-            // В чате отчёта можно написать автору лично через «/текст/».
-            'author_messages' => $chat->type === 'report' && $chat->reportAuthorId() !== null
-                && $chat->reportAuthorId() !== $viewer->id,
+            // «/текст/» — личное сообщение администрации (в чате отчёта — и автору отчёта).
+            'author_messages' => ! $direct && ! $staff,
             'permanent' => $chat->isPermanent(),
             'sender' => $last && ! $last->isSystem() ? ($last->user_id === $viewer->id ? 'Вы' : $last->author_name) : null,
             'preview' => $preview,
             'time' => $last?->created_at?->format('H:i'),
+            'unread' => self::unreadCount($chat, $viewer, $staff),
         ];
+    }
+
+    /**
+     * Непрочитанные: чужие видимые сообщения после последнего прочитанного. Чат ещё не
+     * открывался — считаем только то, что пришло после регистрации пользователя.
+     */
+    private static function unreadCount(Chat $chat, User $viewer, bool $staff): int
+    {
+        $query = $chat->messages()->visibleTo($viewer, $staff)
+            ->whereNull('event')
+            ->where(fn ($q) => $q->whereNull('user_id')->orWhere('user_id', '!=', $viewer->id));
+
+        $lastRead = ChatRead::where('chat_id', $chat->id)->where('user_id', $viewer->id)->value('last_read_message_id');
+        if ($lastRead !== null) {
+            $query->where('id', '>', $lastRead);
+        } elseif ($viewer->created_at) {
+            $query->where('created_at', '>=', $viewer->created_at);
+        }
+
+        return $query->count();
     }
 
     /**
@@ -863,22 +915,28 @@ class ChatController extends Controller
             'read' => $mine && $othersRead !== null ? $othersRead >= $m->id : false,
             // Служебное сообщение: join — «зашел в чат», leave — «вышел из чата» (имя — author, профиль — user_id).
             'event' => $m->event,
-            // Личное сообщение (автору отчёта и ответы на него) видят только двое.
+            // Личная ветка «/текст/»: видят её владелец и staff чата.
             'private' => $m->isPrivate(),
-            'private_label' => $m->isPrivate() ? $this->privateLabel($m, $mine) : null,
+            'private_label' => $m->isPrivate() ? $this->privateLabel($m, $viewer, $mine) : null,
             'can_delete' => $this->canDeleteForAll($m, $viewer),
         ];
     }
 
-    private function privateLabel(Message $m, bool $mine): string
+    /**
+     * Подпись личного сообщения. Владелец ветки: своё — «Автору» (чат отчёта) или
+     * «Администраторам», ответ ему — «Лично вам». Staff — «Лично · имя владельца».
+     */
+    private function privateLabel(Message $m, User $viewer, bool $mine): string
     {
-        if (! $mine) {
-            return 'Лично вам';
+        if ($m->private_owner_id === $viewer->id && ! $this->staff) {
+            if (! $mine) {
+                return 'Лично вам';
+            }
+
+            return $this->reportChat ? 'Автору' : 'Администраторам';
         }
 
-        return $m->private_to_id === $this->reportAuthorId
-            ? 'Автору'
-            : 'Лично · '.($m->privateTo?->name ?? 'участнику');
+        return 'Лично · '.($m->privateOwner?->name ?? 'участник');
     }
 
     private static function extOf(?string $name): string

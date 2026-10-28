@@ -105,6 +105,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::get('/chats/{slug}/messages', [ChatController::class, 'messages']);
     Route::post('/chats/{slug}/messages', [ChatController::class, 'send'])->middleware('throttle:writes');
     Route::post('/chats/{slug}/leave', [ChatController::class, 'leave']);
+    Route::post('/chats/{slug}/read', [ChatController::class, 'markRead']);
     Route::delete('/chats/{slug}/messages/{message}', [ChatController::class, 'destroyMessage']);
     Route::post('/chats/{slug}/messages/{message}/react', [ChatController::class, 'react']);
     Route::post('/chats/{slug}/messages/{message}/pin', [ChatController::class, 'pin']);

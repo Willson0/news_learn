@@ -119,7 +119,10 @@ fun ReportDetailScreen(
                 // Кнопки (3 × 48 + 2 × 12) прижаты к низу, пока обложка свёрнута не раскрыта.
                 val buttons = if (chartSource != null) 3 else 2
                 val actionsH = 48.dp * buttons + 12.dp * (buttons - 1)
-                val spacer = if (expanded) 24.dp else max(24f, (viewport - heroHeight - actionsH - bottomPad).value).dp
+                // Отступ над кнопками анимируется той же пружиной, что и обложка: кнопки
+                // поднимаются одним блоком вместе с ней, без скачка.
+                val spacerTarget = if (expanded) 24.dp else max(24f, (viewport - 465.dp - actionsH - bottomPad).value).dp
+                val spacer by animateDpAsState(spacerTarget, HeroSpring, label = "actions")
                 Column(
                     modifier = Modifier
                         .fillMaxSize()

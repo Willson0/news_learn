@@ -62,7 +62,9 @@ struct ChatView: View {
     // Запись голосового.
     @State private var micPressed = false
     @State private var recordLocked = false
-    @State private var recordDrag: CGSize = .zero
+    /// Смещение пальца при записи. Отдельный объект, на который подписаны только
+    /// элементы плашки записи, — весь экран чата не перерисовывается на каждый кадр жеста.
+    @State private var recordDrag = RecordDragModel()
 
     @FocusState private var inputFocused: Bool
 
@@ -107,11 +109,20 @@ struct ChatView: View {
         return pins[min(max(pinIndex, 0), pins.count - 1)]
     }
 
-    /// «/текст/» в чате отчёта уходит автору лично.
+    /// «/текст/» уходит лично администраторам (в чате отчёта — и автору отчёта).
     private var draftIsAuthorMessage: Bool {
         guard serverChat?.authorMessages == true else { return false }
         let t = draft.trimmed
         return t.count >= 2 && t.hasPrefix("/")
+    }
+
+    /// Подсказка над полем ввода: кто увидит личное сообщение или ответ в личной ветке.
+    private var privateHint: String? {
+        if replyTo?.isPrivate == true { return "Ответ увидят только участники личной переписки" }
+        guard draftIsAuthorMessage else { return nil }
+        return serverChat?.type == "report"
+            ? "Сообщение увидят только автор отчета и администраторы"
+            : "Сообщение увидят только администраторы"
     }
 
     /// Высота шапки (и закрепа), под которой начинаются сообщения.
@@ -247,10 +258,11 @@ struct ChatView: View {
                     }
                     .buttonStyle(PressableStyle())
                     Spacer(minLength: 12)
+                    // Иконка чата открывает то же инфо, что и название.
                     Button { router.push(.chatInfo(id: chatId)) } label: {
-                        chatAvatar
+                        chatAvatar.contentShape(Circle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressableStyle())
                 }
                 if let pin = currentPin { pinnedBar(pin).transition(.move(edge: .top).combined(with: .opacity)) }
             }
@@ -698,7 +710,10 @@ struct ChatView: View {
                         .allowsHitTesting(!audio.recording || micPressed)
                     if audio.recording {
                         recordingBar
-                            .transition(.opacity)
+                            .transition(.asymmetric(
+                                insertion: .opacity.combined(with: .scale(scale: 0.96, anchor: .trailing)),
+                                removal: .opacity
+                            ))
                     }
                 }
             }
@@ -742,10 +757,10 @@ struct ChatView: View {
                 }
                 if !pendingPhotos.isEmpty { pendingPhotosStrip }
                 if let reply = replyTo { composerQuote(reply) }
-                if draftIsAuthorMessage {
+                if let hint = privateHint {
                     HStack(spacing: 6) {
                         Icon(AppIcons.lockOpen, size: 12, color: secondary)
-                        Text("Сообщение увидит только автор отчета").font(Theme.sans(Theme.fontSm)).foregroundStyle(secondary)
+                        Text(hint).font(Theme.sans(Theme.fontSm)).foregroundStyle(secondary)
                     }
                     .padding(.top, 10)
                     .transition(.opacity)
@@ -825,19 +840,19 @@ struct ChatView: View {
                     startVoice()
                 }
                 guard audio.recording, !recordLocked else { return }
-                recordDrag = v.translation
+                recordDrag.update(v.translation)
                 if v.translation.width < -110 {
-                    Haptics.light()
+                    Haptics.warning()
                     cancelVoice()
                 } else if v.translation.height < -90 {
-                    Haptics.medium()
-                    recordLocked = true
-                    recordDrag = .zero
+                    Haptics.rigid()
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { recordLocked = true }
+                    recordDrag.reset()
                 }
             }
             .onEnded { _ in
                 micPressed = false
-                recordDrag = .zero
+                recordDrag.reset()
                 if audio.recording && !recordLocked { stopAndSendVoice() }
             }
     }
@@ -847,23 +862,25 @@ struct ChatView: View {
     private var recordingBar: some View {
         HStack(spacing: 0) {
             HStack(spacing: 4) {
-                Circle().fill(Theme.error).frame(width: 8, height: 8)
+                RecordingDot()
                     .padding(.trailing, 4)
                 Text(recordClock).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text).monospacedDigit()
                 Spacer(minLength: 12)
                 if recordLocked {
-                    Button { cancelVoice() } label: {
+                    Button { Haptics.warning(); cancelVoice() } label: {
                         Text("Отмена").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
                     }
                     .buttonStyle(.plain)
                     Spacer(minLength: 0)
                 } else {
-                    HStack(spacing: 4) {
-                        Icon(AppIcons.back, size: 14, color: Theme.text)
-                        Text("Влево — отмена").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
+                    RecordDragReader(model: recordDrag) { drag in
+                        HStack(spacing: 4) {
+                            Icon(AppIcons.back, size: 14, color: Theme.text)
+                            Text("Влево — отмена").font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text)
+                        }
+                        .offset(x: min(0, drag.width / 2.2))
+                        .opacity(1 + Double(min(0, drag.width)) / 130)
                     }
-                    .offset(x: min(0, recordDrag.width / 3))
-                    .opacity(1 + Double(min(0, recordDrag.width)) / 160)
                     Spacer(minLength: 0)
                 }
             }
@@ -879,7 +896,7 @@ struct ChatView: View {
         .overlay(alignment: .topTrailing) {
             Group {
                 if recordLocked {
-                    Button { audio.pauseRecording() } label: {
+                    Button { Haptics.light(); audio.pauseRecording() } label: {
                         HStack(spacing: 4) {
                             Capsule().fill(Color.white).frame(width: 3, height: 13)
                             Capsule().fill(Color.white).frame(width: 3, height: 13)
@@ -890,14 +907,17 @@ struct ChatView: View {
                     .buttonStyle(PressableStyle())
                     .offset(x: -13, y: -90)
                 } else {
-                    VStack(spacing: 6) {
-                        Icon(AppIcons.lockOpen, size: 20, color: Theme.text)
-                        Icon(AppIcons.back, size: 16, color: Theme.text).rotationEffect(.degrees(90))
+                    RecordDragReader(model: recordDrag) { drag in
+                        VStack(spacing: 6) {
+                            Icon(AppIcons.lockOpen, size: 20, color: Theme.text)
+                            LockHintArrow()
+                        }
+                        .padding(.vertical, 12)
+                        .frame(width: 48)
+                        .liquidGlass(Capsule())
+                        .offset(x: -13, y: -118 + max(-36, min(0, drag.height / 2.5)))
                     }
-                    .padding(.vertical, 12)
-                    .frame(width: 48)
-                    .liquidGlass(Capsule())
-                    .offset(x: -13, y: -118 + max(-30, min(0, recordDrag.height / 3)))
+                    .transition(.scale(scale: 0.6, anchor: .bottom).combined(with: .opacity))
                 }
             }
             .transition(.opacity)
@@ -906,7 +926,8 @@ struct ChatView: View {
 
     private var bigRecordButton: some View {
         ZStack {
-            ActiveFill().clipShape(Circle()).opacity(0.55).frame(width: 96, height: 96)
+            // Ореол «дышит» в такт голосу (как в Телеграме), плавно сглаживая громкость.
+            RecordHalo(audio: audio)
             Button {
                 if recordLocked { stopAndSendVoice() }
             } label: {
@@ -925,13 +946,14 @@ struct ChatView: View {
         .frame(width: 96, height: 96)
         .offset(x: 11, y: 0)
         .allowsHitTesting(recordLocked)
+        .transition(.scale(scale: 0.4).combined(with: .opacity))
     }
 
     /// Запись на паузе (Figma 337:33184): корзина, волна с плашкой «▶ 1:30»,
     /// зелёная «отправить»; над ней — микрофон для продолжения записи.
     private var pausedRecordingBar: some View {
         HStack(spacing: 12) {
-            GlassCircleButton(icon: AppIcons.trashX, iconSize: 24, iconColor: Theme.error) { cancelVoice() }
+            GlassCircleButton(icon: AppIcons.trashX, iconSize: 24, iconColor: Theme.error) { Haptics.warning(); cancelVoice() }
             ZStack {
                 HStack(spacing: 1.5) {
                     ForEach(0..<64, id: \.self) { i in
@@ -965,7 +987,7 @@ struct ChatView: View {
             }
         }
         .overlay(alignment: .topTrailing) {
-            GlassCircleButton(icon: AppIcons.mic, iconSize: 24) { audio.resumeRecording() }
+            GlassCircleButton(icon: AppIcons.mic, iconSize: 24) { Haptics.medium(); audio.resumeRecording() }
                 .offset(y: -66)
         }
     }
@@ -1033,6 +1055,8 @@ struct ChatView: View {
                 }
             }
             .controlGroupStyle(.palette)
+            // Выбрал реакцию — меню закрывается, реакция ставится (палитра по умолчанию остаётся открытой).
+            .menuActionDismissBehavior(.enabled)
         } else {
             Menu {
                 ForEach(reactions, id: \.self) { r in
@@ -1233,12 +1257,8 @@ struct ChatView: View {
     private var photoViewerOverlay: some View {
         ZStack(alignment: .top) {
             Color.black.ignoresSafeArea()
-            AsyncImage(url: photoViewerURL) { phase in
-                switch phase {
-                case .success(let img): img.resizable().aspectRatio(contentMode: .fit)
-                case .failure: Icon(AppIcons.picture, size: 48, color: Color.white.opacity(0.3))
-                default: ProgressView().tint(.white)
-                }
+            RemoteImage(url: photoViewerURL, contentMode: .fit, showsLoading: false) {
+                Icon(AppIcons.picture, size: 48, color: Color.white.opacity(0.3))
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             HStack {
@@ -1362,12 +1382,13 @@ struct ChatView: View {
     private func cancelVoice() {
         audio.cancelRecording()
         recordLocked = false
-        recordDrag = .zero
+        recordDrag.reset()
     }
 
     private func stopAndSendVoice() {
         recordLocked = false
         if let result = audio.stopRecording() {
+            Haptics.soft()
             sendAttachment(data: result.data, filename: "voice.m4a", mime: "audio/m4a", kind: "voice", duration: result.duration)
         }
     }
@@ -1816,5 +1837,92 @@ private struct MessageContextMenu<Items: View>: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+// MARK: - Запись голосового: плавные элементы
+
+/// Смещение пальца при записи голосового. Публикует только при заметном изменении,
+/// чтобы не перерисовывать плашку на каждый пиксель.
+@MainActor
+final class RecordDragModel: ObservableObject {
+    @Published private(set) var drag: CGSize = .zero
+    /// Палец прошёл половину пути до отмены или до замка — один лёгкий щелчок.
+    private var hintedCancel = false
+    private var hintedLock = false
+
+    func update(_ t: CGSize) {
+        if abs(t.width - drag.width) + abs(t.height - drag.height) >= 0.5 { drag = t }
+        if t.width < -55, !hintedCancel { hintedCancel = true; Haptics.tick() }
+        if t.width > -40 { hintedCancel = false }
+        if t.height < -45, !hintedLock { hintedLock = true; Haptics.tick() }
+        if t.height > -30 { hintedLock = false }
+    }
+
+    func reset() {
+        hintedCancel = false
+        hintedLock = false
+        if drag != .zero {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { drag = .zero }
+        }
+    }
+}
+
+/// Перерисовывает только своё содержимое при движении пальца.
+private struct RecordDragReader<Content: View>: View {
+    @ObservedObject var model: RecordDragModel
+    @ViewBuilder let content: (CGSize) -> Content
+    var body: some View { content(model.drag) }
+}
+
+/// Красная точка записи мягко пульсирует.
+private struct RecordingDot: View {
+    @State private var dim = false
+    var body: some View {
+        Circle().fill(Theme.error).frame(width: 8, height: 8)
+            .opacity(dim ? 0.25 : 1)
+            .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: dim)
+            .onAppear { dim = true }
+    }
+}
+
+/// Стрелка подсказки «вверх — замок» мягко покачивается вверх.
+private struct LockHintArrow: View {
+    @State private var up = false
+    var body: some View {
+        Icon(AppIcons.back, size: 16, color: Theme.text).rotationEffect(.degrees(90))
+            .offset(y: up ? -3 : 1)
+            .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: up)
+            .onAppear { up = true }
+    }
+}
+
+/// Ореол большой кнопки записи: масштаб следует за громкостью голоса со сглаживанием.
+private struct RecordHalo: View {
+    @ObservedObject var audio: ChatAudio
+    /// Сглаженная громкость между кадрами (класс — изменение не перерисовывает вид).
+    @State private var smoother = LevelSmoother()
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+            let level = audio.recordLevel()
+            let t = context.date.timeIntervalSinceReferenceDate
+            // Спокойное «дыхание» даже в тишине + отклик на голос.
+            let breath = 0.03 * sin(t * 2.4)
+            ActiveFill()
+                .clipShape(Circle())
+                .opacity(0.55)
+                .frame(width: 96, height: 96)
+                .scaleEffect(1 + breath + 0.28 * smoother.next(level))
+        }
+    }
+}
+
+/// Экспоненциальное сглаживание громкости, чтобы ореол не дёргался.
+private final class LevelSmoother {
+    private var value: CGFloat = 0
+    func next(_ level: CGFloat) -> CGFloat {
+        value += (level - value) * 0.25
+        return value
     }
 }

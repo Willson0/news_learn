@@ -139,6 +139,10 @@ enum Api {
         _ = try await ApiClient.post("chats/\(slug)/leave", as: StatusResponse.self)
     }
 
+    static func markChatRead(slug: String) async throws {
+        _ = try await ApiClient.post("chats/\(slug)/read", as: StatusResponse.self)
+    }
+
     static func updateSubscription(_ payload: [String: Any?]) async throws {
         _ = try await ApiClient.put("subscription", body: payload, as: StatusResponse.self)
     }

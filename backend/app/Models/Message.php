@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\DB;
 class Message extends Model
 {
     protected $fillable = [
-        'chat_id', 'user_id', 'reply_to_id', 'private_to_id', 'author_name', 'author_role', 'body',
+        'chat_id', 'user_id', 'reply_to_id', 'private_to_id', 'private_owner_id', 'author_name', 'author_role', 'body',
         'event', 'pinned', 'pinned_at',
     ];
 
@@ -26,30 +26,39 @@ class Message extends Model
         return $this->event !== null;
     }
 
-    /** Личное сообщение (/текст/ автору отчёта и ответы на него). */
+    /** Личное сообщение «/текст/» и ответы на него (любой глубины). */
     public function isPrivate(): bool
     {
-        return $this->private_to_id !== null;
-    }
-
-    /** Видно ли сообщение пользователю: личное — только двум участникам переписки. */
-    public function isVisibleTo(User $user): bool
-    {
-        return ! $this->isPrivate() || $this->user_id === $user->id || $this->private_to_id === $user->id;
+        return $this->private_owner_id !== null;
     }
 
     /**
-     * Сообщения, которые видит пользователь: без чужих личных и без скрытых им («удалить у меня»).
+     * Видно ли сообщение пользователю: личную ветку видят её владелец и staff чата
+     * (админы, создатель отчёта) — см. Chat::isStaff.
      */
-    public function scopeVisibleTo(Builder $query, User $user): Builder
+    public function isVisibleTo(User $user, bool $staff = false): bool
     {
-        return $query
-            ->where(function (Builder $q) use ($user) {
-                $q->whereNull('private_to_id')
-                    ->orWhere('user_id', $user->id)
-                    ->orWhere('private_to_id', $user->id);
-            })
-            ->whereNotIn('id', DB::table('message_hides')->where('user_id', $user->id)->select('message_id'));
+        return ! $this->isPrivate() || $staff || $this->private_owner_id === $user->id;
+    }
+
+    /**
+     * Сообщения, которые видит пользователь: без чужих личных веток (если он не staff чата)
+     * и без скрытых им («удалить у меня»).
+     */
+    public function scopeVisibleTo(Builder $query, User $user, bool $staff = false): Builder
+    {
+        if (! $staff) {
+            $query->where(function (Builder $q) use ($user) {
+                $q->whereNull('private_owner_id')->orWhere('private_owner_id', $user->id);
+            });
+        }
+
+        return $query->whereNotIn('id', DB::table('message_hides')->where('user_id', $user->id)->select('message_id'));
+    }
+
+    public function privateOwner(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'private_owner_id');
     }
 
     public function privateTo(): BelongsTo

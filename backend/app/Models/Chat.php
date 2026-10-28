@@ -58,6 +58,15 @@ class Chat extends Model
         return $this->type === 'report' && $this->report?->created_by === $user->id;
     }
 
+    /**
+     * Staff чата видит все личные ветки «/текст/» и отвечает в них: админы и создатель
+     * отчёта в чате отчёта.
+     */
+    public function isStaff(User $user): bool
+    {
+        return $user->isAdmin() || $this->canBeManagedBy($user);
+    }
+
     /** Автор отчёта — адресат личных сообщений «/текст/» в чате отчёта. */
     public function reportAuthorId(): ?int
     {

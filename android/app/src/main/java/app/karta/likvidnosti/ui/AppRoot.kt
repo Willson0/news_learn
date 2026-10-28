@@ -183,7 +183,11 @@ fun AppRoot() {
                 AnalyticsScreen(onOpenReport = { actions.toReportDetail(it) }, navBar = { navBar(AppTab.Analytics) })
             }
             composable(Routes.COMMUNITY) {
-                CommunityScreen(onOpenChat = { actions.toChat(it) }, navBar = { navBar(AppTab.Community) })
+                CommunityScreen(
+                    onOpenChat = { actions.toChat(it) },
+                    onOpenInfo = { actions.toChatInfo(it) },
+                    navBar = { navBar(AppTab.Community) },
+                )
             }
             composable(Routes.PROFILE) {
                 ProfileScreen(

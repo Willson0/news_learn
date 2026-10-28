@@ -216,7 +216,7 @@ struct ChatItemDto: Decodable, Identifiable {
     let sender: String?
     let preview: String?
     let time: String?
-    let unread: Int
+    var unread: Int
     /// Чат нельзя покинуть вручную (личный чат и чат отчёта).
     let permanent: Bool
     /// Может ли текущий пользователь управлять чатом (у чата отчёта — только создатель отчёта).

@@ -368,26 +368,80 @@ class ChatProductTest extends TestCase
             ->assertJsonPath('data.text', 'Как долго вы делали этот отчет?');
         $id = $resp->json('data.id');
 
-        // Третий участник личное сообщение не видит.
-        $third = $this->admin();
-        Sanctum::actingAs($third);
+        // Обычный участник чужую личную ветку не видит.
+        $third = User::factory()->create();
+        $this->actingAsAuthorWithAccess($third);
         $ids = collect($this->getJson("/api/chats/{$chat->slug}/messages")->json('data'))->pluck('id');
         $this->assertNotContains($id, $ids);
 
-        // Автор видит и отвечает — ответ тоже личный и виден отправителю.
+        // Автор отчёта видит и отвечает — ответ остаётся в ветке.
         $this->actingAsAuthorWithAccess($author);
         $row = collect($this->getJson("/api/chats/{$chat->slug}/messages")->json('data'))->firstWhere('id', $id);
-        $this->assertSame('Лично вам', $row['private_label']);
+        $this->assertSame('Лично · '.$member->name, $row['private_label']);
         $reply = $this->postJson("/api/chats/{$chat->slug}/messages", ['body' => 'Две недели', 'reply_to' => $id])
             ->assertCreated()->assertJsonPath('data.private', true)->json('data.id');
 
-        Sanctum::actingAs($member);
+        // Админ тоже видит ветку; его ответ на ответ — в той же ветке.
+        Sanctum::actingAs($this->admin());
         $ids = collect($this->getJson("/api/chats/{$chat->slug}/messages")->json('data'))->pluck('id');
-        $this->assertContains($reply, $ids);
+        $this->assertContains($id, $ids);
+        $deep = $this->postJson("/api/chats/{$chat->slug}/messages", ['body' => 'Подтверждаю', 'reply_to' => $reply])
+            ->assertCreated()->assertJsonPath('data.private', true)->json('data.id');
 
-        Sanctum::actingAs($third);
+        Sanctum::actingAs($member);
+        $rows = collect($this->getJson("/api/chats/{$chat->slug}/messages")->json('data'))->keyBy('id');
+        $this->assertTrue($rows->has($reply) && $rows->has($deep));
+        $this->assertSame('Лично вам', $rows[$deep]['private_label']);
+        // Ответ владельца ветки на ответ — тоже личный.
+        $this->postJson("/api/chats/{$chat->slug}/messages", ['body' => 'Спасибо', 'reply_to' => $deep])
+            ->assertCreated()->assertJsonPath('data.private', true)->assertJsonPath('data.private_label', 'Автору');
+
+        $this->actingAsAuthorWithAccess($third);
         $ids = collect($this->getJson("/api/chats/{$chat->slug}/messages")->json('data'))->pluck('id');
         $this->assertNotContains($reply, $ids);
+        $this->assertNotContains($deep, $ids);
+    }
+
+    public function test_private_message_to_admins_in_group_chat(): void
+    {
+        $member = $this->demo();
+        Sanctum::actingAs($member);
+        $this->getJson('/api/chats/general/messages')->assertJsonPath('chat.author_messages', true);
+        $id = $this->postJson('/api/chats/general/messages', ['body' => '/Вопрос администрации/'])
+            ->assertCreated()
+            ->assertJsonPath('data.private', true)
+            ->assertJsonPath('data.private_label', 'Администраторам')
+            ->assertJsonPath('data.text', 'Вопрос администрации')
+            ->json('data.id');
+
+        $admin = $this->admin();
+        Sanctum::actingAs($admin);
+        $resp = $this->getJson('/api/chats/general/messages')->assertJsonPath('chat.author_messages', false);
+        $this->assertContains($id, collect($resp->json('data'))->pluck('id'));
+
+        // Админ пишет «/…/» — это обычное сообщение, а не личное.
+        $this->postJson('/api/chats/general/messages', ['body' => '/всем/'])
+            ->assertCreated()->assertJsonPath('data.private', false);
+
+        Sanctum::actingAs(User::factory()->create());
+        $ids = collect($this->getJson('/api/chats/general/messages')->json('data'))->pluck('id');
+        $this->assertNotContains($id, $ids);
+    }
+
+    public function test_mark_chat_read_from_list(): void
+    {
+        $other = User::factory()->create();
+        Sanctum::actingAs($other);
+        $this->postJson('/api/chats/general/messages', ['body' => 'Привет'])->assertCreated();
+
+        $member = $this->demo();
+        Sanctum::actingAs($member);
+        $unread = fn () => collect($this->getJson('/api/chats')->json('data'))
+            ->flatMap(fn ($s) => $s['items'])->firstWhere('id', 'general')['unread'];
+        $this->assertGreaterThan(0, $unread());
+
+        $this->postJson('/api/chats/general/read')->assertOk();
+        $this->assertSame(0, $unread());
     }
 
     public function test_members_for_mentions(): void

@@ -240,15 +240,7 @@ struct MessageBubble: View {
             if !message.localImages.isEmpty {
                 Image(uiImage: message.localImages[index]).resizable().scaledToFill()
             } else {
-                AsyncImage(url: message.images[index].url) { phase in
-                    switch phase {
-                    case .success(let img): img.resizable().scaledToFill()
-                    case .failure(let error):
-                        let _ = print("[chat image] load failed:", message.images[index].url?.absoluteString ?? "nil", error)
-                        Color(hex: "#d9d9d9")
-                    default: ZStack { Color.white.opacity(0.1); ProgressView().tint(.white) }
-                    }
-                }
+                RemoteImage(url: message.images[index].url) { Color(hex: "#d9d9d9") }
             }
         }
         .frame(width: width, height: height)
@@ -263,16 +255,8 @@ struct MessageBubble: View {
     }
 
     private func imageView(_ image: ChatMessage.ImageAtt) -> some View {
-        AsyncImage(url: image.url) { phase in
-            switch phase {
-            case .success(let img): img.resizable().aspectRatio(contentMode: .fill)
-            case .failure(let error):
-                // Диагностика белых фото: ошибка видна в консоли Xcode.
-                let _ = print("[chat image] load failed:", image.url?.absoluteString ?? "nil", error)
-                Color(hex: "#d9d9d9")
-            default: ZStack { Color.white.opacity(0.1); ProgressView().tint(.white) }
-            }
-        }
+        // Фото из кэша (память и диск): при повторном открытии чата не грузится заново.
+        RemoteImage(url: image.url) { Color(hex: "#d9d9d9") }
         .frame(width: imageSize.width, height: imageSize.height)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .contentShape(Rectangle())

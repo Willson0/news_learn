@@ -48,6 +48,7 @@ final class ChatAudio: NSObject, ObservableObject {
         ]
         do {
             let r = try AVAudioRecorder(url: url, settings: settings)
+            r.isMeteringEnabled = true
             r.record()
             recorder = r
             recordURL = url
@@ -60,6 +61,16 @@ final class ChatAudio: NSObject, ObservableObject {
         } catch {
             return false
         }
+    }
+
+    /// Громкость голоса сейчас, 0…1 — для «дыхания» кнопки записи. Не @Published:
+    /// читается из TimelineView только той частью экрана, которой нужна.
+    func recordLevel() -> CGFloat {
+        guard let r = recorder, recording, !paused else { return 0 }
+        r.updateMeters()
+        let db = r.averagePower(forChannel: 0) // −160…0
+        let normalized = max(0, (db + 50) / 50)
+        return CGFloat(normalized * normalized)
     }
 
     func pauseRecording() {

@@ -145,6 +145,7 @@ object Repository {
     suspend fun unbindCard() = apiCall { api.unbindCard() }
 
     suspend fun leaveChat(slug: String) = apiCall { api.leaveChat(slug) }
+    suspend fun markChatRead(slug: String) = apiCall { api.markChatRead(slug) }
 
     // --- Аккаунт ---
     suspend fun changeEmail(email: String) = apiCall { api.changeEmail(ChangeEmailBody(email)) }
