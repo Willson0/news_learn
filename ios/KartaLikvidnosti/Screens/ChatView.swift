@@ -583,7 +583,9 @@ struct ChatView: View {
                     }
                     .opacity(menuFor == m.id ? 0 : 1)
                     .onTapGesture { onTap(m) }
-                    .onLongPressGesture(minimumDuration: 0.3) { onLongPress(m) }
+                    .modifier(MessageContextMenu(enabled: !selectMode && !searchMode && !m.pending && !m.isSystem) {
+                        systemMenuItems(m)
+                    })
                 if !m.mine { Spacer(minLength: 0) }
             }
         }
@@ -1018,6 +1020,79 @@ struct ChatView: View {
     }
 
     // MARK: - Меню сообщения
+
+    /// Системное меню по долгому нажатию (как в Сообщениях и Телеграме): пузырь
+    /// приподнимается, фон размывается, снизу — меню действий; реакции — строкой
+    /// эмодзи в меню (iOS 17+) или подменю «Реакция» на iOS 16.
+    @ViewBuilder private func systemMenuItems(_ m: ChatMessage) -> some View {
+        let mineReactions = Set(m.reactions.filter(\.mine).map(\.emoji))
+        if #available(iOS 17.0, *) {
+            ControlGroup {
+                ForEach(reactions, id: \.self) { r in
+                    Button { react(m.id, r) } label: { Text(r) }
+                }
+            }
+            .controlGroupStyle(.palette)
+        } else {
+            Menu {
+                ForEach(reactions, id: \.self) { r in
+                    Button { react(m.id, r) } label: {
+                        Text(mineReactions.contains(r) ? "\(r) ✓" : r)
+                    }
+                }
+            } label: {
+                Label("Реакция", systemImage: "face.smiling")
+            }
+        }
+        if let mine = reactions.first(where: { mineReactions.contains($0) }) {
+            Button { react(m.id, mine) } label: {
+                Label("Убрать реакцию \(mine)", systemImage: "xmark.circle")
+            }
+        }
+        Button {
+            replyTo = m
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { inputFocused = true }
+        } label: { Label("Ответить", systemImage: "arrowshape.turn.up.left") }
+        if let text = m.text, !text.isEmpty {
+            Button { copyText(m); showToast("Скопировано") } label: { Label("Скопировать", systemImage: "doc.on.doc") }
+        }
+        if canPin && !m.isPrivate {
+            Button {
+                if m.pinned {
+                    unpinConfirm = pins.first(where: { $0.id == m.id })
+                } else {
+                    togglePin(m.id)
+                }
+            } label: {
+                Label(m.pinned ? "Открепить" : "Закрепить", systemImage: m.pinned ? "pin.slash" : "pin")
+            }
+        }
+        Button { copyLink(m); showToast("Ссылка скопирована") } label: { Label("Копировать ссылку", systemImage: "link") }
+        Button {
+            selected = [m.id]
+            selectMode = true
+            inputFocused = false
+        } label: { Label("Выбрать", systemImage: "checkmark.circle") }
+        if !session.isAdmin && !m.mine {
+            Button { complain(m) } label: { Label("Пожаловаться", systemImage: "exclamationmark.bubble") }
+        }
+        if canDeleteAll(m) {
+            Menu {
+                Button(role: .destructive) { delete(m.id, forAll: true) } label: {
+                    Label("Удалить у всех", systemImage: "trash")
+                }
+                Button(role: .destructive) { delete(m.id, forAll: false) } label: {
+                    Label("Удалить у меня", systemImage: "trash")
+                }
+            } label: {
+                Label("Удалить", systemImage: "trash")
+            }
+        } else {
+            Button(role: .destructive) { delete(m.id, forAll: false) } label: {
+                Label("Удалить у меня", systemImage: "trash")
+            }
+        }
+    }
 
     /// «Чат зажатие сообщения» (Figma 337:36256 / 337:36316): размытие 12.9 и
     /// затемнение #070707 70 %, сверху плашка реакций, затем сообщение и
@@ -1724,4 +1799,22 @@ struct PendingPhoto: Identifiable {
     let id = UUID()
     let image: UIImage
     let jpeg: Data
+}
+
+/// Системное контекстное меню сообщения: при долгом нажатии пузырь приподнимается
+/// по своей форме (скругление 24), как в Сообщениях iPhone. В режиме выбора и
+/// поиска меню выключено.
+private struct MessageContextMenu<Items: View>: ViewModifier {
+    let enabled: Bool
+    @ViewBuilder let items: () -> Items
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content
+                .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .contextMenu { items() }
+        } else {
+            content
+        }
+    }
 }
