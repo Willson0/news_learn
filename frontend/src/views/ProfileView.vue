@@ -164,7 +164,7 @@ export default {
         <span class="profile__row-label">Подписка</span>
         <span class="profile__row-value profile__row-value--active">
           {{ subscription.active ? 'Активна' : 'Неактивна' }}
-          <small class="profile__until">до {{ subscription.until }}</small>
+          <small v-if="subscription.active && subscription.until" class="profile__until">до {{ subscription.until }}</small>
         </span>
       </div>
       <div class="profile__row">

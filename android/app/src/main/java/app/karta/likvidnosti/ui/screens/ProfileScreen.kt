@@ -174,7 +174,7 @@ fun ProfileScreen(
             p.subscription?.let {
                 AppData.subscription = it
                 subActive = it.active; subUntil = it.until ?: ""; subPrice = it.price ?: ""
-                Session.setSubscription(it.active)
+                Session.setSubscription(it)
             }
             val fresh = p.instruments.map { ProfInstrument(it.key, it.label, it.on) }
             // Список меняется только если что-то правда поменялось — без перерисовки «с нуля».

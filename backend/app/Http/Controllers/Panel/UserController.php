@@ -124,7 +124,7 @@ class UserController extends Controller
     /** Фильтр по группе; совпадает с группой из group(). */
     private function applyGroup(Builder $query, string $group): void
     {
-        $activeNow = fn (Builder $s) => $s->where('active', true)->whereDate('until', '>=', today());
+        $activeNow = fn (Builder $s) => $s->grantingAccess();
 
         match ($group) {
             'active' => $query->whereHas('subscription', $activeNow),
@@ -138,7 +138,7 @@ class UserController extends Controller
     public function group(User $user): string
     {
         $sub = $user->subscription;
-        if ($sub && $sub->active && $sub->until?->gte(today())) {
+        if ($sub?->grantsAccessNow()) {
             return 'active';
         }
 
@@ -189,7 +189,9 @@ class UserController extends Controller
             'group' => $this->group($user),
             'reports' => Report::where('status', '!=', 'draft')->count(),
             'subscription' => [
+                // active — переключатель «доступ открыт» для формы; access_now — итог по общему правилу с датой.
                 'active' => (bool) $sub?->active,
+                'access_now' => (bool) $sub?->grantsAccessNow(),
                 'amount' => $sub?->amount ?? AppSetting::defaultPrice(),
                 'months' => $sub?->months ?? AppSetting::defaultMonths(),
                 'until' => $sub?->until?->format('Y-m-d'),

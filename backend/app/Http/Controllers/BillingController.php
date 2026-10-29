@@ -272,7 +272,7 @@ class BillingController extends Controller
         }
 
         $subscription = $user->subscription;
-        if (! $subscription || ! $subscription->active) {
+        if (! $subscription?->grantsAccessNow()) {
             try {
                 $this->billing->apply($user, $this->billing->charge($user, 'renew-'.$user->id.'-bind-'.Str::random(6)));
             } catch (RuntimeException $e) {

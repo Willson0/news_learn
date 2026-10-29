@@ -24,7 +24,7 @@
                     <h3>Условия подписки</h3>
                     <p class="muted small">
                         Сейчас: {{ money(user.subscription.amount) }} за {{ user.subscription.months }} мес.,
-                        {{ user.subscription.active ? 'активна' : 'не активна' }}
+                        {{ user.subscription.access_now ? 'активна' : 'не активна' }}
                         <span v-if="user.subscription.until"> до {{ formatDate(user.subscription.until) }}</span>.
                     </p>
                     <form class="form" @submit.prevent="saveTerms">

@@ -2,6 +2,9 @@ package app.karta.likvidnosti.data.api
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 @Serializable
 class DataWrapper<T>(val data: T? = null)
@@ -84,14 +87,33 @@ class BillingBindDto(@SerialName("confirmation_url") val confirmationUrl: String
 
 @Serializable
 class SubscriptionDto(
-    val active: Boolean = false,
+    /** Флаг с сервера; в приложении смотрим на [active], где учтена ещё и дата. */
+    @SerialName("active") val serverActive: Boolean = false,
     val plan: String? = null,
+    /** Дата окончания, «dd.MM.yyyy» (включительно). */
     val until: String? = null,
     @SerialName("auto_pay") val autoPay: Boolean = false,
     @SerialName("payment_method") val paymentMethod: String? = null,
     /** Стоимость для отображения, например «990 ₽ / 1 мес.». */
     val price: String? = null,
-)
+) {
+    /**
+     * Подписка активна: флаг и дата окончания не раньше сегодняшней по Москве — то же правило,
+     * что `Subscription::grantsAccessNow()` на сервере. Дата проверяется и здесь, чтобы
+     * закэшированный ответ не показывал «активна» после окончания срока.
+     */
+    val active: Boolean get() = serverActive && untilNotPassed(until)
+
+    companion object {
+        private val UntilFormat = DateTimeFormatter.ofPattern("dd.MM.yyyy")
+        private val Moscow = ZoneId.of("Europe/Moscow")
+
+        fun untilNotPassed(until: String?): Boolean {
+            val date = until?.let { runCatching { LocalDate.parse(it, UntilFormat) }.getOrNull() } ?: return false
+            return !date.isBefore(LocalDate.now(Moscow))
+        }
+    }
+}
 
 @Serializable
 class ChatSectionDto(

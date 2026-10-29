@@ -5,8 +5,10 @@ import SwiftUI
 final class Session: ObservableObject {
     @Published var user: UserDto? { didSet { rememberRestricted() } }
     @Published var loaded: Bool = false
-    /// Активна ли подписка (nil — ещё не знаем).
+    /// Активна ли подписка (nil — ещё не знаем). Правило — `SubscriptionDto.active`.
     @Published var subscriptionActive: Bool? { didSet { rememberRestricted() } }
+    /// Дата окончания последнего известного статуса: без сети истёкшая подписка всё равно закрывается.
+    private var subscriptionUntil: String?
 
     /// Режим без подписки с прошлого запуска: пока пользователь и подписка
     /// грузятся, экраны сразу открываются в нём, без мелькания полного режима.
@@ -36,6 +38,7 @@ final class Session: ObservableObject {
     func setCurrent(_ u: UserDto?) async {
         lastRestricted = false
         subscriptionActive = nil
+        subscriptionUntil = nil
         user = u
         loaded = true
         if u != nil { Push.activate() }
@@ -45,6 +48,7 @@ final class Session: ObservableObject {
     func clear() {
         user = nil
         subscriptionActive = nil
+        subscriptionUntil = nil
         lastRestricted = false
         UserDefaults.standard.removeObject(forKey: Self.restrictedKey)
     }
@@ -53,14 +57,20 @@ final class Session: ObservableObject {
         guard TokenStore.isAuthenticated else { subscriptionActive = nil; return }
         // Нет записи подписки (сервер отдаёт data: null) — это неактивная подписка.
         do {
-            setSubscription(try await Api.fetchSubscription()?.active ?? false)
-        } catch {}
+            setSubscription(try await Api.fetchSubscription())
+        } catch {
+            if subscriptionActive == true && !SubscriptionDto.untilNotPassed(subscriptionUntil) {
+                subscriptionActive = false
+            }
+        }
     }
 
     /// Свежий статус подписки (из профиля, экрана подписки или обновления).
     /// После оплаты приложение разблокируется на месте: навбар и экраны
     /// переходят в полный режим с анимацией прототипа.
-    func setSubscription(_ active: Bool) {
+    func setSubscription(_ sub: SubscriptionDto?) {
+        subscriptionUntil = sub?.until
+        let active = sub?.active ?? false
         guard subscriptionActive != active else { return }
         let wasRestricted = restricted
         if wasRestricted && active {

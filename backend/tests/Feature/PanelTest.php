@@ -337,6 +337,22 @@ class PanelTest extends TestCase
         ])->assertOk()->assertJson(['devices' => 1, 'sent' => 1]);
     }
 
+    public function test_broadcast_treats_expired_subscription_as_free(): void
+    {
+        $this->fakeFcm();
+        $expired = $this->user();
+        // Флаг остался включённым, но срок вышел: это уже не подписчик.
+        Subscription::create(['user_id' => $expired->id, 'active' => true, 'auto_pay' => true, 'until' => today()->subDays(4)]);
+        DeviceToken::create(['user_id' => $expired->id, 'token' => 'expired-dev']);
+
+        $this->asPanel()->postJson('/admin/api/push', [
+            'title' => 'Новости', 'body' => 'Для подписчиков', 'audience' => 'subscribed',
+        ])->assertOk()->assertJson(['devices' => 0]);
+        $this->asPanel()->postJson('/admin/api/push', [
+            'title' => 'Акция', 'body' => 'Для всех без подписки', 'audience' => 'free',
+        ])->assertOk()->assertJson(['devices' => 1]);
+    }
+
     public function test_devices_register_and_unregister(): void
     {
         $user = $this->user();

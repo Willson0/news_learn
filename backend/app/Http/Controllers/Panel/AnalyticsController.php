@@ -108,7 +108,7 @@ class AnalyticsController extends Controller
     {
         /** @var Subscription|null $sub */
         $sub = $user->subscription;
-        if ($sub && $sub->active && $sub->until?->gte(today())) {
+        if ($sub?->grantsAccessNow()) {
             return 'active';
         }
 

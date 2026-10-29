@@ -89,7 +89,7 @@ fun SubscriptionScreen(onBack: () -> Unit) {
             autoPay = it.autoPay
             known = true
             AppData.subscription = it
-            Session.setSubscription(it.active)
+            Session.setSubscription(it)
         }
         known = true
         refreshCard()

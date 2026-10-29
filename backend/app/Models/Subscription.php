@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -17,25 +18,31 @@ class Subscription extends Model
         'until' => 'date',
     ];
 
-    /** Дней после окончания периода на автосписание: пока оно идёт, доступ не закрываем. */
-    public const RENEWAL_GRACE_DAYS = 3;
+    /** Подписка считается по московскому календарю: «до 25.10» значит доступ весь день 25.10 по Москве. */
+    public const TIMEZONE = 'Europe/Moscow';
+
+    /** Сегодняшняя дата по Москве, Y-m-d. */
+    public static function today(): string
+    {
+        return now(self::TIMEZONE)->toDateString();
+    }
 
     /**
-     * Доступ по подписке открыт сейчас. Дата окончания действует всегда: включённое автопродление
-     * даёт лишь несколько дней на списание, а не бессрочный доступ.
+     * Единственное правило «подписка активна»: флаг active и дата окончания не раньше сегодняшней
+     * (день окончания включительно). Без даты подписка не активна. Это же правило повторяет
+     * scopeGrantingAccess() для запросов, а приложения проверяют его ещё раз у себя по полю until.
      */
     public function grantsAccessNow(): bool
     {
-        if (! $this->active) {
-            return false;
-        }
-        if ($this->until === null) {
-            return true;
-        }
+        return $this->active
+            && $this->until !== null
+            && $this->until->toDateString() >= self::today();
+    }
 
-        $grace = $this->auto_pay ? self::RENEWAL_GRACE_DAYS : 0;
-
-        return $this->until->copy()->addDays($grace)->gte(today());
+    /** То же правило, что grantsAccessNow(), для выборок (админка, рассылки, аналитика). */
+    public function scopeGrantingAccess(Builder $query): Builder
+    {
+        return $query->where('active', true)->whereNotNull('until')->whereDate('until', '>=', self::today());
     }
 
     public function user(): BelongsTo

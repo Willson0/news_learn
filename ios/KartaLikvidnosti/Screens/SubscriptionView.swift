@@ -141,7 +141,7 @@ struct SubscriptionView: View {
             if let s = try await Api.fetchSubscription() {
                 withoutAnimation { apply(s) }
                 appData.subscription = s
-                session.setSubscription(s.active)
+                session.setSubscription(s)
             }
         } catch {}
         if !known { withoutAnimation { known = true } }

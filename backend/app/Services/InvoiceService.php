@@ -140,7 +140,7 @@ class InvoiceService
         DB::transaction(function () use ($invoice, $state) {
             $user = $invoice->user;
             $sub = Subscription::firstOrCreate(['user_id' => $user->id]);
-            $base = $sub->until && $sub->until->gte(today()) ? $sub->until : today();
+            $base = $sub->until && $sub->until->toDateString() >= Subscription::today() ? $sub->until : Subscription::today();
 
             $sub->fill([
                 'active' => true,

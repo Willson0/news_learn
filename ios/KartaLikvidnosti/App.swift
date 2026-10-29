@@ -7,6 +7,7 @@ struct KartaLikvidnostiApp: App {
     @StateObject private var session = Session()
     @StateObject private var router = Router()
     @StateObject private var appData = AppData()
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         Self.configureAppearance()
@@ -20,6 +21,10 @@ struct KartaLikvidnostiApp: App {
                 .environmentObject(appData)
                 .preferredColorScheme(.dark)
                 .tint(Theme.green)
+                // Подписка могла закончиться (или продлиться), пока приложение было в фоне.
+                .onChange(of: scenePhase) { phase in
+                    if phase == .active { Task { await session.loadSubscription() } }
+                }
         }
     }
 

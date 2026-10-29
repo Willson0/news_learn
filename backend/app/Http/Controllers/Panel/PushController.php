@@ -29,8 +29,8 @@ class PushController extends Controller
         }
 
         $tokens = DeviceToken::query()
-            ->when($data['audience'] === 'subscribed', fn ($q) => $q->whereHas('user.subscription', fn ($s) => $s->where('active', true)))
-            ->when($data['audience'] === 'free', fn ($q) => $q->whereDoesntHave('user.subscription', fn ($s) => $s->where('active', true)))
+            ->when($data['audience'] === 'subscribed', fn ($q) => $q->whereHas('user.subscription', fn ($s) => $s->grantingAccess()))
+            ->when($data['audience'] === 'free', fn ($q) => $q->whereDoesntHave('user.subscription', fn ($s) => $s->grantingAccess()))
             ->pluck('token')
             ->unique()
             ->values()

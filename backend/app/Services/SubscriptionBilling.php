@@ -75,7 +75,7 @@ class SubscriptionBilling
         }
 
         [$amount, $months] = $this->terms($user);
-        $base = $sub->until && $sub->until->gte(today()) ? $sub->until : today();
+        $base = $sub->until && $sub->until->toDateString() >= Subscription::today() ? $sub->until : Subscription::today();
 
         $sub->fill([
             'active' => true,
@@ -108,7 +108,7 @@ class SubscriptionBilling
         $count = 0;
         Subscription::with('user')
             ->where('auto_pay', true)
-            ->whereDate('until', '<=', today())
+            ->whereDate('until', '<=', Subscription::today())
             ->each(function (Subscription $sub) use (&$count) {
                 $user = $sub->user;
                 if (! $user) {

@@ -456,7 +456,7 @@ struct ProfileView: View {
             let p = try await Api.fetchProfile()
             withoutAnimation { apply(p) }
             appData.profile = p
-            if let s = p.subscription { appData.subscription = s; session.setSubscription(s.active) }
+            if let s = p.subscription { appData.subscription = s; session.setSubscription(s) }
         } catch {}
         do { history = try await Api.fetchReports() } catch { /* оставляем предзагруженную историю */ }
     }

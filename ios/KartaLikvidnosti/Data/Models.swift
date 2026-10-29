@@ -163,17 +163,19 @@ struct InstrumentsResponse: Decodable {
 }
 
 struct SubscriptionDto: Decodable {
-    let active: Bool
+    /// Флаг с сервера; в приложении смотрим на `active`, где учтена ещё и дата.
+    let serverActive: Bool
     let plan: String?
     /// Стоимость для отображения, например «990 ₽ / 1 мес.».
     let price: String?
+    /// Дата окончания, «dd.MM.yyyy» (включительно).
     let until: String?
     let autoPay: Bool
     let paymentMethod: String?
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        active = (try c.decodeIfPresent(Bool.self, forKey: .active)) ?? false
+        serverActive = (try c.decodeIfPresent(Bool.self, forKey: .active)) ?? false
         plan = try c.decodeIfPresent(String.self, forKey: .plan)
         price = try c.decodeIfPresent(String.self, forKey: .price)
         until = try c.decodeIfPresent(String.self, forKey: .until)
@@ -184,6 +186,22 @@ struct SubscriptionDto: Decodable {
         case active, plan, price, until
         case autoPay = "auto_pay"
         case paymentMethod = "payment_method"
+    }
+
+    /// Подписка активна: флаг и дата окончания не раньше сегодняшней по Москве — то же правило,
+    /// что `Subscription::grantsAccessNow()` на сервере. Дата проверяется и здесь, чтобы
+    /// закэшированный ответ не показывал «активна» после окончания срока.
+    var active: Bool { serverActive && Self.untilNotPassed(until) }
+
+    static func untilNotPassed(_ until: String?) -> Bool {
+        guard let until else { return false }
+        let parts = until.split(separator: ".").compactMap { Int($0) }
+        guard parts.count == 3 else { return false }
+        var moscow = Calendar(identifier: .gregorian)
+        moscow.timeZone = TimeZone(identifier: "Europe/Moscow") ?? .current
+        let today = moscow.dateComponents([.year, .month, .day], from: Date())
+        guard let y = today.year, let m = today.month, let d = today.day else { return false }
+        return (parts[2], parts[1], parts[0]) >= (y, m, d)
     }
 }
 
