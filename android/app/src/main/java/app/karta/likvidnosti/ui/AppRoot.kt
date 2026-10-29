@@ -88,19 +88,24 @@ fun AppRoot() {
         nav.navigate(Routes.LOGIN) { popUpTo(0) { inclusive = true } }
     }
     val actions = remember(nav) { NavActions(nav) }
-    val start = if (authed) Routes.HOME else Routes.LOGIN
+    // Без подписки приложение сразу открывается на профиле (без мелькания главной).
+    val start = when {
+        !authed -> Routes.LOGIN
+        Session.restricted -> Routes.PROFILE
+        else -> Routes.HOME
+    }
 
     val backStack by nav.currentBackStackEntryAsState()
     val currentBase = Routes.base(backStack?.destination?.route)
     val isAdmin = Session.isAdmin
     val restricted = Session.restricted
 
-    // Без подписки главная и аналитика недоступны — открываем «Сообщество»
+    // Без подписки главная и аналитика недоступны — открываем «Профиль» с оплатой
     // (iOS MainFlow.enforceRestriction). После оплаты остаёмся на месте: как в
     // прототипе, «Профиль» раскрывается в полный, навбар — в четыре вкладки.
     LaunchedEffect(restricted, currentBase) {
         if (restricted && (currentBase == Routes.HOME || currentBase == Routes.ANALYTICS)) {
-            nav.navigate(Routes.COMMUNITY) {
+            nav.navigate(Routes.PROFILE) {
                 popUpTo(0) { inclusive = true }
                 launchSingleTop = true
             }
@@ -134,7 +139,7 @@ fun AppRoot() {
         scope.launch {
             runCatching { Session.load(force = true) }
             scope.launch { AppData.preload() }
-            nav.navigate(Routes.HOME) { popUpTo(0) { inclusive = true } }
+            nav.navigate(if (Session.restricted) Routes.PROFILE else Routes.HOME) { popUpTo(0) { inclusive = true } }
         }
     }
 

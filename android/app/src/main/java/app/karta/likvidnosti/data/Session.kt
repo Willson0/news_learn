@@ -6,18 +6,12 @@ import androidx.compose.runtime.setValue
 import app.karta.likvidnosti.data.api.Network
 import app.karta.likvidnosti.data.api.UserDto
 import app.karta.likvidnosti.data.api.apiCall
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 
 /**
  * Текущий пользователь и его права (аналог frontend/src/api/session.js и
  * iOS `Data/Session.swift`).
  */
 object Session {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-
     var user by mutableStateOf<UserDto?>(null)
         private set
     var loaded by mutableStateOf(false)
@@ -35,10 +29,12 @@ object Session {
      */
     val restricted: Boolean get() = user != null && !isAdmin && subscriptionActive == false
 
-    fun setCurrent(u: UserDto?) {
+    /** После входа подписку узнаём до показа приложения: без неё сразу откроется профиль. */
+    suspend fun setCurrent(u: UserDto?) {
+        subscriptionActive = null
         user = u
         loaded = true
-        scope.launch { loadSubscription() }
+        loadSubscription()
     }
 
     fun clear() {

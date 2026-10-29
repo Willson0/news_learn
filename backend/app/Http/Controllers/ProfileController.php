@@ -166,7 +166,9 @@ class ProfileController extends Controller
         $sub = $user->subscription;
 
         return [
-            'active' => (bool) $sub?->active,
+            // Как в /subscription и в проверке доступа к отчётам: флаг active без учёта
+            // даты окончания давал приложению «подписка есть», а отчёты приходили пустыми.
+            'active' => (bool) $sub?->grantsAccessNow(),
             'plan' => $sub?->plan,
             'until' => $sub?->until?->format('d.m.Y'),
             'auto_pay' => (bool) $sub?->auto_pay,

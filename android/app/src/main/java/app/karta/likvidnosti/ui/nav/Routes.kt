@@ -61,9 +61,9 @@ class NavActions(private val nav: NavHostController) {
     }
 
     private fun tab(route: String) = nav.navigate(route) {
-        // Без подписки корень стека — «Сообщество» (главной в стеке нет).
+        // Без подписки корень стека — «Профиль» (главной в стеке нет).
         if (Session.restricted) {
-            popUpTo(Routes.COMMUNITY) { saveState = true }
+            popUpTo(Routes.PROFILE) { saveState = true }
         } else {
             popUpTo(nav.graph.startDestinationId) { saveState = true }
         }

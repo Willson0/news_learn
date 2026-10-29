@@ -67,10 +67,10 @@ private struct MainFlow: View {
 
     @EnvironmentObject private var session: Session
 
-    /// Без подписки главная и аналитика недоступны — открываем «Сообщество».
+    /// Без подписки главная и аналитика недоступны — открываем «Профиль» с оплатой.
     private func enforceRestriction() {
         guard session.restricted, router.tab == .home || router.tab == .analytics else { return }
-        router.switchTab(.community)
+        router.switchTab(.profile)
     }
 
     private func stack<Content: View>(_ t: Tab, @ViewBuilder _ root: () -> Content) -> some View {

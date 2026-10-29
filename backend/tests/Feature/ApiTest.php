@@ -53,6 +53,18 @@ class ApiTest extends TestCase
             ->assertJsonFragment(['key' => 'gold', 'label' => 'Золото', 'on' => true]);
     }
 
+    public function test_expired_subscription_is_inactive_everywhere(): void
+    {
+        $user = User::where('email', 'demo@karta.app')->first();
+        $user->subscription->update(['active' => true, 'auto_pay' => false, 'until' => today()->subDay()]);
+        Sanctum::actingAs($user);
+
+        // Профиль, экран подписки и отчёты согласованы: приложение не мигает режимами.
+        $this->getJson('/api/profile')->assertOk()->assertJsonPath('subscription.active', false);
+        $this->getJson('/api/subscription')->assertOk()->assertJsonPath('data.active', false);
+        $this->assertSame([], $this->getJson('/api/reports')->assertOk()->json('data'));
+    }
+
     public function test_sync_instruments(): void
     {
         $user = User::where('email', 'demo@karta.app')->first();

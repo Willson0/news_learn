@@ -184,7 +184,7 @@ struct LoginView: View {
             do {
                 if mode == .login {
                     let user = try await Api.loginWithPassword(identifier: identifier.trimmed, password: password)
-                    session.setCurrent(user)
+                    await session.setCurrent(user)
                     router.enterApp()
                 } else {
                     let e = email.trimmed

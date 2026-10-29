@@ -59,7 +59,7 @@ struct RegisterConfirmView: View {
         Task {
             do {
                 let user = try await Api.confirmRegistration(email: email, code: code)
-                session.setCurrent(user)
+                await session.setCurrent(user)
                 router.authPath.append(.registerProfile)
             } catch let e as ApiError {
                 Haptics.rigid(); error = e.firstError

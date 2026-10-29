@@ -122,7 +122,7 @@ struct PasswordRecoveryView: View {
         Task { @MainActor in
             do {
                 let user = try await Api.resetPassword(email: email.trimmed, password: newPassword, code: code)
-                session.setCurrent(user)
+                await session.setCurrent(user)
                 Haptics.medium()
                 done = true
             } catch let err as ApiError {

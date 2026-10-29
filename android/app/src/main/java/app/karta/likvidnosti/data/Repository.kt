@@ -54,7 +54,7 @@ fun fileUrl(path: String?): String? {
 object Repository {
     private val api get() = Network.api
 
-    private fun applyToken(resp: TokenResponse): UserDto? {
+    private suspend fun applyToken(resp: TokenResponse): UserDto? {
         TokenStore.token = resp.token
         Session.setCurrent(resp.user)
         Push.syncToken()
