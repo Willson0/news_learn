@@ -20,6 +20,8 @@ struct ChatMessage: Identifiable {
     /// Фото, которые ещё уходят на сервер: показываются сразу с индикатором загрузки.
     var localImages: [UIImage] = []
     var pending: Bool = false
+    /// Не ушло на сервер: красный «!», по нажатию — «Повторить / Удалить».
+    var failed: Bool = false
     var file: FileAtt? = nil
     var voice: VoiceAtt? = nil
     var reactions: [Reaction] = []
@@ -50,7 +52,7 @@ struct ChatMessage: Identifiable {
         role = dto.role
         avatarUrl = dto.avatarUrl
         text = dto.text
-        time = dto.time
+        time = ChatDates.time(dto.createdAt, fallback: dto.time)
         createdAt = dto.createdAt
         read = dto.read
         pinned = dto.pinned
@@ -361,7 +363,13 @@ struct MessageBubble: View {
                     Text(time).font(Theme.sans(10)).foregroundStyle(secondary)
                 }
                 if message.mine {
-                    ReadMark(read: message.read).padding(.bottom, 2.5)
+                    if message.failed {
+                        FailedMark().padding(.bottom, 0.5)
+                    } else if message.pending {
+                        SendingMark().padding(.bottom, 1.5)
+                    } else {
+                        ReadMark(read: message.read).padding(.bottom, 2.5)
+                    }
                 }
             }
             .fixedSize()
@@ -405,6 +413,34 @@ struct ReadMark: View {
         }
         .frame(width: 11, height: 8, alignment: .leading)
         .animation(.easeOut(duration: 0.25), value: read)
+    }
+}
+
+/// Часики: сообщение отправляется.
+struct SendingMark: View {
+    var body: some View {
+        ZStack {
+            Circle().stroke(Color.white, lineWidth: 1)
+            Path { p in
+                p.move(to: CGPoint(x: 5, y: 5)); p.addLine(to: CGPoint(x: 5, y: 2.4))
+                p.move(to: CGPoint(x: 5, y: 5)); p.addLine(to: CGPoint(x: 7, y: 5))
+            }
+            .stroke(Color.white, style: StrokeStyle(lineWidth: 1, lineCap: .round))
+        }
+        .frame(width: 10, height: 10)
+        .accessibilityLabel("Отправляется")
+    }
+}
+
+/// Красный «!»: сообщение не отправилось.
+struct FailedMark: View {
+    var body: some View {
+        Text("!")
+            .font(Theme.sans(9, .bold))
+            .foregroundStyle(Color.white)
+            .frame(width: 12, height: 12)
+            .background(Theme.error, in: Circle())
+            .accessibilityLabel("Не отправлено")
     }
 }
 

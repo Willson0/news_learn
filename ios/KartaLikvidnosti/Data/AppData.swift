@@ -6,6 +6,8 @@ import SwiftUI
 @MainActor
 final class AppData: ObservableObject {
     @Published var reports: [ReportDto] = []
+    /// Когда лента последний раз пришла с сервера (nil — ещё не загружалась) — для плашки «Показаны данные от 14:05».
+    @Published var reportsAt: Date? = nil
     @Published var chats: [ChatSectionDto] = []
     @Published var profile: ProfileResponse? = nil
     /// Последнее известное состояние подписки: экраны «Профиль» и «Управление подпиской»
@@ -18,17 +20,17 @@ final class AppData: ObservableObject {
     /// Тихо подгружает ленту, чаты и профиль. Ошибки гасим — экраны обновят сами.
     func preload() async {
         guard TokenStore.isAuthenticated else {
-            reports = []; chats = []; profile = nil; subscription = nil; card = nil; preloaded = false
+            reports = []; reportsAt = nil; chats = []; profile = nil; subscription = nil; card = nil; preloaded = false
             return
         }
-        if let r = try? await Api.fetchReports() { reports = r }
+        if let r = try? await Api.fetchReports() { reports = r; reportsAt = Date() }
         if let c = try? await Api.fetchChats(), !c.isEmpty { chats = c }
         if let p = try? await Api.fetchProfile() { profile = p; subscription = p.subscription ?? subscription }
         preloaded = true
     }
 
     func clear() {
-        reports = []; chats = []; profile = nil; subscription = nil; card = nil; preloaded = false
+        reports = []; reportsAt = nil; chats = []; profile = nil; subscription = nil; card = nil; preloaded = false
     }
 }
 

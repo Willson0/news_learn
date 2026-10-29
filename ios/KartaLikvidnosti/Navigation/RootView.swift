@@ -13,6 +13,7 @@ struct RootView: View {
                 AuthFlow()
             }
         }
+        .appToastHost()
         .task {
             await session.load()
             await appData.preload()

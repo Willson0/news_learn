@@ -30,6 +30,9 @@ struct ChatView: View {
     @State private var pinIndex = 0
     /// Открепление спрашивает подтверждение.
     @State private var unpinConfirm: MessageQuoteDto? = nil
+    /// Неотправленные сообщения: id временного пузыря → запрос, которым его можно отправить ещё раз.
+    @State private var retryRequests: [Int: () async throws -> MessageDto?] = [:]
+    @State private var failedMenuFor: Int? = nil
     /// Попап «Удалить у всех / у меня» над корзиной в режиме выбора.
     @State private var selectDeleteMenu = false
     /// Переход к сообщению (закреп, поиск): прокрутка и короткая подсветка.
@@ -198,6 +201,15 @@ struct ChatView: View {
             if let id = currentSearchId { jump(to: id, flash: false) }
         }
         .onChange(of: router.chatSearchRequest) { req in if req == chatId { router.chatSearchRequest = nil; openSearch() } }
+        .confirmationDialog("Сообщение не отправлено",
+                            isPresented: Binding(get: { failedMenuFor != nil }, set: { if !$0 { failedMenuFor = nil } }),
+                            titleVisibility: .visible, presenting: failedMenuFor) { id in
+            Button("Повторить") { retryFailed(id) }
+            Button("Удалить", role: .destructive) { discardFailed(id) }
+            Button("Отмена", role: .cancel) {}
+        } message: { _ in
+            Text("Проверьте соединение и попробуйте ещё раз")
+        }
         .alert("Открепить сообщение?", isPresented: Binding(get: { unpinConfirm != nil }, set: { if !$0 { unpinConfirm = nil } }),
                presenting: unpinConfirm) { p in
             Button("Открепить", role: .destructive) { unpin(p.id) }
@@ -508,26 +520,33 @@ struct ChatView: View {
                                 }
                             }
                         } else {
-                            if !visibleMessages.isEmpty {
-                                Text("Сегодня")
-                                    .font(Theme.sans(Theme.fontSm))
-                                    .foregroundStyle(Theme.text)
-                                    .padding(.horizontal, 12)
-                                    .frame(height: 24)
-                                    .liquidGlass(Capsule())
-                                    .padding(.bottom, 12)
-                            }
                             let list = visibleMessages
                             ForEach(Array(list.enumerated()), id: \.element.id) { idx, m in
-                                Group {
-                                    if m.isSystem {
-                                        systemRow(m)
-                                    } else {
-                                        messageRow(m, prev: idx > 0 ? list[idx - 1] : nil,
-                                                   next: idx + 1 < list.count ? list[idx + 1] : nil)
+                                // Разделитель по дням над первым сообщением каждого дня.
+                                let day = ChatDates.day(m.createdAt)
+                                let newDay = idx == 0 || ChatDates.day(list[idx - 1].createdAt) != day
+                                VStack(spacing: 0) {
+                                    if newDay {
+                                        Text(ChatDates.dayLabel(day))
+                                            .font(Theme.sans(Theme.fontSm))
+                                            .foregroundStyle(Theme.text)
+                                            .padding(.horizontal, 12)
+                                            .frame(height: 24)
+                                            .liquidGlass(Capsule())
+                                            .padding(.top, idx == 0 ? 0 : 12)
+                                            .padding(.bottom, 12)
+                                            .accessibilityAddTraits(.isHeader)
                                     }
+                                    Group {
+                                        if m.isSystem {
+                                            systemRow(m)
+                                        } else {
+                                            messageRow(m, prev: idx > 0 && !newDay ? list[idx - 1] : nil,
+                                                       next: idx + 1 < list.count && ChatDates.day(list[idx + 1].createdAt) == day ? list[idx + 1] : nil)
+                                        }
+                                    }
+                                    .padding(.top, idx == 0 || newDay ? 0 : (sameAuthor(list[idx - 1], m) ? 4 : 12))
                                 }
-                                .padding(.top, idx == 0 ? 0 : (sameAuthor(list[idx - 1], m) ? 4 : 12))
                                 .id(m.id)
                             }
                         }
@@ -605,7 +624,7 @@ struct ChatView: View {
                     }
                     .opacity(menuFor == m.id ? 0 : 1)
                     .onTapGesture { onTap(m) }
-                    .modifier(MessageContextMenu(enabled: !selectMode && !searchMode && !m.pending && !m.isSystem) {
+                    .modifier(MessageContextMenu(enabled: !selectMode && !searchMode && !m.pending && !m.failed && !m.isSystem) {
                         systemMenuItems(m)
                     })
                 if !m.mine { Spacer(minLength: 0) }
@@ -667,12 +686,13 @@ struct ChatView: View {
 
     /// Тап: в режиме выбора — отметить. Меню — только по долгому нажатию.
     private func onTap(_ m: ChatMessage) {
-        if selectMode { toggleSelect(m.id) }
+        if selectMode { toggleSelect(m.id) } else if m.failed { failedMenuFor = m.id }
     }
 
     /// Долгое нажатие — реакции и меню действий (как в макете «зажатие сообщения»).
     private func onLongPress(_ m: ChatMessage) {
         if selectMode { toggleSelect(m.id); return }
+        if m.failed { failedMenuFor = m.id; return }
         guard !m.pending, !m.isSystem else { return }
         inputFocused = false
         Haptics.medium()
@@ -1295,18 +1315,20 @@ struct ChatView: View {
     }
     private func exitSelect() { selectMode = false; selected = []; selectDeleteMenu = false }
     private func toggleSelect(_ id: Int) {
+        // Временные пузыри (ещё не на сервере) выбрать нельзя.
+        guard id > 0 else { return }
         Haptics.light()
         if selected.contains(id) { selected.remove(id) } else { selected.insert(id) }
     }
 
     /// Удалить у всех: своё, а у админа и автора отчёта — любое (решает сервер).
     private func canDeleteAll(_ m: ChatMessage) -> Bool {
-        if m.pending { return false }
+        if m.pending || m.failed { return false }
         return m.canDelete ?? (m.mine || session.isAdmin)
     }
 
     private func deleteSelected(forAll: Bool) {
-        let ids = selected.filter { id in messages.contains { $0.id == id && !$0.pending } }
+        let ids = selected.filter { id in messages.contains { $0.id == id && !$0.pending && !$0.failed } }
         exitSelect()
         withAnimation(Motion.standard) { messages.removeAll { ids.contains($0.id) } }
         pins.removeAll { ids.contains($0.id) }
@@ -1332,18 +1354,71 @@ struct ChatView: View {
         String(format: "%02d:%02d", audio.elapsed / 60, audio.elapsed % 60)
     }
 
+    /// Отправка с часиками: пузырь сразу в ленте, после ответа сервера — настоящий, при ошибке — «!».
+    private func runSend(_ localId: Int, _ request: @escaping () async throws -> MessageDto?) {
+        retryRequests[localId] = request
+        Task { @MainActor in
+            do {
+                let dto = try await request()
+                retryRequests[localId] = nil
+                guard let index = messages.firstIndex(where: { $0.id == localId }) else {
+                    if let dto, !messages.contains(where: { $0.id == dto.id }) { messages.append(ChatMessage(dto)) }
+                    return
+                }
+                if let dto, !messages.contains(where: { $0.id == dto.id }) {
+                    messages[index] = ChatMessage(dto)
+                } else {
+                    messages.remove(at: index)
+                }
+            } catch {
+                if let index = messages.firstIndex(where: { $0.id == localId }) {
+                    messages[index].pending = false
+                    messages[index].failed = true
+                }
+                let message = (error as? ApiError)?.message ?? ""
+                showToast(!message.isEmpty && message.count < 120 ? message : "Сообщение не отправлено")
+            }
+        }
+    }
+
+    private func sendOptimistic(_ temp: ChatMessage, _ request: @escaping () async throws -> MessageDto?) {
+        var m = temp
+        m.mine = true
+        m.author = session.user?.name
+        m.pending = true
+        m.failed = false
+        messages.append(m)
+        runSend(m.id, request)
+    }
+
+    private func retryFailed(_ id: Int) {
+        failedMenuFor = nil
+        guard let request = retryRequests[id], let index = messages.firstIndex(where: { $0.id == id }) else { return }
+        messages[index].failed = false
+        messages[index].pending = true
+        runSend(id, request)
+    }
+
+    private func discardFailed(_ id: Int) {
+        failedMenuFor = nil
+        retryRequests[id] = nil
+        messages.removeAll { $0.id == id }
+    }
+
+    private static func localMessageId() -> Int { -Int(Date().timeIntervalSince1970 * 1000) - Int.random(in: 0..<1000) }
+
     private func send() {
         if !pendingPhotos.isEmpty { sendPendingPhotos(); return }
         let body = draft.trimmed
         guard !body.isEmpty else { return }
         draft = ""
-        let reply = replyTo?.id
+        let reply = replyTo
         replyTo = nil
-        Task { @MainActor in
-            if let dto = try? await Api.sendMessage(chatId, body: body, replyTo: reply) {
-                messages.append(ChatMessage(dto))
-            }
-        }
+        let chat = chatId
+        var temp = ChatMessage(pendingId: Self.localMessageId(), localImages: [], text: body)
+        if let reply { temp.reply = ChatMessage.Reply(author: reply.mine ? "Вы" : (reply.author ?? ""), text: reply.text ?? "") }
+        temp.isPrivate = reply?.isPrivate == true
+        sendOptimistic(temp) { try await Api.sendMessage(chat, body: body, replyTo: reply?.id) }
     }
 
     private func sendAttachment(data: Data, filename: String, mime: String, kind: String, duration: Int? = nil) {
@@ -1402,7 +1477,21 @@ struct ChatView: View {
         recordLocked = false
         if let result = audio.stopRecording() {
             Haptics.soft()
-            sendAttachment(data: result.data, filename: "voice.m4a", mime: "audio/m4a", kind: "voice", duration: result.duration)
+            guard !result.data.isEmpty else { return }
+            // Голосовое тоже сразу в ленте с часиками; не ушло — «!» и «Повторить».
+            let reply = replyTo
+            replyTo = nil
+            let chat = chatId
+            let data = result.data
+            let duration = result.duration
+            var temp = ChatMessage(pendingId: Self.localMessageId(), localImages: [], text: nil)
+            temp.voice = ChatMessage.VoiceAtt(url: nil, duration: String(format: "%d:%02d", duration / 60, duration % 60))
+            if let reply { temp.reply = ChatMessage.Reply(author: reply.mine ? "Вы" : (reply.author ?? ""), text: reply.text ?? "") }
+            temp.isPrivate = reply?.isPrivate == true
+            sendOptimistic(temp) {
+                try await Api.sendMessage(chat, body: nil, replyTo: reply?.id,
+                                          attachment: (data, "voice.m4a", "audio/m4a"), kind: "voice", duration: duration)
+            }
         }
     }
 
@@ -1759,8 +1848,8 @@ struct ChatView: View {
             serverChat = resp.chat
             pins = resp.pins
             clampPinIndex()
-            // Фото, которые ещё отправляются, не пропадают при обновлении ленты.
-            let pending = messages.filter(\.pending)
+            // Сообщения, которые ещё отправляются или не отправились, не пропадают при обновлении ленты.
+            let pending = messages.filter { $0.pending || $0.failed }
             messages = resp.data.map(ChatMessage.init) + pending
         } catch {}
     }

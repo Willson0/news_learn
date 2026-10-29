@@ -234,6 +234,8 @@ struct ChatItemDto: Decodable, Identifiable {
     let sender: String?
     let preview: String?
     let time: String?
+    /// Время последнего сообщения, ISO 8601 — подпись «16:32 / вчера / 12 окт» считает приложение.
+    var lastAt: String? = nil
     var unread: Int
     /// Чат нельзя покинуть вручную (личный чат и чат отчёта).
     let permanent: Bool
@@ -265,6 +267,7 @@ struct ChatItemDto: Decodable, Identifiable {
         sender = try c.decodeIfPresent(String.self, forKey: .sender)
         preview = try c.decodeIfPresent(String.self, forKey: .preview)
         time = try c.decodeIfPresent(String.self, forKey: .time)
+        lastAt = try c.decodeIfPresent(String.self, forKey: .lastAt)
         unread = (try c.decodeIfPresent(Int.self, forKey: .unread)) ?? 0
         permanent = (try c.decodeIfPresent(Bool.self, forKey: .permanent)) ?? false
         canManage = try c.decodeIfPresent(Bool.self, forKey: .canManage)
@@ -277,6 +280,7 @@ struct ChatItemDto: Decodable, Identifiable {
         case canManage = "can_manage"
         case canPin = "can_pin"
         case authorMessages = "author_messages"
+        case lastAt = "last_at"
     }
 }
 
