@@ -410,10 +410,17 @@ fun ChatScreen(
 
     val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
     val keyboardShown = imeBottom > 0.dp
-    val bottomPad = if (keyboardShown) imeBottom + 12.dp else designBottom(45.dp)
+    // Отступ плавно идёт за клавиатурой и не прыгает с 12 на 45 в конце её скрытия.
+    val bottomPad = maxOf(imeBottom + 12.dp, designBottom(45.dp))
 
+    // К последнему сообщению — при новых сообщениях и когда клавиатура появилась.
+    // Когда она убрана (долгое нажатие, выбор), лента остаётся на месте: иначе
+    // зажатое сообщение уезжает, и после меню виден уже другой участок чата.
+    var keyboardWas by remember { mutableStateOf(false) }
     LaunchedEffect(visible.size, loaded, keyboardShown) {
-        if (loaded && visible.isNotEmpty() && !searchMode) {
+        val keyboardHidden = keyboardWas && !keyboardShown
+        keyboardWas = keyboardShown
+        if (loaded && visible.isNotEmpty() && !searchMode && !keyboardHidden) {
             runCatching { listState.animateScrollToItem(visible.size) }
         }
     }
@@ -859,6 +866,7 @@ fun ChatScreen(
         closeMenu()
         selectMode = true
         focusManager.clearFocus()
+        keyboard?.hide()
     }
 
     fun exitSelect() { selectMode = false; selectDeleteMenu = false; selected.clear() }
@@ -900,6 +908,7 @@ fun ChatScreen(
         if (m.uploading || m.isSystem || searchMode) return
         if (selectMode) { toggleSelect(m.id); return }
         focusManager.clearFocus()
+        keyboard?.hide()
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
         attachOpen = false
         deleteMenu = false
