@@ -59,6 +59,11 @@ sealed class ChartSource {
                 symbolInWidgetCode(value)?.let { widgetUrl(it) }?.let { return Url(it) }
                 return Html(page(value))
             }
+            // Просто тикер: «OANDA:XAUUSD», «OANDA-XAUUSD» или «XAUUSD».
+            if (BareSymbol.matches(value) && (!value.contains('.') || value.contains(':'))) {
+                val symbol = if (value.contains(':')) value else value.replace('-', ':')
+                widgetUrl(symbol.uppercase())?.let { return Url(it) }
+            }
             val text = if (value.lowercase().startsWith("http")) value else "https://$value"
             val uri = runCatching { Uri.parse(text) }.getOrNull() ?: return null
             val host = uri.host?.lowercase() ?: return null
@@ -82,6 +87,8 @@ sealed class ChartSource {
             }
             return null
         }
+
+        private val BareSymbol = Regex("""^[A-Za-z0-9_.!]+([:\-][A-Za-z0-9_.!]+)?$""")
 
         private val WidgetSymbol = Regex("""["']?symbol["']?\s*:\s*["']([^"']+)["']""")
 

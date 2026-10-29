@@ -19,7 +19,7 @@ android {
         applicationId = "app.karta.likvidnosti"
         minSdk = 24
         targetSdk = 35
-        versionCode = 4
+        versionCode = 5
         versionName = "1.3"
         vectorDrawables { useSupportLibrary = true }
 

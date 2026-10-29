@@ -27,6 +27,12 @@ enum ChartSource: Equatable {
             }
             return .html(page(body: value))
         }
+        // Просто тикер: «OANDA:XAUUSD», «OANDA-XAUUSD» или «XAUUSD».
+        if value.range(of: #"^[A-Za-z0-9_.!]+([:\-][A-Za-z0-9_.!]+)?$"#, options: .regularExpression) != nil,
+           !value.contains(".") || value.contains(":") {
+            let symbol = value.contains(":") ? value : value.replacingOccurrences(of: "-", with: ":")
+            if let url = widgetURL(symbol: symbol.uppercased()) { return .url(url, original: url) }
+        }
         var text = value
         if !text.lowercased().hasPrefix("http") { text = "https://" + text }
         guard let url = URL(string: text), let host = url.host?.lowercased() else { return nil }
