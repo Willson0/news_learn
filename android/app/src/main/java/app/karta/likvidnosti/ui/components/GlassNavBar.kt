@@ -226,7 +226,7 @@ fun GlassNavBar(
                             .pressable {
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 shownExtra.onClick()
-                            },
+                            }
                             .semantics(mergeDescendants = true) {
                                 role = Role.Button
                                 contentDescription = shownExtra.label
