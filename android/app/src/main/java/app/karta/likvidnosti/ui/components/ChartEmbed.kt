@@ -143,16 +143,17 @@ fun ChartEmbedView(source: ChartSource, modifier: Modifier = Modifier) {
     val shown by animateFloatAsState(if (state == 1) 1f else 0f, tween(250), label = "chart")
     val uriHandler = LocalUriHandler.current
     LaunchedEffect(source) {
-        // Страница так и не ответила — не мигаем бесконечно.
-        delay(20_000)
+        // Страница так и не ответила — не мигаем бесконечно. TradingView из России может
+        // отвечать 15–30 с; если страница догрузится позже, график всё равно покажется.
+        delay(45_000)
         if (state == 0) state = 2
     }
     Box(modifier = modifier.clip(T.ShapeCard).background(T.Surface), contentAlignment = Alignment.Center) {
         ChartWebView(
             source,
             Modifier.fillMaxSize().alpha(shown),
-            onLoaded = { if (state == 0) state = 1 },
-            onFailed = { state = 2 },
+            onLoaded = { state = 1 },
+            onFailed = { if (state != 1) state = 2 },
         )
         when (state) {
             0 -> LoadingBlock(Modifier.fillMaxSize())

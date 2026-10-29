@@ -194,8 +194,10 @@ struct ChartWebView: UIViewRepresentable {
             case .html(let html): web.loadHTMLString(html, baseURL: URL(string: "https://www.tradingview.com"))
             case .url(let url, _): web.load(URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 20))
             }
-            // Страница так и не ответила — не мигаем бесконечно.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
+            // Страница так и не ответила — не мигаем бесконечно. TradingView из России
+            // может отвечать 15–30 с, поэтому ждём дольше; если страница всё же
+            // догрузится позже, график покажется (см. didFinish).
+            DispatchQueue.main.asyncAfter(deadline: .now() + 45) { [weak self] in
                 guard let self, self.attempt == current, self.state.wrappedValue == .loading else { return }
                 self.state.wrappedValue = .failed
             }
@@ -205,7 +207,7 @@ struct ChartWebView: UIViewRepresentable {
             let current = attempt
             // Виджету нужно мгновение, чтобы нарисовать график после загрузки страницы.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
-                guard let self, self.attempt == current, self.state.wrappedValue == .loading else { return }
+                guard let self, self.attempt == current, self.state.wrappedValue != .loaded else { return }
                 self.state.wrappedValue = .loaded
             }
         }
