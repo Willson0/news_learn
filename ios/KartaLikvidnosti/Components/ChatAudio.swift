@@ -36,6 +36,8 @@ final class ChatAudio: NSObject, ObservableObject {
         do {
             try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
             try session.setActive(true)
+            // Без этого iOS глушит вибрацию, пока идёт запись (замок, отмена, отправка).
+            try? session.setAllowHapticsAndSystemSoundsDuringRecording(true)
         } catch { return false }
 
         let url = FileManager.default.temporaryDirectory

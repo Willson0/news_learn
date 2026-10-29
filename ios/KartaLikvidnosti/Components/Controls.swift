@@ -301,8 +301,12 @@ struct ReportActionButton: View {
             switch variant {
             case .accent: content.liquidGlass(shape, fill: ActiveFill())
             case .pink: content.liquidGlass(shape, fill: PinkFill())
-            case .chartOn: content.liquidGlass(shape)
-            case .chartOff: content.overlay(shape.stroke(Color.white, lineWidth: 1))
+            // Одна и та же структура для «Открыть» и «Закрыть график»: кнопка не
+            // пересоздаётся при переключении и едет вверх вместе с остальными.
+            case .chartOn, .chartOff:
+                content
+                    .liquidGlass(shape, isOn: variant == .chartOn)
+                    .overlay(shape.stroke(Color.white, lineWidth: 1).opacity(variant == .chartOff ? 1 : 0))
             }
         }
     }

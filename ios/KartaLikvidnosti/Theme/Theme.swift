@@ -281,6 +281,12 @@ extension View {
     func liquidGlass<S: Shape, F: View>(_ shape: S, fill: F, interactive: Bool = false) -> some View {
         modifier(LiquidGlass(shape: shape, fill: fill, interactive: interactive))
     }
+
+    /// Стекло, которое можно включать и выключать без смены структуры вида: элемент
+    /// не пересоздаётся, а плавно меняет вид и двигается вместе с соседями.
+    func liquidGlass<S: Shape>(_ shape: S, isOn: Bool) -> some View {
+        modifier(LiquidGlass(shape: shape, fill: Theme.glassFill, isOn: isOn))
+    }
 }
 
 /// Эффект «glass» из макета (GLASS: blur 10, refraction 0.75, depth 9, свет −45°).
@@ -291,14 +297,15 @@ struct LiquidGlass<S: Shape, F: View>: ViewModifier {
     let shape: S
     let fill: F
     var interactive: Bool = false
+    var isOn: Bool = true
 
     @ViewBuilder
     func body(content: Content) -> some View {
         #if compiler(>=6.2)
         if #available(iOS 26.0, *) {
             content
-                .background(fill.clipShape(shape))
-                .glassEffect(interactive ? .regular.interactive() : .regular, in: shape)
+                .background(fill.clipShape(shape).opacity(isOn ? 1 : 0))
+                .glassEffect(isOn ? (interactive ? .regular.interactive() : .regular) : .identity, in: shape)
         } else {
             legacy(content)
         }
@@ -309,9 +316,9 @@ struct LiquidGlass<S: Shape, F: View>: ViewModifier {
 
     private func legacy(_ content: Content) -> some View {
         content
-            .background(fill.clipShape(shape))
-            .background(BackdropBlur(radius: 10).clipShape(shape))
-            .overlay(GlassRim(shape: shape).allowsHitTesting(false))
+            .background(fill.clipShape(shape).opacity(isOn ? 1 : 0))
+            .background(BackdropBlur(radius: 10).clipShape(shape).opacity(isOn ? 1 : 0))
+            .overlay(GlassRim(shape: shape).opacity(isOn ? 1 : 0).allowsHitTesting(false))
     }
 }
 

@@ -72,6 +72,12 @@ final class Router: ObservableObject {
     /// accountData | subscription | admins | reportCreate`, `-kl_auth recovery | register`.
     private func applyDebugLaunchArgs() {
         let d = UserDefaults.standard
+        // `-kl_chart <ссылка>`: сразу экран отчёта с этим графиком (проверка блока графика).
+        if d.string(forKey: "kl_chart") != nil {
+            authed = true
+            paths[tab] = [.reportDetail(id: nil)]
+            return
+        }
         if let t = d.string(forKey: "kl_tab"), let tab = Tab(rawValue: t) { self.tab = tab }
         if let a = d.string(forKey: "kl_auth") {
             switch a {

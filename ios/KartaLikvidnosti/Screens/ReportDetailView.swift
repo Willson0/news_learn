@@ -62,6 +62,9 @@ struct ReportDetailView: View {
                     Color.clear.frame(height: actionsGap(screenHeight: geo.size.height + geo.safeAreaInsets.top + geo.safeAreaInsets.bottom))
                     actions
                         .padding(.horizontal, Theme.screenX)
+                        // Кнопки — одна геометрическая группа: при раскрытии отчёта или графика
+                        // едут вверх целиком, а не каждая по своей траектории.
+                        .modifier(GeometryGroupIfAvailable())
                     if reportOpen {
                         reportBody.padding(.horizontal, Theme.screenX).padding(.top, 24)
                     }
@@ -213,6 +216,15 @@ struct ReportDetailView: View {
     }
 
     private func load() async {
+        #if DEBUG
+        if reportId == nil, let chart = UserDefaults.standard.string(forKey: "kl_chart") {
+            report = ReportModel(title: "Проверка графика", date: nil, badge: nil, description: "", body: nil,
+                                 material: nil, chat: nil, chartUrl: chart, coverUrl: nil, htmlUrl: nil)
+            loaded = true
+            graphOpen = true
+            return
+        }
+        #endif
         guard let id = reportId else { loaded = true; return }
         do {
             guard let d = try await Api.fetchReport(id: String(id)) else { loaded = true; return }
@@ -234,5 +246,11 @@ struct HtmlReportView: View {
             GlassCircleButton(icon: AppIcons.close, iconSize: 20) { dismiss() }
                 .padding(16)
         }
+    }
+}
+
+private struct GeometryGroupIfAvailable: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 17.0, *) { content.geometryGroup() } else { content }
     }
 }

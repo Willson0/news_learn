@@ -162,8 +162,10 @@ struct RemoteImage<Fallback: View>: View {
             }
         }
         .clipped()
-        // Картинка — часть кнопки (аватар чата, обложка), поэтому нажатия не пропускает насквозь.
-        .contentShape(Rectangle())
+        // Картинка не ловит нажатия: у обложки в режиме .fill область касания была бы
+        // больше видимой и перекрывала бы соседние кнопки. Если картинка — содержимое
+        // кнопки, область нажатия задаёт сама кнопка (непрозрачная подложка + contentShape).
+        .allowsHitTesting(false)
         .onAppear { loader.load(url) }
         .onChange(of: url) { loader.load($0) }
     }

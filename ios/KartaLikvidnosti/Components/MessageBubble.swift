@@ -163,6 +163,8 @@ struct MessageBubble: View {
         .frame(maxWidth: Self.maxWidth, alignment: .leading)
         .fixedSize(horizontal: true, vertical: false)
         .modifier(BubbleGlass(mine: message.mine, shape: bubbleShape))
+        // Пузырь плавно меняет размер и форму, когда появляются или пропадают реакции.
+        .animation(.spring(response: 0.38, dampingFraction: 0.86), value: reactionsKey)
     }
 
     /// Текст с выделенными упоминаниями «@тег» и найденным в поиске фрагментом.
@@ -324,38 +326,46 @@ struct MessageBubble: View {
         }
     }
 
+    /// Реакции переносятся по строкам и никогда не сжимаются; время и отметка — в конце
+    /// последней строки, если помещаются, иначе отдельной строкой справа (как в Телеграме).
     private var footer: some View {
-        HStack(alignment: .bottom, spacing: 4) {
-            if !message.reactions.isEmpty {
-                HStack(spacing: 4) {
-                    ForEach(message.reactions) { r in
-                        // Своя реакция выделена; тап по ней снимает её, по чужой — ставит такую же.
-                        Button { onToggleReaction?(r.emoji) } label: {
-                            HStack(spacing: 4) {
-                                Text(r.emoji).font(.system(size: 13))
-                                Text("\(r.count)").font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.text)
-                            }
-                            .padding(.vertical, 4).padding(.horizontal, 8)
-                            .frame(height: 24)
-                            .background(r.mine ? Theme.green.opacity(0.55) : Color(hex: "#404040"), in: Capsule())
-                            .overlay(Capsule().stroke(r.mine ? Color.white.opacity(0.6) : .clear, lineWidth: 1))
-                        }
-                        .buttonStyle(PressableStyle())
-                        .disabled(onToggleReaction == nil)
+        BubbleFooterLayout(spacing: 4, lineSpacing: 4) {
+            ForEach(message.reactions) { r in
+                // Своя реакция выделена; тап по ней снимает её, по чужой — ставит такую же.
+                Button { onToggleReaction?(r.emoji) } label: {
+                    HStack(spacing: 4) {
+                        Text(r.emoji).font(.system(size: 14))
+                        Text("\(r.count)").font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.text)
+                            .contentTransition(.numericText())
                     }
+                    .fixedSize()
+                    .padding(.horizontal, 8)
+                    .frame(minHeight: 26)
+                    .background(r.mine ? Theme.green.opacity(0.55) : Color(hex: "#404040"), in: Capsule())
+                    .overlay(Capsule().stroke(r.mine ? Color.white.opacity(0.6) : .clear, lineWidth: 1))
+                }
+                .buttonStyle(PressableStyle())
+                .disabled(onToggleReaction == nil)
+                .transition(.scale(scale: 0.5).combined(with: .opacity))
+            }
+            HStack(alignment: .bottom, spacing: 4) {
+                if message.pinned {
+                    Icon(AppIcons.pinSmall, size: 10, color: secondary)
+                }
+                if let time = message.time {
+                    Text(time).font(Theme.sans(10)).foregroundStyle(secondary)
+                }
+                if message.mine {
+                    ReadMark(read: message.read).padding(.bottom, 2.5)
                 }
             }
-            Spacer(minLength: 8)
-            if message.pinned {
-                Icon(AppIcons.pinSmall, size: 10, color: secondary)
-            }
-            if let time = message.time {
-                Text(time).font(Theme.sans(10)).foregroundStyle(secondary)
-            }
-            if message.mine {
-                ReadMark(read: message.read).padding(.bottom, 2.5)
-            }
+            .fixedSize()
         }
+    }
+
+    /// Ключ реакций для плавной анимации смены размера пузыря.
+    private var reactionsKey: [String] {
+        message.reactions.map { "\($0.emoji)\($0.count)\($0.mine)" }
     }
 
     private var bubbleShape: UnevenRoundedRectangle {
@@ -390,5 +400,80 @@ struct ReadMark: View {
         }
         .frame(width: 11, height: 8, alignment: .leading)
         .animation(.easeOut(duration: 0.25), value: read)
+    }
+}
+
+/// Нижняя строка пузыря: последний элемент — время и отметка, остальные — реакции.
+/// Реакции идут по строкам без сжатия; время прижато вправо на последней строке, если
+/// помещается рядом с реакциями, иначе переносится на новую строку.
+struct BubbleFooterLayout: Layout {
+    var spacing: CGFloat = 4
+    var lineSpacing: CGFloat = 4
+    /// Минимальный зазор между последней реакцией и временем.
+    var metaGap: CGFloat = 8
+
+    private struct Line { var items: [(index: Int, size: CGSize)] = []; var width: CGFloat = 0; var height: CGFloat = 0 }
+
+    private func lines(_ subviews: Subviews, maxWidth: CGFloat) -> (lines: [Line], metaOnLast: Bool, width: CGFloat) {
+        guard let meta = subviews.last else { return ([], false, 0) }
+        let metaSize = meta.sizeThatFits(.unspecified)
+        var result: [Line] = [Line()]
+        for i in 0..<(subviews.count - 1) {
+            let size = subviews[i].sizeThatFits(.unspecified)
+            var line = result[result.count - 1]
+            let x = line.items.isEmpty ? 0 : line.width + spacing
+            if x + size.width > maxWidth, !line.items.isEmpty {
+                result.append(Line())
+                line = Line()
+            }
+            let start = line.items.isEmpty ? 0 : line.width + spacing
+            line.items.append((i, size))
+            line.width = start + size.width
+            line.height = max(line.height, size.height)
+            result[result.count - 1] = line
+        }
+        let last = result[result.count - 1]
+        let metaOnLast = last.items.isEmpty || last.width + metaGap + metaSize.width <= maxWidth
+        var width = result.map(\.width).max() ?? 0
+        if metaOnLast {
+            let w = last.items.isEmpty ? metaSize.width : last.width + metaGap + metaSize.width
+            width = max(width, w)
+            result[result.count - 1].height = max(last.height, metaSize.height)
+        } else {
+            width = max(width, metaSize.width)
+            var metaLine = Line(); metaLine.width = metaSize.width; metaLine.height = metaSize.height
+            result.append(metaLine)
+        }
+        return (result, metaOnLast, width)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        let info = lines(subviews, maxWidth: maxWidth)
+        let height = info.lines.map(\.height).reduce(0, +) + lineSpacing * CGFloat(max(info.lines.count - 1, 0))
+        // С заданной шириной занимаем её целиком — время прижимается к правому краю пузыря.
+        let width = proposal.width.flatMap { $0.isFinite ? $0 : nil } ?? info.width
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) {
+        guard let meta = subviews.last else { return }
+        let metaSize = meta.sizeThatFits(.unspecified)
+        let info = lines(subviews, maxWidth: bounds.width)
+        var y = bounds.minY
+        for (n, line) in info.lines.enumerated() {
+            var x = bounds.minX
+            for item in line.items {
+                // Реакции в строке выравниваются по низу строки.
+                subviews[item.index].place(at: CGPoint(x: x, y: y + line.height - item.size.height),
+                                           anchor: .topLeading, proposal: ProposedViewSize(item.size))
+                x += item.size.width + spacing
+            }
+            if n == info.lines.count - 1 {
+                meta.place(at: CGPoint(x: bounds.maxX - metaSize.width, y: y + line.height - metaSize.height),
+                           anchor: .topLeading, proposal: ProposedViewSize(metaSize))
+            }
+            y += line.height + lineSpacing
+        }
     }
 }

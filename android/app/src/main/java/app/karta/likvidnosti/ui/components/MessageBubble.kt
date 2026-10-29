@@ -1,11 +1,17 @@
 package app.karta.likvidnosti.ui.components
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.spring
+import androidx.compose.runtime.key
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -53,6 +59,7 @@ import app.karta.likvidnosti.ui.theme.T
 import app.karta.likvidnosti.ui.theme.hex
 import coil.compose.AsyncImage
 import kotlin.math.abs
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -174,6 +181,8 @@ fun MessageBubble(
         modifier = modifier
             .widthIn(max = MessageBubbleMaxWidth)
             .width(IntrinsicSize.Max)
+            // Пузырь плавно меняет размер и форму, когда появляются или пропадают реакции.
+            .animateContentSize(spring(dampingRatio = 0.86f, stiffness = 380f))
             .liquidGlass(shape, if (message.mine) Fills.Active else Fills.Glass)
             .padding(start = 12.dp, end = 12.dp, top = 16.dp, bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -456,44 +465,91 @@ private fun VoiceRow(
     }
 }
 
+/**
+ * Нижняя строка пузыря: реакции переносятся по строкам и не сжимаются; время и
+ * отметка — справа на последней строке, если помещаются, иначе отдельной строкой.
+ */
 @Composable
 private fun Footer(message: ChatMessage, onToggleReaction: ((String) -> Unit)?) {
-    Row(
+    Layout(
         modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.Bottom,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        if (message.reactions.isNotEmpty()) {
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                message.reactions.forEach { r ->
+        content = {
+            message.reactions.forEach { r ->
+                key(r.emoji) {
                     Row(
                         modifier = Modifier
-                            .height(24.dp)
+                            .heightIn(min = 26.dp)
                             .background(if (r.mine) T.Green.copy(alpha = 0.55f) else hex("#404040"), CapsuleShape)
                             .then(
                                 if (r.mine) Modifier.border(1.dp, Color.White.copy(alpha = 0.6f), CapsuleShape) else Modifier,
                             )
                             // Своя реакция выделена; тап по ней снимает её, по чужой — ставит такую же.
                             .then(if (onToggleReaction != null) Modifier.pressable { onToggleReaction(r.emoji) } else Modifier)
-                            .padding(horizontal = 8.dp),
+                            .padding(horizontal = 8.dp, vertical = 3.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        Text(r.emoji, fontSize = 13.sp)
-                        Text(r.count.toString(), style = AppFont.sans(T.FsSm))
+                        Text(r.emoji, fontSize = 14.sp, maxLines = 1, softWrap = false)
+                        Text(r.count.toString(), style = AppFont.sans(T.FsSm), maxLines = 1, softWrap = false)
                     }
                 }
             }
+            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (message.pinned) {
+                    AppIcon(AppIcons.pinSmall, size = 10.dp, tint = Secondary, modifier = Modifier.padding(bottom = 2.dp))
+                }
+                if (!message.time.isNullOrEmpty()) {
+                    Text(message.time, style = AppFont.sans(10.sp, color = Secondary))
+                }
+                if (message.mine) {
+                    ReadMark(read = message.read, modifier = Modifier.padding(bottom = 3.dp))
+                }
+            }
+        },
+    ) { measurables, constraints ->
+        val gap = 4.dp.roundToPx()
+        val metaGap = 8.dp.roundToPx()
+        val placeables = measurables.map { it.measure(Constraints()) }
+        val meta = placeables.last()
+        val chips = placeables.dropLast(1)
+        val maxW = if (constraints.hasBoundedWidth) constraints.maxWidth else Int.MAX_VALUE
+
+        // Строки реакций: (индексы, ширина, высота).
+        val lines = mutableListOf(Triple(mutableListOf<Int>(), 0, 0))
+        chips.forEachIndexed { i, p ->
+            var (items, w, h) = lines.last()
+            val start = if (items.isEmpty()) 0 else w + gap
+            if (items.isNotEmpty() && start + p.width > maxW) {
+                lines.add(Triple(mutableListOf(), 0, 0))
+                items = lines.last().first; w = 0; h = 0
+            }
+            items.add(i)
+            val nw = (if (items.size == 1) 0 else w + gap) + p.width
+            lines[lines.size - 1] = Triple(items, nw, max(h, p.height))
         }
-        Spacer(Modifier.weight(1f).widthIn(min = 4.dp))
-        if (message.pinned) {
-            AppIcon(AppIcons.pinSmall, size = 10.dp, tint = Secondary, modifier = Modifier.padding(bottom = 2.dp))
+        val last = lines.last()
+        val metaOnLast = last.first.isEmpty() || last.second.toLong() + metaGap + meta.width <= maxW
+        if (metaOnLast) {
+            lines[lines.size - 1] = Triple(last.first, last.second, max(last.third, meta.height))
+        } else {
+            lines.add(Triple(mutableListOf(), meta.width, meta.height))
         }
-        if (!message.time.isNullOrEmpty()) {
-            Text(message.time, style = AppFont.sans(10.sp, color = Secondary))
-        }
-        if (message.mine) {
-            ReadMark(read = message.read, modifier = Modifier.padding(bottom = 3.dp))
+        var natural = lines.maxOf { it.second }
+        if (metaOnLast) natural = max(natural, if (last.first.isEmpty()) meta.width else last.second + metaGap + meta.width)
+        val width = if (constraints.hasBoundedWidth) constraints.maxWidth else natural
+        val height = lines.sumOf { it.third } + gap * (lines.size - 1)
+        layout(width, height) {
+            var y = 0
+            lines.forEachIndexed { n, (items, _, h) ->
+                var x = 0
+                items.forEach { i ->
+                    val p = chips[i]
+                    p.placeRelative(x, y + h - p.height)
+                    x += p.width + gap
+                }
+                if (n == lines.size - 1) meta.placeRelative(width - meta.width, y + h - meta.height)
+                y += h + gap
+            }
         }
     }
 }

@@ -237,18 +237,19 @@ private fun replyPreview(m: ChatMessage): String = when {
 private val MentionRegex = Regex("(^|\\s)@[^\\s@]*$")
 // «/текст/» — личное сообщение автору отчёта.
 /** Вибрация записи голосового: системные паттерны, где они есть (Android 11+). */
-private enum class VoiceHaptic { Tick, Lock, Cancel, Send, Toggle }
+private enum class VoiceHaptic { Start, Tick, Lock, Cancel, Send, Toggle }
 
 private fun View.voiceHaptic(kind: VoiceHaptic) {
     val modern = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
     val constant = when (kind) {
+        VoiceHaptic.Start -> HapticFeedbackConstants.LONG_PRESS
         VoiceHaptic.Tick -> HapticFeedbackConstants.CLOCK_TICK
         VoiceHaptic.Lock -> if (modern) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.LONG_PRESS
         VoiceHaptic.Cancel -> if (modern) HapticFeedbackConstants.REJECT else HapticFeedbackConstants.LONG_PRESS
         VoiceHaptic.Send -> if (modern) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.KEYBOARD_TAP
         VoiceHaptic.Toggle -> HapticFeedbackConstants.VIRTUAL_KEY
     }
-    performHapticFeedback(constant)
+    performHapticFeedback(constant, HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING)
 }
 
 private val AuthorMessageRegex = Regex("^/(.*\\S.*)/$", RegexOption.DOT_MATCHES_ALL)
@@ -617,7 +618,7 @@ fun ChatScreen(
         recorder = rec; recFile = file; recSeconds = 0
         recPaused = false; recLocked = false
         recording = true
-        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        view.voiceHaptic(VoiceHaptic.Start)
     }
 
     val micPermLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->

@@ -260,7 +260,10 @@ struct ChatView: View {
                     Spacer(minLength: 12)
                     // Иконка чата открывает то же инфо, что и название.
                     Button { router.push(.chatInfo(id: chatId)) } label: {
-                        chatAvatar.contentShape(Circle())
+                        chatAvatar
+                            // Почти прозрачная подложка: картинка сама нажатия не ловит.
+                            .background(Circle().fill(Color.white.opacity(0.001)))
+                            .contentShape(Circle())
                     }
                     .buttonStyle(PressableStyle())
                 }
@@ -837,6 +840,9 @@ struct ChatView: View {
             .onChanged { v in
                 if !micPressed {
                     micPressed = true
+                    // Вибрация сразу при касании, до включения микрофона: когда запись
+                    // уже идёт, аудиосессия может её заглушить.
+                    Haptics.medium()
                     startVoice()
                 }
                 guard audio.recording, !recordLocked else { return }
@@ -1374,7 +1380,7 @@ struct ChatView: View {
             guard granted else { return }
             Task { @MainActor in
                 guard micPressed else { return }
-                if audio.startRecording() { Haptics.medium() }
+                if audio.startRecording() { Haptics.rigid() }
             }
         }
     }
