@@ -98,8 +98,13 @@ struct ReportDetailView: View {
         // сжимается, график раскрывается: SMART_ANIMATE, пружина SLOW (≈1.25 с).
         .animation(Motion.slow, value: graphOpen)
         .animation(Motion.slow, value: reportOpen)
-        .fullScreenCover(isPresented: $htmlOpen) {
-            if let url = report.htmlUrl { HtmlReportView(url: url) }
+        // Лист, а не полноэкранная обложка: закрывается свайпом вниз, как в системных приложениях.
+        .sheet(isPresented: $htmlOpen) {
+            if let url = report.htmlUrl {
+                HtmlReportView(url: url)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+            }
         }
         .onAppear { seedFromFeed() }
         .task { await load() }

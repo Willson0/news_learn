@@ -205,6 +205,11 @@ struct ChatView: View {
         } message: { p in
             Text(p.text ?? "")
         }
+        // Долгое нажатие на сообщение при открытой клавиатуре: клавиатура прячется
+        // сразу, ещё до подъёма пузыря системным меню. Иначе меню убирает её само,
+        // лента съезжает вниз, а поднятое сообщение остаётся там, где было над
+        // клавиатурой (и так же после «Выбрать»).
+        .background(LongPressKeyboardDismiss(active: keyboardShown && !searchMode) { inputFocused = false })
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
             withAnimation(.easeOut(duration: 0.25)) { keyboardShown = true }
         }
@@ -543,8 +548,10 @@ struct ChatView: View {
                 .onChange(of: loaded) { _ in
                     DispatchQueue.main.async { proxy.scrollTo("bottom", anchor: .bottom) }
                 }
-                .onChange(of: keyboardShown) { _ in
-                    guard !searchMode else { return }
+                .onChange(of: keyboardShown) { shown in
+                    // Только при появлении клавиатуры: когда она убрана (зажатие, выбор),
+                    // лента остаётся на месте, а не уезжает к последнему сообщению.
+                    guard shown, !searchMode else { return }
                     withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("bottom", anchor: .bottom) }
                 }
                 .onChange(of: scrollRequest) { req in
@@ -1864,6 +1871,76 @@ private struct MessageContextMenu<Items: View>: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+/// Ловит долгое нажатие в ленте (поверх жестов SwiftUI, ничего не перехватывая)
+/// и сообщает о нём через 0.2 с — раньше, чем системное меню поднимет пузырь.
+/// Поле ввода (UITextView) и места вне прокрутки не считаются.
+private struct LongPressKeyboardDismiss: UIViewRepresentable {
+    let active: Bool
+    let onPress: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> HostView {
+        let v = HostView()
+        v.isUserInteractionEnabled = false
+        v.coordinator = context.coordinator
+        return v
+    }
+
+    func updateUIView(_ v: HostView, context: Context) {
+        context.coordinator.active = active
+        context.coordinator.onPress = onPress
+    }
+
+    static func dismantleUIView(_ v: HostView, coordinator: Coordinator) {
+        coordinator.detach()
+    }
+
+    final class HostView: UIView {
+        weak var coordinator: Coordinator?
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            coordinator?.attach(to: window)
+        }
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var active = false
+        var onPress: () -> Void = {}
+        private lazy var recognizer: UILongPressGestureRecognizer = {
+            let r = UILongPressGestureRecognizer(target: self, action: #selector(handle(_:)))
+            r.minimumPressDuration = 0.2
+            r.cancelsTouchesInView = false
+            r.delaysTouchesBegan = false
+            r.delaysTouchesEnded = false
+            r.delegate = self
+            return r
+        }()
+
+        func attach(to window: UIWindow?) {
+            recognizer.view?.removeGestureRecognizer(recognizer)
+            window?.addGestureRecognizer(recognizer)
+        }
+
+        func detach() { recognizer.view?.removeGestureRecognizer(recognizer) }
+
+        @objc private func handle(_ r: UILongPressGestureRecognizer) {
+            guard r.state == .began, active, let window = r.view else { return }
+            var v = window.hitTest(r.location(in: window), with: nil)
+            var inScroll = false
+            while let cur = v {
+                if cur is UITextView || cur is UITextField { return }
+                if cur is UIScrollView { inScroll = true }
+                v = cur.superview
+            }
+            if inScroll { onPress() }
+        }
+
+        func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+        func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool { active }
     }
 }
 

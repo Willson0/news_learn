@@ -4,7 +4,7 @@ package app.karta.likvidnosti.ui.components
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -35,16 +35,22 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import app.karta.likvidnosti.ui.icons.AppIcon
 import app.karta.likvidnosti.ui.icons.AppIcons
@@ -128,7 +134,41 @@ fun FiltersSheet(
 
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
-    val dragY = remember { Animatable(0f) }
+    // Лист закрывается свайпом вниз за любое место, в том числе за список,
+    // когда он прокручен к самому верху (как системные листы).
+    var dragY by remember { mutableFloatStateOf(0f) }
+    fun settle(velocity: Float) {
+        val closeBy = with(density) { 120.dp.toPx() }
+        if ((dragY > closeBy && velocity >= 0f) || velocity > 1800f) {
+            onClose()
+        } else {
+            scope.launch { animate(dragY, 0f, animationSpec = spring(dampingRatio = 0.85f)) { v, _ -> dragY = v } }
+        }
+    }
+    val sheetScroll = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                // Лист опущен: движение вверх сначала поднимает его, потом листает список.
+                if (source != NestedScrollSource.UserInput || available.y >= 0f || dragY <= 0f) return Offset.Zero
+                val used = max(available.y, -dragY)
+                dragY += used
+                return Offset(0f, used)
+            }
+
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                // Список упёрся в верх — остаток протяжки вниз тянет лист.
+                if (source != NestedScrollSource.UserInput || available.y <= 0f) return Offset.Zero
+                dragY += available.y
+                return Offset(0f, available.y)
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                if (dragY <= 0f) return Velocity.Zero
+                settle(available.y)
+                return available
+            }
+        }
+    }
 
     fun apply() {
         onApply(
@@ -148,22 +188,14 @@ fun FiltersSheet(
         Box(
             modifier = modifier
                 .fillMaxSize()
-                .offset { IntOffset(0, max(dragY.value, 0f).roundToInt()) }
+                .offset { IntOffset(0, max(dragY, 0f).roundToInt()) }
                 .background(T.Surface, sheetShape)
                 .pressable(pressAlpha = 1f) {}
+                .nestedScroll(sheetScroll)
                 .draggable(
                     orientation = Orientation.Vertical,
-                    state = rememberDraggableState { delta ->
-                        scope.launch { dragY.snapTo(max(0f, dragY.value + delta)) }
-                    },
-                    onDragStopped = { velocity ->
-                        val closeBy = with(density) { 120.dp.toPx() }
-                        if (dragY.value > closeBy || velocity > 1800f) {
-                            onClose()
-                        } else {
-                            dragY.animateTo(0f, spring(dampingRatio = 0.85f))
-                        }
-                    },
+                    state = rememberDraggableState { delta -> dragY = max(0f, dragY + delta) },
+                    onDragStopped = { velocity -> settle(velocity) },
                 ),
         ) {
             Column(

@@ -70,6 +70,10 @@ struct FiltersSheet: View {
     }
 
     @State private var dragY: CGFloat = 0
+    /// Список прокручен к самому верху: тогда протяжка вниз тянет лист, а не список.
+    @State private var scrollAtTop = true
+    /// Решение на весь жест, принятое в его начале: nil — жест ещё не начат.
+    @State private var dragsSheet: Bool?
 
     // Лист фильтров из макета: плашка «фон плашки» от y=172 до низа, радиус 24,
     // полоска-хват 32 на y=183; «Искать» (Button/искать) справа сверху;
@@ -79,6 +83,11 @@ struct FiltersSheet: View {
         ZStack(alignment: .topLeading) {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 0) {
+                    GeometryReader { g in
+                        Color.clear.preference(key: SheetScrollTopKey.self,
+                                               value: g.frame(in: .named("filtersScroll")).minY)
+                    }
+                    .frame(height: 0)
                     Text("Инструменты").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
                         .padding(.top, 35)
                     chipCard($instruments).padding(.top, 24)
@@ -134,6 +143,9 @@ struct FiltersSheet: View {
                 .padding(.horizontal, Theme.screenX)
                 .padding(.bottom, 60)
             }
+            .coordinateSpace(name: "filtersScroll")
+            .onPreferenceChange(SheetScrollTopKey.self) { scrollAtTop = $0 >= -1 }
+            .modifier(NoBounceWhenFits())
 
             if calendarOpen {
                 VStack(spacing: 8) {
@@ -159,12 +171,24 @@ struct FiltersSheet: View {
         .background(Theme.surface, in: UnevenRoundedRectangle(topLeadingRadius: 24, topTrailingRadius: 24, style: .continuous))
         .ignoresSafeArea(.container, edges: .bottom)
         .offset(y: max(dragY, 0))
-        .gesture(
-            DragGesture()
-                .onChanged { dragY = $0.translation.height }
+        // Закрытие свайпом вниз, как у системных листов: тянуть можно за любое место,
+        // в том числе за список, если он у самого верха. Жест идёт вместе с прокруткой.
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 8)
+                .onChanged { v in
+                    if dragsSheet == nil {
+                        dragsSheet = scrollAtTop && v.translation.height > abs(v.translation.width)
+                    }
+                    if dragsSheet == true { dragY = v.translation.height }
+                }
                 .onEnded { v in
-                    if v.translation.height > 120 || v.predictedEndTranslation.height > 260 { onClose() }
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { dragY = 0 }
+                    defer { dragsSheet = nil }
+                    guard dragsSheet == true else { return }
+                    if v.predictedEndTranslation.height > 260 || (v.translation.height > 120 && v.predictedEndTranslation.height >= v.translation.height) {
+                        onClose()
+                    } else {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { dragY = 0 }
+                    }
                 }
         )
     }
@@ -222,4 +246,21 @@ struct FiltersOverlay: View {
     }
 
     private func close() { isOpen = false }
+}
+
+/// Верх содержимого листа в его прокрутке.
+private struct SheetScrollTopKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+/// Список, который помещается целиком, не пружинит: протяжка вниз двигает лист, а не список.
+private struct NoBounceWhenFits: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 16.4, *) {
+            content.scrollBounceBehavior(.basedOnSize)
+        } else {
+            content
+        }
+    }
 }
