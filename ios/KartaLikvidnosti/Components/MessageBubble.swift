@@ -35,7 +35,12 @@ struct ChatMessage: Identifiable {
     struct ImageAtt { let url: URL?; let width: Int?; let height: Int? }
     struct FileAtt { let url: URL?; let name: String; let ext: String; let size: String }
     struct VoiceAtt { let url: URL?; let duration: String }
-    struct Reaction: Identifiable { var id: String { emoji }; let emoji: String; let count: Int; let mine: Bool }
+    struct Reaction: Identifiable {
+        var id: String { emoji }
+        let emoji: String; let count: Int; let mine: Bool
+        /// Для сравнения наборов реакций.
+        var key: String { "\(emoji)\(count)\(mine)" }
+    }
 
     init(_ dto: MessageDto) {
         id = dto.id
@@ -365,7 +370,7 @@ struct MessageBubble: View {
 
     /// Ключ реакций для плавной анимации смены размера пузыря.
     private var reactionsKey: [String] {
-        message.reactions.map { "\($0.emoji)\($0.count)\($0.mine)" }
+        message.reactions.map(\.key)
     }
 
     private var bubbleShape: UnevenRoundedRectangle {

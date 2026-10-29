@@ -1057,7 +1057,7 @@ struct ChatView: View {
         if #available(iOS 17.0, *) {
             ControlGroup {
                 ForEach(reactions, id: \.self) { r in
-                    Button { react(m.id, r) } label: { Text(r) }
+                    Button { react(m.id, r, afterSystemMenu: true) } label: { Text(r) }
                 }
             }
             .controlGroupStyle(.palette)
@@ -1066,7 +1066,7 @@ struct ChatView: View {
         } else {
             Menu {
                 ForEach(reactions, id: \.self) { r in
-                    Button { react(m.id, r) } label: {
+                    Button { react(m.id, r, afterSystemMenu: true) } label: {
                         Text(mineReactions.contains(r) ? "\(r) ✓" : r)
                     }
                 }
@@ -1075,7 +1075,7 @@ struct ChatView: View {
             }
         }
         if let mine = reactions.first(where: { mineReactions.contains($0) }) {
-            Button { react(m.id, mine) } label: {
+            Button { react(m.id, mine, afterSystemMenu: true) } label: {
                 Label("Убрать реакцию \(mine)", systemImage: "xmark.circle")
             }
         }
@@ -1400,9 +1400,33 @@ struct ChatView: View {
     }
 
     /// Реакция: поставить или снять свою (сервер переключает). Сразу меняем локально.
-    private func react(_ id: Int, _ emoji: String, closing: Bool = false) {
+    /// Пружина смены реакций — та же, что у размера пузыря (MessageBubble).
+    private static let reactionSpring = Animation.spring(response: 0.38, dampingFraction: 0.86)
+
+    /// - Parameter afterSystemMenu: реакция выбрана в системном меню. Пузырь меняется только
+    ///   после того, как меню закроется и пузырь вернётся на место: иначе система
+    ///   возвращает старый снимок пузыря, а он рывком подменяется новым.
+    private func react(_ id: Int, _ emoji: String, closing: Bool = false, afterSystemMenu: Bool = false) {
         if closing { closeMenu() }
         Haptics.light()
+        let delay: Double = afterSystemMenu ? 0.5 : 0
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            applyReaction(id, emoji)
+        }
+        Task { @MainActor in
+            guard let dto = try? await Api.reactMessage(chatId, id, emoji: emoji) else { return }
+            if afterSystemMenu { try? await Task.sleep(nanoseconds: 600_000_000) }
+            // Ответ сервера меняет только реакции и только если они другие — без второго рывка.
+            if let i = messages.firstIndex(where: { $0.id == id }) {
+                let fresh = ChatMessage(dto).reactions
+                if fresh.map(\.key) != messages[i].reactions.map(\.key) {
+                    withAnimation(Self.reactionSpring) { messages[i].reactions = fresh }
+                }
+            }
+        }
+    }
+
+    private func applyReaction(_ id: Int, _ emoji: String) {
         if let i = messages.firstIndex(where: { $0.id == id }) {
             var list = messages[i].reactions
             if let j = list.firstIndex(where: { $0.emoji == emoji }) {
@@ -1415,10 +1439,7 @@ struct ChatView: View {
             } else {
                 list.append(.init(emoji: emoji, count: 1, mine: true))
             }
-            withAnimation(.easeOut(duration: 0.2)) { messages[i].reactions = list }
-        }
-        Task { @MainActor in
-            if let dto = try? await Api.reactMessage(chatId, id, emoji: emoji) { replaceMessage(dto) }
+            withAnimation(Self.reactionSpring) { messages[i].reactions = list }
         }
     }
 
