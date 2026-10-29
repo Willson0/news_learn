@@ -345,7 +345,7 @@ fun ReportFormScreen(
             GlassTopBar(
                 onBack = onBack,
                 trailing = if (isEdit) {
-                    { GlassCircleButton(AppIcons.trashX, iconSize = 24.dp, iconColor = T.Error) { confirmOpen = true } }
+                    { GlassCircleButton(AppIcons.trashX, "Удалить отчет", iconSize = 24.dp, iconColor = T.Error) { confirmOpen = true } }
                 } else {
                     null
                 },
@@ -353,7 +353,7 @@ fun ReportFormScreen(
             ConfirmDialog(
                 open = confirmOpen,
                 title = "Удалить отчет?",
-                text = "Удалив отчет он пропадет у всех пользователей, включая чат",
+                text = "Отчёт и его чат пропадут у всех пользователей",
                 busy = deleting,
                 onConfirm = { remove() },
                 onCancel = { confirmOpen = false },

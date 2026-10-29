@@ -33,6 +33,8 @@ import app.karta.likvidnosti.ui.components.AppButton
 import app.karta.likvidnosti.ui.components.AppInput
 import app.karta.likvidnosti.ui.components.AuthField
 import app.karta.likvidnosti.ui.components.AuthFieldError
+import app.karta.likvidnosti.ui.icons.AppIcon
+import app.karta.likvidnosti.ui.icons.AppIcons
 import app.karta.likvidnosti.ui.components.ButtonVariant
 import app.karta.likvidnosti.ui.components.pressable
 import app.karta.likvidnosti.ui.components.screenBackground
@@ -139,7 +141,7 @@ fun LoginScreen(
 
     fun validateRegister(): Boolean {
         val e = mutableMapOf<String, String>()
-        if (!AUTH_EMAIL_RE.matches(email.trim())) e["email"] = "Несуществующий email"
+        if (!AUTH_EMAIL_RE.matches(email.trim())) e["email"] = "Проверьте адрес: например, name@mail.ru"
         if (PhoneMask.digits(phone).length != 11) e["phone"] = "Неверный номер телефона"
         if (password.length < 8) e["password"] = "Пароль должен содержать от 8 символов"
         if (passwordConfirm != password) e["passwordConfirm"] = "Пароль не совпадает"
@@ -261,14 +263,12 @@ fun LoginScreen(
                                 isPassword = true,
                                 error = errors.containsKey("password"),
                             )
-                            Text(
-                                errors["password"] ?: "Пароль должен содержать от 8 символов",
-                                style = AppFont.sans(
-                                    T.FsSm,
-                                    color = if (errors.containsKey("password")) T.Error.copy(alpha = 0.7f) else T.Text,
-                                ),
-                                modifier = Modifier.fillMaxWidth(),
-                            )
+                            val passwordError = errors["password"]
+                            if (passwordError != null) {
+                                AuthFieldError(passwordError)
+                            } else {
+                                PasswordHint(password)
+                            }
                         }
                         AuthField(errors["passwordConfirm"]) {
                             AppInput(
@@ -310,5 +310,25 @@ fun LoginScreen(
             Spacer(Modifier.weight(1f))
             Text("16+", style = AppFont.heading(T.FsTitle, T.TextMuted))
         }
+    }
+}
+
+/**
+ * Подсказка под паролем: вторичным цветом, пока условие не выполнено; как только
+ * в пароле 8 символов — зелёная галочка.
+ */
+@Composable
+internal fun PasswordHint(password: String, modifier: Modifier = Modifier) {
+    val ok = password.length >= 8
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        if (ok) AppIcon(AppIcons.check, size = 14.dp, tint = T.Green)
+        Text(
+            "Пароль должен содержать от 8 символов",
+            style = AppFont.sans(T.FsSm, color = if (ok) T.Green else T.TextSecondary),
+        )
     }
 }

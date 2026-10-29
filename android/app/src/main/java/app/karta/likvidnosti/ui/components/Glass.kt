@@ -24,6 +24,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawWithCache
@@ -330,12 +334,20 @@ fun Modifier.pressable(
         .clickable(interactionSource = source, indication = null, enabled = enabled, onClick = onClick)
 }
 
+/** Подпись для TalkBack у кнопки без текста: «Назад», «Фильтры», «Настройки». */
+fun Modifier.a11yButton(label: String): Modifier = semantics(mergeDescendants = true) {
+    role = Role.Button
+    contentDescription = label
+}
+
 // MARK: - Кнопки и плашки
 
 /** Круглая стеклянная кнопка 42×42 (Button/back, Button/Settings, Button/add …). */
 @Composable
 fun GlassCircleButton(
     icon: IconDef,
+    /** Подпись для TalkBack: «Назад», «Удалить», «Скачать». */
+    contentDescription: String,
     modifier: Modifier = Modifier,
     iconSize: Dp = 24.dp,
     size: Dp = 42.dp,
@@ -347,7 +359,8 @@ fun GlassCircleButton(
         modifier = modifier
             .size(size)
             .liquidGlass(CircleShape, fill)
-            .pressable(onClick = onClick),
+            .pressable(onClick = onClick)
+            .a11yButton(contentDescription),
         contentAlignment = Alignment.Center,
     ) {
         AppIcon(icon, size = iconSize, tint = iconColor)
@@ -357,7 +370,7 @@ fun GlassCircleButton(
 /** Кнопка «назад» из макета: стеклянный круг 42 с шевроном 22. */
 @Composable
 fun GlassBackButton(modifier: Modifier = Modifier, onClick: () -> Unit) {
-    GlassCircleButton(icon = AppIcons.back, iconSize = 22.dp, modifier = modifier, onClick = onClick)
+    GlassCircleButton(icon = AppIcons.back, contentDescription = "Назад", iconSize = 22.dp, modifier = modifier, onClick = onClick)
 }
 
 /** Стеклянная плашка-лейбл (Label/label): «Актуальный», «Сегодня», «Готово». */

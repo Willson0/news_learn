@@ -36,6 +36,7 @@ Route::prefix('auth')->group(function () {
     Route::get('/yandex/callback', [YandexAuthController::class, 'callback'])->middleware('throttle:auth');
     Route::post('/yandex/exchange', [YandexAuthController::class, 'exchange'])->middleware('throttle:auth');
     Route::post('/recovery', [AuthController::class, 'requestRecovery'])->middleware('throttle:codes');
+    Route::post('/recovery/check', [AuthController::class, 'checkRecoveryCode'])->middleware('throttle:auth');
     Route::post('/recovery/reset', [AuthController::class, 'resetPassword'])->middleware('throttle:auth');
 });
 

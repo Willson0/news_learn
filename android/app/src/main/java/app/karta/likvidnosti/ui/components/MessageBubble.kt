@@ -42,7 +42,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -92,6 +95,8 @@ data class ChatMessage(
     /** Локальные фото, пока они загружаются (спиннер поверх превью). */
     val localImageUris: List<Uri> = emptyList(),
     val uploading: Boolean = false,
+    /** Не ушло на сервер: красный «!», по нажатию — «Повторить / Удалить». */
+    val failed: Boolean = false,
     val replyAuthor: String? = null,
     val replyText: String? = null,
     val reactions: List<Reaction> = emptyList(),
@@ -502,7 +507,11 @@ private fun Footer(message: ChatMessage, onToggleReaction: ((String) -> Unit)?) 
                     Text(message.time, style = AppFont.sans(10.sp, color = Secondary))
                 }
                 if (message.mine) {
-                    ReadMark(read = message.read, modifier = Modifier.padding(bottom = 3.dp))
+                    when {
+                        message.failed -> FailedMark(Modifier.padding(bottom = 1.dp))
+                        message.uploading -> SendingMark(Modifier.padding(bottom = 2.dp))
+                        else -> ReadMark(read = message.read, modifier = Modifier.padding(bottom = 3.dp))
+                    }
                 }
             }
         },
@@ -573,5 +582,31 @@ fun ReadMark(read: Boolean, modifier: Modifier = Modifier, color: Color = Color.
             )
         }
         drawCircle(color, radius = 4f * px, center = Offset(4f * px, 4f * px))
+    }
+}
+
+/** Часики: сообщение отправляется. */
+@Composable
+fun SendingMark(modifier: Modifier = Modifier, color: Color = Color.White) {
+    Canvas(modifier = modifier.size(10.dp).semantics { contentDescription = "Отправляется" }) {
+        val px = size.minDimension / 10f
+        val c = Offset(5f * px, 5f * px)
+        drawCircle(color, radius = 4.25f * px, center = c, style = Stroke(width = 1f * px))
+        drawLine(color, c, Offset(5f * px, 2.4f * px), strokeWidth = 1f * px, cap = StrokeCap.Round)
+        drawLine(color, c, Offset(7f * px, 5f * px), strokeWidth = 1f * px, cap = StrokeCap.Round)
+    }
+}
+
+/** Красный «!»: сообщение не отправилось. */
+@Composable
+fun FailedMark(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(12.dp)
+            .background(T.Error, CircleShape)
+            .semantics { contentDescription = "Не отправлено" },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text("!", style = AppFont.sans(9.sp, FontWeight.Bold))
     }
 }

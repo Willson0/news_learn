@@ -30,6 +30,9 @@ interface ApiService {
     @POST("auth/recovery")
     suspend fun requestRecovery(@Body body: EmailBody): StatusResponse
 
+    @POST("auth/recovery/check")
+    suspend fun checkRecoveryCode(@Body body: RecoveryCheckBody): StatusResponse
+
     @POST("auth/recovery/reset")
     suspend fun resetPassword(@Body body: ResetBody): TokenResponse
 

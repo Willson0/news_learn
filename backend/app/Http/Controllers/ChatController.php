@@ -804,6 +804,8 @@ class ChatController extends Controller
             'sender' => $last && ! $last->isSystem() ? ($last->user_id === $viewer->id ? 'Вы' : $last->author_name) : null,
             'preview' => $preview,
             'time' => $last?->created_at?->format('H:i'),
+            // Полная дата: «16:32 / вчера / 12 окт» приложение считает в часовом поясе телефона.
+            'last_at' => $last?->created_at?->toIso8601String(),
             'unread' => self::unreadCount($chat, $viewer, $staff),
         ];
     }

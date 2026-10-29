@@ -27,6 +27,7 @@ import app.karta.likvidnosti.data.api.ProfileResponse
 import app.karta.likvidnosti.data.api.ReactBody
 import app.karta.likvidnosti.data.api.RegisterBody
 import app.karta.likvidnosti.data.api.ReportDto
+import app.karta.likvidnosti.data.api.RecoveryCheckBody
 import app.karta.likvidnosti.data.api.ResetBody
 import app.karta.likvidnosti.data.api.UserProfileDto
 import app.karta.likvidnosti.data.api.BillingCardDto
@@ -80,6 +81,10 @@ object Repository {
 
     suspend fun requestRecovery(email: String) =
         apiCall { api.requestRecovery(EmailBody(email)) }
+
+    /** Проверка кода из письма без смены пароля (шаг 2 восстановления). */
+    suspend fun checkRecoveryCode(email: String, code: String) =
+        apiCall { api.checkRecoveryCode(RecoveryCheckBody(email, code)) }
 
     suspend fun resetPassword(email: String, password: String, code: String): UserDto? =
         apiCall { applyToken(api.resetPassword(ResetBody(email, password, code))) }

@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.sp
 import app.karta.likvidnosti.data.AppData
 import app.karta.likvidnosti.data.Repository
 import app.karta.likvidnosti.data.Session
+import app.karta.likvidnosti.data.ChatDates
 import app.karta.likvidnosti.data.api.ChatItemDto
 import app.karta.likvidnosti.data.api.ChatSectionDto
 import app.karta.likvidnosti.data.fileUrl
@@ -64,6 +65,8 @@ import app.karta.likvidnosti.ui.components.AppInput
 import app.karta.likvidnosti.ui.components.CapsuleShape
 import app.karta.likvidnosti.ui.components.ChatRowSkeleton
 import app.karta.likvidnosti.ui.components.HairlineDivider
+import app.karta.likvidnosti.ui.components.LoadErrorState
+import app.karta.likvidnosti.ui.components.StaleDataBanner
 import app.karta.likvidnosti.ui.components.RemoteImage
 import app.karta.likvidnosti.ui.components.SegmentedControl
 import app.karta.likvidnosti.ui.components.TabScaffold
@@ -77,25 +80,6 @@ import app.karta.likvidnosti.ui.theme.T
 import app.karta.likvidnosti.ui.theme.designTop
 import app.karta.likvidnosti.ui.theme.hex
 import app.karta.likvidnosti.ui.theme.navBarClearance
-
-private val DEMO_SECTIONS = listOf(
-    ChatSectionDto(
-        key = "admin", title = "Чат с админом",
-        items = listOf(ChatItemDto(id = "admin", title = "Игорь Гломозда", sender = "Игор", preview = "Что интересует?", time = "16:32", unread = 1)),
-    ),
-    ChatSectionDto(
-        key = "main", title = "Чаты",
-        items = listOf(ChatItemDto(id = "general", title = "Общий чат", sender = "Артем", preview = "Кто читал новый отчет по золоту?", time = "16:32", unread = 234)),
-    ),
-    ChatSectionDto(
-        key = "reports", title = "Чаты по отчетам",
-        items = listOf(
-            ChatItemDto(id = "gold", title = "Отчет по золоту 26.02.26", sender = "Вы", preview = "Я вот что не понял это хедж и к...", time = "16:32", unread = 12, pinned = true),
-            ChatItemDto(id = "oil", title = "Нефть 12.12.27", sender = "Артем", preview = "Кто читал новый отчет по золоту?", time = "16:32", unread = 234),
-            ChatItemDto(id = "plat1", title = "Отчет по платине 26.02.26", sender = "Артем", preview = "Кто читал новый отчет по золоту?", time = "16:32", unread = 234),
-        ),
-    ),
-)
 
 private val Caption = Color.White.copy(alpha = 0.6f)
 
@@ -115,8 +99,10 @@ fun CommunityScreen(
     var query by rememberSaveable { mutableStateOf("") }
     var tab by rememberSaveable { mutableStateOf("all") }
     // Предзагруженные чаты показываем сразу; пока их нет — скелетоны.
-    var sections by remember { mutableStateOf(AppData.chats ?: DEMO_SECTIONS) }
+    var sections by remember { mutableStateOf(AppData.chats ?: emptyList()) }
     var loaded by remember { mutableStateOf(AppData.chats != null) }
+    // Список не загрузился: без кэша — экран ошибки, с кэшем — плашка над списком.
+    var failed by remember { mutableStateOf(false) }
     val isAdmin = Session.isAdmin
     val restricted = Session.restricted
 
@@ -125,12 +111,21 @@ fun CommunityScreen(
     val scope = rememberCoroutineScope()
 
     suspend fun fetch() {
-        val fetched = runCatching { Repository.chats() }.getOrNull()
-        if (!fetched.isNullOrEmpty()) {
-            AppData.chats = fetched
-            sections = fetched
-        }
+        runCatching { Repository.chats() }
+            .onSuccess { fetched ->
+                AppData.chats = fetched
+                sections = fetched
+                failed = false
+            }
+            .onFailure { failed = true }
         loaded = true
+    }
+
+    fun retry() {
+        scope.launch {
+            if (sections.isEmpty()) loaded = false
+            fetch()
+        }
     }
 
     LaunchedEffect(Unit) { fetch() }
@@ -238,7 +233,12 @@ fun CommunityScreen(
                     Column(modifier = Modifier.padding(horizontal = T.ScreenX).padding(top = 24.dp)) {
                         repeat(6) { ChatRowSkeleton() }
                     }
+                } else if (failed && sections.isEmpty()) {
+                    LoadErrorState(onRetry = { retry() }, modifier = Modifier.padding(horizontal = T.ScreenX).padding(top = 24.dp))
                 } else {
+                    if (failed) {
+                        StaleDataBanner(null, onRetry = { retry() }, modifier = Modifier.padding(horizontal = T.ScreenX).padding(top = 24.dp))
+                    }
                     Column(
                         modifier = Modifier.padding(top = if (restricted) 0.dp else 24.dp),
                         verticalArrangement = Arrangement.spacedBy(40.dp),
@@ -256,6 +256,7 @@ fun CommunityScreen(
                                         ChatRow(
                                             item,
                                             Modifier.padding(horizontal = T.ScreenX),
+                                            muted = chatMuted(context, item.id),
                                             onLongPress = { menuItem = item },
                                         ) { onOpenChat(item.id) }
                                     }
@@ -287,6 +288,7 @@ fun CommunityScreen(
 private fun ChatRow(
     item: ChatItemDto,
     modifier: Modifier = Modifier,
+    muted: Boolean = false,
     onLongPress: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
@@ -353,19 +355,24 @@ private fun ChatRow(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Text(item.time ?: "", style = AppFont.sans(T.FsBase, color = Caption))
+                if (muted) AppIcon(AppIcons.bellSlash, size = 14.dp, tint = Caption)
+                Text(ChatDates.listStamp(item.lastAt, item.time), style = AppFont.sans(T.FsBase, color = Caption))
                 if (item.pinned) AppIcon(AppIcons.pinSmall, size = 12.dp)
             }
             if (item.unread > 0) {
+                // Непрочитанные: зелёный бейдж 12; у чата без звука — серый.
                 Box(
                     modifier = Modifier
-                        .padding(top = 19.dp)
-                        .widthIn(min = 28.dp)
-                        .liquidGlass(CapsuleShape)
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                        .padding(top = 17.dp)
+                        .widthIn(min = 24.dp)
+                        .background(if (muted) hex("#5a5b5f") else T.Green, CapsuleShape)
+                        .padding(horizontal = 7.dp, vertical = 3.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(item.unread.toString(), style = AppFont.sans(10.sp, color = Caption))
+                    Text(
+                        if (item.unread > 999) "999+" else item.unread.toString(),
+                        style = AppFont.sans(12.sp, FontWeight.SemiBold),
+                    )
                 }
             }
         }

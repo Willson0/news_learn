@@ -40,6 +40,9 @@ fun ConfirmDialog(
     confirmLabel: String = "Удалить",
     cancelLabel: String = "Отмена",
     busy: Boolean = false,
+    /** Необязательное главное действие над красной кнопкой (например, «Повторить»). */
+    extraLabel: String? = null,
+    onExtra: () -> Unit = {},
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -77,6 +80,7 @@ fun ConfirmDialog(
                         modifier = Modifier.padding(top = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
+                        if (extraLabel != null) AppButton(extraLabel, variant = ButtonVariant.Accent) { onExtra() }
                         AppButton(confirmLabel, variant = ButtonVariant.Danger, loading = busy) { onConfirm() }
                         AppButton(cancelLabel, variant = ButtonVariant.Secondary) { onCancel() }
                     }

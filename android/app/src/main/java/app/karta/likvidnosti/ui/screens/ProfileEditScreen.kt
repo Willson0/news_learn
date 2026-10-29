@@ -41,6 +41,7 @@ import app.karta.likvidnosti.data.Session
 import app.karta.likvidnosti.data.Uploads
 import app.karta.likvidnosti.data.api.ApiException
 import app.karta.likvidnosti.data.fileUrl
+import app.karta.likvidnosti.ui.components.AppToast
 import app.karta.likvidnosti.ui.components.AppInput
 import app.karta.likvidnosti.ui.components.AuthField
 import app.karta.likvidnosti.ui.components.AvatarCircle
@@ -92,7 +93,9 @@ fun ProfileEditScreen(onBack: () -> Unit, onDone: () -> Unit) {
         scope.launch {
             val part = Uploads.filePart(context, "avatar", uri)
             if (part != null) {
-                runCatching { Repository.uploadAvatar(part) }.getOrNull()?.let { avatarUrl = it.avatarUrl }
+                runCatching { Repository.uploadAvatar(part) }
+                    .onSuccess { r -> r?.let { avatarUrl = it.avatarUrl } }
+                    .onFailure { AppToast.show("Не удалось загрузить фото") }
                 runCatching { Session.load(force = true) }
             }
             uploading = false
@@ -181,12 +184,12 @@ fun ProfileEditScreen(onBack: () -> Unit, onDone: () -> Unit) {
                     modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    AppInput(name, { name = it }, placeholder = "Введите имя", label = "Имя")
+                    AppInput(name, { name = it }, placeholder = "например, Иван", label = "Имя")
                     AuthField(tagError) {
                         AppInput(
                             tag,
                             { tag = it; tagError = null },
-                            placeholder = "Придумайте тег",
+                            placeholder = "например, ivan_trader",
                             label = "Тег",
                             error = tagError != null,
                         )

@@ -37,6 +37,7 @@ import app.karta.likvidnosti.data.Uploads
 import app.karta.likvidnosti.data.api.ApiException
 import app.karta.likvidnosti.data.fileUrl
 import app.karta.likvidnosti.ui.components.AppButton
+import app.karta.likvidnosti.ui.components.AppToast
 import app.karta.likvidnosti.ui.components.AppInput
 import app.karta.likvidnosti.ui.components.AuthField
 import app.karta.likvidnosti.ui.components.AuthMessageView
@@ -93,7 +94,11 @@ fun RegisterProfileScreen(onDone: () -> Unit) {
         scope.launch {
             val part = Uploads.filePart(context, "avatar", uri)
             if (part != null) {
-                runCatching { Repository.uploadAvatar(part) }.getOrNull()?.let { avatarUrl = it.avatarUrl }
+                runCatching { Repository.uploadAvatar(part) }
+                    .onSuccess { r -> r?.let { avatarUrl = it.avatarUrl } }
+                    .onFailure { AppToast.show("Не удалось загрузить фото") }
+            } else {
+                AppToast.show("Не удалось загрузить фото")
             }
             uploading = false
         }
@@ -139,7 +144,7 @@ fun RegisterProfileScreen(onDone: () -> Unit) {
         buttons = {
             Text(
                 buildAnnotatedString {
-                    withStyle(SpanStyle(color = Color.White.copy(alpha = 0.4f))) {
+                    withStyle(SpanStyle(color = T.TextMuted)) {
                         append("Нажимая на кнопку «Зарегистрироваться», Вы соглашаетесь с ")
                     }
                     withStyle(SpanStyle(color = T.Text)) { append("Правовой документацией") }
@@ -178,7 +183,7 @@ fun RegisterProfileScreen(onDone: () -> Unit) {
                 AppInput(
                     name,
                     { name = it; if (errors.containsKey("name")) errors = errors - "name" },
-                    placeholder = "Введите имя",
+                    placeholder = "например, Иван",
                     label = "Имя",
                     error = errors.containsKey("name"),
                 )
@@ -187,7 +192,7 @@ fun RegisterProfileScreen(onDone: () -> Unit) {
                 AppInput(
                     tag,
                     { tag = it; if (errors.containsKey("username")) errors = errors - "username" },
-                    placeholder = "Придумайте тег",
+                    placeholder = "например, ivan_trader",
                     label = "Тег",
                     error = errors.containsKey("username"),
                 )

@@ -12,7 +12,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.core.content.ContextCompat
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import app.karta.likvidnosti.data.TokenStore
+import app.karta.likvidnosti.ui.AppBoot
 import app.karta.likvidnosti.ui.AppRoot
 import app.karta.likvidnosti.ui.theme.KartaTheme
 
@@ -22,6 +24,8 @@ class MainActivity : ComponentActivity() {
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Логотип держится, пока AppRoot не загрузил сессию.
+        installSplashScreen().setKeepOnScreenCondition { !AppBoot.ready }
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         handleYandexLink(intent)

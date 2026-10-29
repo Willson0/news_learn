@@ -3,6 +3,7 @@ package app.karta.likvidnosti.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -13,12 +14,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import app.karta.likvidnosti.data.Repository
+import app.karta.likvidnosti.data.Session
 import app.karta.likvidnosti.data.api.ApiException
 import app.karta.likvidnosti.ui.components.AppButton
 import app.karta.likvidnosti.ui.components.AppInput
 import app.karta.likvidnosti.ui.components.AuthFieldError
 import app.karta.likvidnosti.ui.components.AuthScaffold
 import app.karta.likvidnosti.ui.components.ButtonVariant
+import app.karta.likvidnosti.ui.theme.AppFont
+import app.karta.likvidnosti.ui.theme.T
 import kotlinx.coroutines.launch
 
 private data class ChangeField(val key: String, val placeholder: String, val secure: Boolean, val keyboard: KeyboardType)
@@ -38,14 +42,14 @@ fun AccountChangeScreen(
     val title: String
     val button: String
     val fields: List<ChangeField>
+    // Текущее значение приложение знает само — показываем его текстом, спрашиваем только новое.
+    val current: String?
     when (field) {
         "phone" -> {
             title = "Смена номера телефона"
             button = "Сменить номер"
-            fields = listOf(
-                ChangeField("old", "Прежний номер телефона", false, KeyboardType.Phone),
-                ChangeField("new", "Новый номер телефона", false, KeyboardType.Phone),
-            )
+            fields = listOf(ChangeField("new", "Новый номер телефона", false, KeyboardType.Phone))
+            current = Session.user?.phone?.takeIf { it.isNotBlank() }?.let { "Текущий номер: $it" }
         }
         "password" -> {
             title = "Смена пароля"
@@ -54,14 +58,13 @@ fun AccountChangeScreen(
                 ChangeField("new", "Новый пароль", true, KeyboardType.Password),
                 ChangeField("confirm", "Подтвердите пароль", true, KeyboardType.Password),
             )
+            current = null
         }
         else -> {
             title = "Смена почты"
             button = "Сменить почту"
-            fields = listOf(
-                ChangeField("old", "Прежняя почта", false, KeyboardType.Email),
-                ChangeField("new", "Новая почта", false, KeyboardType.Email),
-            )
+            fields = listOf(ChangeField("new", "Новая почта", false, KeyboardType.Email))
+            current = Session.user?.email?.takeIf { it.isNotBlank() }?.let { "Текущая почта: $it" }
         }
     }
 
@@ -113,6 +116,7 @@ fun AccountChangeScreen(
         },
     ) {
         Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            current?.let { Text(it, style = AppFont.sans(T.FsBase, color = T.TextSecondary)) }
             fields.forEach { f ->
                 AppInput(
                     value(f.key),

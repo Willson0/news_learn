@@ -174,6 +174,44 @@ class AuthTest extends TestCase
         ])->assertOk();
     }
 
+    public function test_recovery_check_validates_code_without_spending_it(): void
+    {
+        Mail::fake();
+
+        User::factory()->create(['email' => 'r@example.com', 'password' => 'oldpass123']);
+        $this->postJson('/api/auth/recovery', ['email' => 'r@example.com'])->assertOk();
+
+        $code = null;
+        Mail::assertSent(CodeMail::class, function (CodeMail $mail) use (&$code) {
+            $code = $mail->code;
+
+            return true;
+        });
+
+        // Неверный код — понятная ошибка на шаге кода.
+        $this->postJson('/api/auth/recovery/check', ['email' => 'r@example.com', 'code' => '000000'])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('code');
+
+        // Верный код проходит проверку и остаётся действительным для смены пароля.
+        $this->postJson('/api/auth/recovery/check', ['email' => 'r@example.com', 'code' => $code])
+            ->assertOk()
+            ->assertJson(['status' => 'ok']);
+
+        $this->postJson('/api/auth/recovery/reset', [
+            'email' => 'r@example.com',
+            'password' => 'newpass123',
+            'code' => $code,
+        ])->assertOk();
+    }
+
+    public function test_recovery_check_requires_requested_code(): void
+    {
+        $this->postJson('/api/auth/recovery/check', ['email' => 'nobody@example.com', 'code' => '123456'])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('email');
+    }
+
     public function test_telegram_init_data_validation(): void
     {
         $botToken = 'test-bot-token';

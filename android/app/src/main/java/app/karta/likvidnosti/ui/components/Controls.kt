@@ -4,6 +4,10 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.border
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -116,7 +120,8 @@ fun AppInput(
     height: Dp? = null,
 ) {
     var revealed by remember { mutableStateOf(false) }
-    val textColor = if (error) T.Error else T.Text
+    // При ошибке текст остаётся белым (его нужно прочитать, чтобы исправить), красная — обводка.
+    val textColor = T.Text
     // Своё состояние с курсором: если родитель переформатировал ввод (маска
     // телефона, фильтр цифр), курсор ставится в конец, а не посреди текста.
     var fieldValue by remember { mutableStateOf(TextFieldValue(value, TextRange(value.length))) }
@@ -126,7 +131,9 @@ fun AppInput(
             .fillMaxWidth()
             .height(height ?: if (label == null) 48.dp else 64.dp)
             .liquidGlass(T.ShapeInput)
-            .padding(start = 16.dp, end = if (isPassword) 16.dp else 12.dp),
+            .then(if (error) Modifier.border(1.dp, T.Error, T.ShapeInput) else Modifier)
+            // У пароля справа — «глаз» в области 48: отступ 4 + 12 внутри области = прежние 16.
+            .padding(start = 16.dp, end = if (isPassword) 4.dp else 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -159,11 +166,15 @@ fun AppInput(
             )
         }
         if (isPassword) {
-            AppIcon(
-                if (revealed) AppIcons.eye else AppIcons.eyeClosed,
-                size = 24.dp,
-                modifier = Modifier.pressable(pressAlpha = 1f) { revealed = !revealed },
-            )
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .pressable(pressAlpha = 1f) { revealed = !revealed }
+                    .a11yButton(if (revealed) "Скрыть пароль" else "Показать пароль"),
+                contentAlignment = Alignment.Center,
+            ) {
+                AppIcon(if (revealed) AppIcons.eye else AppIcons.eyeClosed, size = 24.dp)
+            }
         }
     }
 }
@@ -188,7 +199,11 @@ fun AppToggle(
             .size(width = 50.dp, height = 30.dp)
             .alpha(if (enabled) 1f else 0.5f)
             .liquidGlass(CapsuleShape, if (checked) Fills.Active else Fills.Glass)
-            .pressable(enabled = enabled, pressAlpha = 1f) { onCheckedChange(!checked) },
+            .pressable(enabled = enabled, pressAlpha = 1f) { onCheckedChange(!checked) }
+            .semantics(mergeDescendants = true) {
+                role = Role.Switch
+                stateDescription = if (checked) "Включено" else "Выключено"
+            },
     ) {
         Box(
             modifier = Modifier
@@ -218,6 +233,11 @@ fun InstrumentChip(
             .height(40.dp)
             .liquidGlass(shape, if (checked) Fills.Active else Fills.Glass)
             .pressable(pressAlpha = 1f, onClick = onToggle)
+            // TalkBack: «Золото, флажок, отмечено».
+            .semantics(mergeDescendants = true) {
+                role = Role.Checkbox
+                stateDescription = if (checked) "Отмечено" else "Не отмечено"
+            }
             .padding(horizontal = hPadding),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),

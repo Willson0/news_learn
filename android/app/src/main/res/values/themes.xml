@@ -6,4 +6,11 @@
         <item name="android:navigationBarColor">@color/bg</item>
         <item name="android:windowLightStatusBar">false</item>
     </style>
+
+    <!-- Сплэш при запуске (SplashScreen API): логотип на фоне приложения, пока грузится сессия. -->
+    <style name="Theme.Karta.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/bg</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher</item>
+        <item name="postSplashScreenTheme">@style/Theme.Karta</item>
+    </style>
 </resources>

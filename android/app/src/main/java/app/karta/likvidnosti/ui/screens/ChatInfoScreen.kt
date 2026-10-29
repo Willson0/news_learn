@@ -418,7 +418,7 @@ fun ChatInfoScreen(
             ) {
                 GlassBackButton(onClick = onBack)
                 Spacer(Modifier.weight(1f))
-                GlassCircleButton(AppIcons.news, iconSize = 24.dp) { newsTapped() }
+                GlassCircleButton(AppIcons.news, if (canManage ?: Session.isAdmin) "Редактировать чат" else "Открыть отчет", iconSize = 24.dp) { newsTapped() }
             }
         },
     )

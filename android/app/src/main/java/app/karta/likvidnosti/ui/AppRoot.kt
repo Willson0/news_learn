@@ -9,7 +9,6 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -18,7 +17,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -34,6 +32,7 @@ import app.karta.likvidnosti.data.AppData
 import app.karta.likvidnosti.data.Session
 import app.karta.likvidnosti.data.TokenStore
 import app.karta.likvidnosti.ui.components.AppTab
+import app.karta.likvidnosti.ui.components.AppToastHost
 import app.karta.likvidnosti.ui.components.GlassNavBar
 import app.karta.likvidnosti.ui.components.NavBarExtra
 import app.karta.likvidnosti.ui.icons.AppIcons
@@ -64,6 +63,11 @@ import app.karta.likvidnosti.ui.screens.UserProfileScreen
 import app.karta.likvidnosti.ui.theme.T
 import kotlinx.coroutines.launch
 
+/** Сессия загружена — системный сплэш с логотипом можно убирать. */
+object AppBoot {
+    @Volatile var ready = false
+}
+
 @Composable
 fun AppRoot() {
     var ready by remember { mutableStateOf(false) }
@@ -77,12 +81,12 @@ fun AppRoot() {
             if (authed) scope.launch { AppData.preload() }
         }
         ready = true
+        AppBoot.ready = true
     }
 
     if (!ready) {
-        Box(modifier = Modifier.fillMaxSize().background(T.Bg), contentAlignment = Alignment.Center) {
-            Text("…", color = T.TextMuted)
-        }
+        // Поверх — системный сплэш с логотипом (Theme.Karta.Starting).
+        Box(modifier = Modifier.fillMaxSize().background(T.Bg))
         return
     }
 
@@ -140,8 +144,8 @@ fun AppRoot() {
     /** Навбар корневой вкладки; справа — «+» у админа на «Аналитике», чат на «Профиле». */
     val navBar: @Composable (AppTab) -> Unit = { tab ->
         val extra = when (tab) {
-            AppTab.Analytics -> if (isAdmin) NavBarExtra(AppIcons.plusBig) { actions.toReportCreate() } else null
-            AppTab.Profile -> NavBarExtra(AppIcons.chat) {
+            AppTab.Analytics -> if (isAdmin) NavBarExtra(AppIcons.plusBig, "Создать отчет") { actions.toReportCreate() } else null
+            AppTab.Profile -> NavBarExtra(AppIcons.chat, if (Session.isAdmin) "Личные чаты" else "Чат с администратором") {
                 // Админ ведёт личные чаты во вкладке «Сообщество», пользователь — свой чат с админом.
                 if (Session.isAdmin) actions.toCommunity() else actions.toChat("admin")
             }
@@ -338,9 +342,10 @@ fun AppRoot() {
                     )
                 }
             }
-            composable(Routes.SUBSCRIPTION) { SubscriptionScreen(onBack = { actions.back() }) }
+            composable(Routes.SUBSCRIPTION) { SubscriptionScreen(onBack = { actions.back() }, onToMaterials = { actions.toHome() }) }
             composable(Routes.USER_AGREEMENT) { UserAgreementScreen(onBack = { actions.back() }) }
         }
+        AppToastHost()
     }
 }
 

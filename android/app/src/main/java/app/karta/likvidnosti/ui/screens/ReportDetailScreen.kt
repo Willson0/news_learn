@@ -32,6 +32,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -60,6 +61,7 @@ import app.karta.likvidnosti.ui.components.SkeletonBox
 import app.karta.likvidnosti.ui.components.GlassCircleButton
 import app.karta.likvidnosti.ui.components.figmaSlow
 import app.karta.likvidnosti.ui.components.GlassLabel
+import app.karta.likvidnosti.ui.components.LoadErrorState
 import app.karta.likvidnosti.ui.components.GlassTopBar
 import app.karta.likvidnosti.ui.components.ReportActionButton
 import app.karta.likvidnosti.ui.components.ReportActionVariant
@@ -69,6 +71,7 @@ import app.karta.likvidnosti.ui.icons.AppIcons
 import app.karta.likvidnosti.ui.theme.AppFont
 import app.karta.likvidnosti.ui.theme.T
 import app.karta.likvidnosti.ui.theme.designBottom
+import kotlinx.coroutines.launch
 import kotlin.math.max
 
 /** Прототип: «Аналитика отчет» 484:13666 ↔ 484:13689 — SMART_ANIMATE, пружина SLOW (≈1.25 с). */
@@ -92,18 +95,45 @@ fun ReportDetailScreen(
     val seeded = remember(id) { id?.let { rid -> AppData.reports?.firstOrNull { it.id == rid } } }
     var report by remember(id) { mutableStateOf(seeded ?: ReportDto()) }
     var loaded by remember(id) { mutableStateOf(seeded != null) }
+    // Полный отчёт (с текстом) пришёл с сервера; в ленте текста нет.
+    var detailLoaded by remember(id) { mutableStateOf(false) }
+    var failed by remember(id) { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     var reportOpen by rememberSaveable { mutableStateOf(false) }
     // HTML-отчёт открывается на весь экран; без html остаётся текстовый блок.
     var htmlOpen by rememberSaveable { mutableStateOf(false) }
     var graphOpen by rememberSaveable { mutableStateOf(false) }
     val isAdmin = Session.isAdmin
 
-    LaunchedEffect(id) {
-        if (id != null) {
-            runCatching { Repository.report(id) }.getOrNull()?.let { report = it }
+    suspend fun fetch() {
+        if (id == null) { failed = true; return }
+        runCatching { Repository.report(id) }
+            .onSuccess { r ->
+                if (r != null) report = r
+                detailLoaded = r != null
+                failed = r == null
+            }
+            .onFailure { failed = true }
+    }
+
+    fun retry() {
+        scope.launch {
+            failed = false
+            if (seeded == null) loaded = false
+            fetch()
+            loaded = true
         }
+    }
+
+    LaunchedEffect(id) {
+        fetch()
         loaded = true
     }
+    // Отчёт без текста и без HTML: кнопки «Открыть отчет» нет, вместо неё — честная подпись.
+    val hasText = !report.body.isNullOrEmpty() || fileUrl(report.htmlUrl) != null
+    val showOpen = !detailLoaded || hasText
+    // Не загрузился, и показать нечего — экран ошибки вместо пустой обложки.
+    val nothingToShow = failed && seeded == null && !detailLoaded
     val chartSource = remember(report.chartUrl) { ChartSource.parse(report.chartUrl) }
 
     val expanded = graphOpen || reportOpen
@@ -117,12 +147,17 @@ fun ReportDetailScreen(
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val viewport = maxHeight
                 // Кнопки (3 × 48 + 2 × 12) прижаты к низу, пока обложка свёрнута не раскрыта.
-                val buttons = if (chartSource != null) 3 else 2
+                val buttons = (if (chartSource != null) 3 else 2) - (if (showOpen) 0 else 1)
                 val actionsH = 48.dp * buttons + 12.dp * (buttons - 1)
                 // Отступ над кнопками анимируется той же пружиной, что и обложка: кнопки
                 // поднимаются одним блоком вместе с ней, без скачка.
                 val spacerTarget = if (expanded) 24.dp else max(24f, (viewport - 465.dp - actionsH - bottomPad).value).dp
                 val spacer by animateDpAsState(spacerTarget, HeroSpring, label = "actions")
+                if (nothingToShow) {
+                    Box(Modifier.fillMaxSize().padding(horizontal = T.ScreenX), contentAlignment = Alignment.Center) {
+                        LoadErrorState(onRetry = { retry() }, text = "Не удалось загрузить отчет. Проверьте интернет и попробуйте ещё раз")
+                    }
+                } else
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -135,8 +170,16 @@ fun ReportDetailScreen(
                         modifier = Modifier.padding(horizontal = T.ScreenX),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        ReportActionButton("Открыть отчет", AppIcons.doc, variant = ReportActionVariant.Accent) {
-                            if (fileUrl(report.htmlUrl) != null) htmlOpen = true else reportOpen = !reportOpen
+                        if (showOpen) {
+                            ReportActionButton("Открыть отчет", AppIcons.doc, variant = ReportActionVariant.Accent) {
+                                if (fileUrl(report.htmlUrl) != null) htmlOpen = true else reportOpen = !reportOpen
+                            }
+                        } else {
+                            Text(
+                                "Текст отчёта ещё не опубликован",
+                                style = AppFont.sans(T.FsBase, color = T.TextSecondary),
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                            )
                         }
                         ReportActionButton("Обсудить", AppIcons.chat, variant = ReportActionVariant.Pink) {
                             onDiscuss(report.chat)
@@ -153,7 +196,12 @@ fun ReportDetailScreen(
                         }
                     }
                     AnimatedVisibility(visible = reportOpen, enter = expandVertically(figmaSlow()) + fadeIn(figmaSlow()), exit = shrinkVertically(figmaSlow()) + fadeOut(figmaSlow())) {
-                        ReportBody(report, Modifier.padding(horizontal = T.ScreenX).padding(top = 24.dp))
+                        ReportBody(
+                            report,
+                            failed = failed,
+                            onRetry = { retry() },
+                            modifier = Modifier.padding(horizontal = T.ScreenX).padding(top = 24.dp),
+                        )
                     }
                     // Прототип: «Аналитика отчет график внутри» — блок графика во всю ширину.
                     AnimatedVisibility(visible = graphOpen && chartSource != null, enter = expandVertically(figmaSlow()) + fadeIn(figmaSlow()), exit = shrinkVertically(figmaSlow()) + fadeOut(figmaSlow())) {
@@ -179,7 +227,7 @@ fun ReportDetailScreen(
                     null
                 },
                 trailing = if (isAdmin && id != null) {
-                    { GlassCircleButton(AppIcons.settings) { onEdit(id) } }
+                    { GlassCircleButton(AppIcons.settings, "Редактировать отчет") { onEdit(id) } }
                 } else {
                     null
                 },
@@ -238,7 +286,7 @@ private fun Hero(report: ReportDto, height: Dp, loaded: Boolean) {
 }
 
 @Composable
-private fun ReportBody(report: ReportDto, modifier: Modifier = Modifier) {
+private fun ReportBody(report: ReportDto, failed: Boolean, onRetry: () -> Unit, modifier: Modifier = Modifier) {
     val body = report.body
     Column(
         modifier = modifier
@@ -249,17 +297,15 @@ private fun ReportBody(report: ReportDto, modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         val style = AppFont.sans(T.FsBase).copy(lineHeight = 21.sp)
-        if (!body.isNullOrEmpty()) {
-            Text(body, style = style)
-        } else {
-            Text(
-                "Нефть остаётся одним из ключевых индикаторов мировой экономики. В 2026 году на цену влияют баланс спроса и предложения, политика ОПЕК+ и курс доллара.",
-                style = style,
-            )
-            Text(
-                "В этом отчёте мы разбираем основные сценарии, факторы риска и возможные уровни цены на горизонте ближайших месяцев.",
-                style = style,
-            )
+        when {
+            !body.isNullOrEmpty() -> Text(body, style = style)
+            failed -> LoadErrorState(onRetry = onRetry, text = "Не удалось загрузить текст отчета")
+            else -> {
+                // Текст ещё грузится (из ленты пришёл отчёт без текста).
+                SkeletonBox(Modifier.fillMaxWidth().height(14.dp))
+                SkeletonBox(Modifier.fillMaxWidth().height(14.dp))
+                SkeletonBox(Modifier.width(220.dp).height(14.dp))
+            }
         }
     }
 }
@@ -275,6 +321,7 @@ private fun ReportHtmlScreen(url: String, onClose: () -> Unit) {
             ReportWebView(url, Modifier.fillMaxSize())
             GlassCircleButton(
                 icon = AppIcons.close,
+                contentDescription = "Закрыть",
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .statusBarsPadding()

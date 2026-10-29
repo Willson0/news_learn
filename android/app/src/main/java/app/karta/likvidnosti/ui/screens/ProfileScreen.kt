@@ -2,7 +2,10 @@
 
 package app.karta.likvidnosti.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.offset
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -37,7 +40,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -48,6 +60,8 @@ import app.karta.likvidnosti.data.Session
 import app.karta.likvidnosti.data.api.ReportDto
 import app.karta.likvidnosti.data.fileUrl
 import app.karta.likvidnosti.ui.components.AppButton
+import app.karta.likvidnosti.ui.components.AppToast
+import app.karta.likvidnosti.ui.components.a11yButton
 import app.karta.likvidnosti.ui.components.AvatarCircle
 import app.karta.likvidnosti.ui.components.ButtonVariant
 import app.karta.likvidnosti.ui.components.Fills
@@ -72,11 +86,12 @@ import app.karta.likvidnosti.ui.theme.hex
 import app.karta.likvidnosti.ui.theme.navBarClearance
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import kotlin.math.roundToInt
 import java.time.format.DateTimeFormatter
 
 private data class ProfInstrument(val key: String, val label: String, val on: Boolean)
 
-private val SORT_OPTIONS = listOf("new" to "Сначала новые", "old" to "Сначала Старые", "name" to "По названию")
+private val SORT_OPTIONS = listOf("new" to "Сначала новые", "old" to "Сначала старые", "name" to "По названию")
 
 /** «Сегодня» / «Вчера» и подписи в блоке подписки — белый 60 %. */
 private val Caption = Color.White.copy(alpha = 0.6f)
@@ -159,6 +174,8 @@ fun ProfileScreen(
     }
     var history by remember { mutableStateOf(AppData.reports ?: emptyList<ReportDto>()) }
     var sortOpen by remember { mutableStateOf(false) }
+    // Где на экране кнопка сортировки: попап открывается под ней поверх всего экрана.
+    var sortAnchor by remember { mutableStateOf(Rect.Zero) }
     var sort by rememberSaveable { mutableStateOf("new") }
     val scope = rememberCoroutineScope()
     val isAdmin = Session.isAdmin
@@ -191,10 +208,15 @@ fun ProfileScreen(
         fetch()
     }
 
-    fun saveInstruments() {
+    /** Сохраняет выбор; при сбое возвращает переключатель назад и говорит об этом. */
+    fun saveInstruments(index: Int, previous: ProfInstrument) {
         scope.launch {
             runCatching { Repository.syncInstruments(instruments.filter { it.on }.map { it.key }) }
-            AppData.refreshProfile()
+                .onSuccess { AppData.refreshProfile() }
+                .onFailure {
+                    if (index < instruments.size && instruments[index].key == previous.key) instruments[index] = previous
+                    AppToast.show("Не удалось сохранить, попробуйте ещё раз")
+                }
         }
     }
 
@@ -202,7 +224,26 @@ fun ProfileScreen(
         .ifEmpty { (Session.user?.name ?: "").take(1).uppercase().ifEmpty { "?" } }
     val displayTag = if (tag.isEmpty()) "" else if (tag.startsWith("@")) tag else "@$tag"
 
-    TabScaffold(navBar = navBar) {
+    TabScaffold(
+        navBar = navBar,
+        overlay = {
+            // Попап сортировки закрывается тапом снаружи и системным «назад».
+            BackHandler(enabled = sortOpen) { sortOpen = false }
+            if (sortOpen) {
+                Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { sortOpen = false } })
+            }
+            AnimatedSortPopup(
+                visible = sortOpen,
+                sort = sort,
+                modifier = Modifier.offset {
+                    IntOffset(
+                        (sortAnchor.right - 203.dp.toPx()).roundToInt(),
+                        (sortAnchor.bottom + 8.dp.toPx()).roundToInt(),
+                    )
+                },
+            ) { sort = it; sortOpen = false }
+        },
+    ) {
         PullToRefreshBox(
             isRefreshing = refreshing,
             scrollState = scrollState,
@@ -265,7 +306,7 @@ fun ProfileScreen(
                         instruments.forEachIndexed { i, item ->
                             InstrumentChip(label = item.label, checked = item.on, onToggle = {
                                 instruments[i] = item.copy(on = !item.on)
-                                saveInstruments()
+                                saveInstruments(i, item)
                             })
                         }
                     }
@@ -301,8 +342,10 @@ fun ProfileScreen(
                                 Box(
                                     modifier = Modifier
                                         .size(48.dp)
+                                        .onGloballyPositioned { sortAnchor = it.boundsInRoot() }
                                         .liquidGlass(CircleShape, Fills.Active)
-                                        .pressable { sortOpen = !sortOpen },
+                                        .pressable { sortOpen = !sortOpen }
+                                        .a11yButton("Сортировка: ${SORT_OPTIONS.firstOrNull { it.first == sort }?.second ?: ""}"),
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     AppIcon(AppIcons.filter, size = 16.dp)
@@ -324,11 +367,6 @@ fun ProfileScreen(
                                 }
                             }
                         }
-                        AnimatedSortPopup(
-                            visible = sortOpen,
-                            sort = sort,
-                            modifier = Modifier.align(Alignment.TopEnd).padding(top = 56.dp),
-                        ) { sort = it; sortOpen = false }
                     }
                 }
             }
@@ -383,6 +421,7 @@ private fun Header(
 
         GlassCircleButton(
             AppIcons.settings,
+            contentDescription = "Настройки профиля",
             iconSize = 26.dp,
             modifier = Modifier.align(Alignment.TopEnd).padding(end = T.ScreenX, top = top),
             onClick = onSettings,
@@ -478,7 +517,7 @@ private fun ConditionsBlock(price: String, until: String, onSubscription: () -> 
         }
         if (price.isEmpty()) {
             Text(
-                "После определение тарифа Вам придет уведомление и стоимость",
+                "Когда тариф будет назначен, мы пришлём уведомление со стоимостью",
                 style = AppFont.sans(T.FsBase, color = T.TextSecondary),
                 modifier = Modifier.widthIn(max = 300.dp).padding(top = 12.dp),
             )
@@ -520,15 +559,16 @@ private fun SortPopup(sort: String, onSelect: (String) -> Unit) {
         modifier = Modifier
             .width(203.dp)
             .liquidGlass(T.ShapeCard, Fills.Black2)
-            .padding(vertical = 16.dp, horizontal = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            // Пункты по 43 вместо 19 с зазором 12: та же картинка, но цель нажатия крупнее.
+            .padding(vertical = 4.dp, horizontal = 12.dp),
     ) {
         SORT_OPTIONS.forEach { (value, label) ->
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(19.dp)
-                    .pressable(pressAlpha = 1f) { onSelect(value) },
+                    .height(43.dp)
+                    .pressable(pressAlpha = 1f) { onSelect(value) }
+                    .semantics(mergeDescendants = true) { selected = sort == value; role = Role.RadioButton },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {

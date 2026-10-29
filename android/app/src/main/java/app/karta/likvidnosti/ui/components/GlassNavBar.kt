@@ -1,5 +1,11 @@
 package app.karta.likvidnosti.ui.components
 
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.invisibleToUser
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -38,11 +44,11 @@ import app.karta.likvidnosti.ui.theme.T
 import app.karta.likvidnosti.ui.theme.designBottom
 
 /** Корневые вкладки (iOS `Tab`). */
-enum class AppTab(val route: String) {
-    Home(Routes.HOME),
-    Analytics(Routes.ANALYTICS),
-    Community(Routes.COMMUNITY),
-    Profile(Routes.PROFILE),
+enum class AppTab(val route: String, val label: String) {
+    Home(Routes.HOME, "Главная"),
+    Analytics(Routes.ANALYTICS, "Аналитика"),
+    Community(Routes.COMMUNITY, "Сообщество"),
+    Profile(Routes.PROFILE, "Профиль"),
     ;
 
     companion object {
@@ -62,7 +68,7 @@ internal object TabMemory {
 }
 
 /** Круглая кнопка 64 справа от навбара (админский «+», чат на «Профиле»). */
-class NavBarExtra(val icon: IconDef, val iconSize: Dp = 30.dp, val onClick: () -> Unit)
+class NavBarExtra(val icon: IconDef, val label: String, val iconSize: Dp = 30.dp, val onClick: () -> Unit)
 
 /** [restrictedX] — место без подписки (Figma 474:11853: навбар 120, «Сообщество» и «Профиль»), null — пункт скрыт. */
 private class NavItem(val tab: AppTab, val icon: IconDef, val x: Dp, val restrictedX: Dp?)
@@ -191,14 +197,21 @@ fun GlassNavBar(
                                         TabMemory.last = current
                                         onSelect(item.tab)
                                     }
+                                }
+                                // TalkBack: «Главная, вкладка, выбрано».
+                                .semantics(mergeDescendants = true) {
+                                    if (hidden) invisibleToUser()
+                                    contentDescription = item.tab.label
+                                    role = Role.Tab
+                                    selected = item.tab == current
                                 },
                             contentAlignment = Alignment.Center,
                         ) {
                             // Подсветка иконки растворяется вместе с переездом линзы.
                             val tint = when (item.tab) {
-                                current -> lerp(if (entering) T.TextMuted else T.Text, T.Text, shown)
-                                from -> lerp(T.Text, T.TextMuted, shown)
-                                else -> T.TextMuted
+                                current -> lerp(if (entering) T.IconMuted else T.Text, T.Text, shown)
+                                from -> lerp(T.Text, T.IconMuted, shown)
+                                else -> T.IconMuted
                             }
                             AppIcon(item.icon, size = 24.dp, tint = tint)
                         }
@@ -213,6 +226,10 @@ fun GlassNavBar(
                             .pressable {
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 shownExtra.onClick()
+                            },
+                            .semantics(mergeDescendants = true) {
+                                role = Role.Button
+                                contentDescription = shownExtra.label
                             },
                         contentAlignment = Alignment.Center,
                     ) {

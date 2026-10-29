@@ -3,11 +3,9 @@ package app.karta.likvidnosti.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -17,19 +15,20 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import app.karta.likvidnosti.data.AppData
 import app.karta.likvidnosti.data.Repository
 import app.karta.likvidnosti.data.api.ReportDto
+import app.karta.likvidnosti.ui.components.EmptyState
+import app.karta.likvidnosti.ui.components.LoadErrorState
 import app.karta.likvidnosti.ui.components.MaterialChips
+import app.karta.likvidnosti.ui.components.StaleDataBanner
 import app.karta.likvidnosti.ui.components.ReportCard
 import app.karta.likvidnosti.ui.components.ReportListSkeleton
 import app.karta.likvidnosti.ui.components.ScreenTitle
 import app.karta.likvidnosti.ui.components.TabScaffold
 import app.karta.likvidnosti.ui.components.PullToRefreshBox
-import app.karta.likvidnosti.ui.theme.AppFont
 import app.karta.likvidnosti.ui.theme.T
 import app.karta.likvidnosti.ui.theme.designTop
 import app.karta.likvidnosti.ui.theme.navBarClearance
@@ -44,6 +43,10 @@ fun HomeScreen(onOpenReport: (Long) -> Unit, navBar: @Composable () -> Unit) {
     // Для фильтра «все» берём предзагруженные данные — экран открывается без прогрузки.
     var reports by remember { mutableStateOf(AppData.reports ?: emptyList<ReportDto>()) }
     var loaded by remember { mutableStateOf(AppData.reports != null) }
+    // Данные на экране не с сервера только что: сбой загрузки (с кэшем или без).
+    var failed by remember { mutableStateOf(false) }
+    var hasData by remember { mutableStateOf(AppData.reports != null) }
+    var savedAt by remember { mutableStateOf(AppData.reportsAt) }
     var refreshing by remember { mutableStateOf(false) }
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
@@ -52,18 +55,37 @@ fun HomeScreen(onOpenReport: (Long) -> Unit, navBar: @Composable () -> Unit) {
         runCatching { Repository.reports(instrument = if (filter == "all") null else filter) }
             .onSuccess {
                 reports = it
-                if (filter == "all") AppData.reports = it
+                failed = false
+                hasData = true
+                savedAt = System.currentTimeMillis()
+                if (filter == "all") {
+                    AppData.reports = it
+                    AppData.reportsAt = savedAt
+                }
             }
+            .onFailure { failed = true }
     }
 
     LaunchedEffect(filter) {
         if (filter == "all" && AppData.reports != null) {
             reports = AppData.reports!!
+            savedAt = AppData.reportsAt
+            hasData = true
             loaded = true
+        } else if (filter != "all") {
+            // Прежний список виден, пока грузится новый, но при сбое он к фильтру не относится.
+            hasData = false
         }
         fetch()
-        // при сбое обновления оставляем предзагруженные данные
         loaded = true
+    }
+
+    fun retry() {
+        scope.launch {
+            loaded = hasData
+            fetch()
+            loaded = true
+        }
     }
 
     TabScaffold(navBar = navBar) {
@@ -90,17 +112,19 @@ fun HomeScreen(onOpenReport: (Long) -> Unit, navBar: @Composable () -> Unit) {
                 MaterialChips(value = filter, onSelect = { filter = it })
                 if (!loaded) {
                     ReportListSkeleton(cards = 4)
+                } else if (failed && !hasData) {
+                    LoadErrorState(onRetry = { retry() })
                 } else {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        if (failed) StaleDataBanner(savedAt, onRetry = { retry() })
                         reports.forEach { report ->
                             ReportCard(report = report, onOpen = { onOpenReport(report.id) })
                         }
                         if (reports.isEmpty()) {
-                            Text(
-                                "По этому фильтру материалов пока нет",
-                                style = AppFont.sans(T.FsLg, color = T.TextSecondary),
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
+                            EmptyState(
+                                if (filter == "all") "Материалов пока нет" else "По этому фильтру материалов пока нет",
+                                actionLabel = if (filter == "all") null else "Показать все",
+                                onAction = { filter = "all" },
                             )
                         }
                     }

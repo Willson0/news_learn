@@ -123,6 +123,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import app.karta.likvidnosti.BuildConfig
+import app.karta.likvidnosti.data.ChatDates
 import app.karta.likvidnosti.data.Repository
 import app.karta.likvidnosti.data.Session
 import app.karta.likvidnosti.data.Uploads
@@ -191,7 +192,7 @@ private fun MessageDto.toUi() = ChatMessage(
     role = role,
     avatarUrl = avatarUrl,
     text = text,
-    time = time,
+    time = ChatDates.time(createdAt, time),
     read = read,
     voiceUrl = voice?.url,
     voiceDuration = voice?.duration,
@@ -393,8 +394,8 @@ fun ChatScreen(
             val newPins = resp.pins ?: listOfNotNull(resp.pinned)
             pins.clear(); pins.addAll(newPins)
             pinIndex = pinIndex.coerceIn(0, (pins.size - 1).coerceAtLeast(0))
-            // Фото, которые ещё отправляются, остаются в ленте.
-            val pending = messages.filter { it.uploading }
+            // Сообщения, которые ещё отправляются или не отправились, остаются в ленте.
+            val pending = messages.filter { it.uploading || it.failed }
             messages.clear()
             messages.addAll(resp.data.map { it.toUi() })
             messages.addAll(pending)
@@ -421,7 +422,7 @@ fun ChatScreen(
         val keyboardHidden = keyboardWas && !keyboardShown
         keyboardWas = keyboardShown
         if (loaded && visible.isNotEmpty() && !searchMode && !keyboardHidden) {
-            runCatching { listState.animateScrollToItem(visible.size) }
+            runCatching { listState.animateScrollToItem(visible.size - 1) }
         }
     }
 
@@ -441,7 +442,8 @@ fun ChatScreen(
     }
 
     fun playVoice(m: ChatMessage) {
-        val url = fileUrl(m.voiceUrl) ?: return
+        // Своё голосовое, пока не ушло на сервер, играет из локального файла.
+        val url = (if (m.id < 0) m.voiceUrl else fileUrl(m.voiceUrl)) ?: return
         if (playingId == m.id) { stopPlayer(); return }
         stopPlayer()
         runCatching {
@@ -574,6 +576,53 @@ fun ChatScreen(
         }
     }
 
+    // Неотправленные сообщения: id временного пузыря → запрос, которым его можно отправить ещё раз.
+    val retryRequests = remember { HashMap<Long, suspend () -> MessageDto?>() }
+    var failedMenuFor by remember { mutableStateOf<Long?>(null) }
+
+    /** Отправка с часиками: пузырь сразу в ленте, после ответа сервера — настоящий, при ошибке — «!». */
+    fun runSend(tempId: Long, request: suspend () -> MessageDto?) {
+        retryRequests[tempId] = request
+        scope.launch {
+            runCatching { request() }
+                .onSuccess { sent ->
+                    retryRequests.remove(tempId)
+                    val idx = messages.indexOfFirst { it.id == tempId }
+                    val ui = sent?.toUi()
+                    when {
+                        ui == null || messages.any { it.id == ui.id } -> if (idx >= 0) messages.removeAt(idx)
+                        idx >= 0 -> messages[idx] = ui
+                        else -> messages.add(ui)
+                    }
+                }
+                .onFailure { e ->
+                    val idx = messages.indexOfFirst { it.id == tempId }
+                    if (idx >= 0) messages[idx] = messages[idx].copy(uploading = false, failed = true)
+                    showToast(e.message?.takeIf { it.isNotBlank() && it.length < 120 } ?: "Сообщение не отправлено")
+                }
+        }
+    }
+
+    fun sendOptimistic(temp: ChatMessage, request: suspend () -> MessageDto?) {
+        messages.add(temp.copy(mine = true, author = Session.user?.name, uploading = true, failed = false))
+        runSend(temp.id, request)
+    }
+
+    fun retryFailed(id: Long) {
+        failedMenuFor = null
+        val request = retryRequests[id] ?: return
+        val idx = messages.indexOfFirst { it.id == id }
+        if (idx < 0) return
+        messages[idx] = messages[idx].copy(uploading = true, failed = false)
+        runSend(id, request)
+    }
+
+    fun discardFailed(id: Long) {
+        failedMenuFor = null
+        retryRequests.remove(id)
+        messages.removeAll { it.id == id }
+    }
+
     fun send() {
         if (pendingImages.isNotEmpty()) {
             sendPendingPhotos()
@@ -581,17 +630,20 @@ fun ChatScreen(
         }
         val body = draft.text.trim()
         if (body.isEmpty()) return
-        val reply = replyTo?.id
+        val reply = replyTo
         draft = TextFieldValue("")
         replyTo = null
-        scope.launch {
-            runCatching { Repository.sendMessage(slug, body, reply) }
-                .onSuccess { sent -> sent?.let { messages.add(it.toUi()) } }
-                .onFailure { e ->
-                    if (draft.text.isEmpty()) draft = TextFieldValue(body, TextRange(body.length))
-                    showToast(e.message?.takeIf { it.isNotBlank() && it.length < 120 } ?: "Не удалось отправить сообщение")
-                }
-        }
+        sendOptimistic(
+            ChatMessage(
+                id = -System.nanoTime(),
+                mine = true,
+                text = body,
+                replyAuthor = reply?.let { if (it.mine) "Вы" else it.author },
+                replyText = reply?.let { it.text ?: replyPreview(it) },
+                // Ответ в личной ветке и «/текст/» уходят лично — пузырь не должен выглядеть общим.
+                isPrivate = reply?.isPrivate == true || draftIsAuthorMessage,
+            ),
+        ) { Repository.sendMessage(slug, body, reply?.id) }
     }
 
     val imagePicker = rememberLauncherForActivityResult(
@@ -666,14 +718,24 @@ fun ChatScreen(
         recFile = null; recording = false; recPaused = false; recSeconds = 0
         if (!ok || file == null || !file.exists() || file.length() == 0L) { file?.delete(); return }
         view.voiceHaptic(VoiceHaptic.Send)
-        val reply = replyTo?.id; replyTo = null
-        scope.launch {
+        val reply = replyTo; replyTo = null
+        sendOptimistic(
+            ChatMessage(
+                id = -System.nanoTime(),
+                mine = true,
+                voiceUrl = file.absolutePath,
+                voiceDuration = "%d:%02d".format(seconds / 60, seconds % 60),
+                replyAuthor = reply?.let { if (it.mine) "Вы" else it.author },
+                replyText = reply?.let { it.text ?: replyPreview(it) },
+                isPrivate = reply?.isPrivate == true,
+            ),
+        ) {
+            // Запрос собирается заново при каждой попытке: тело файла читается один раз.
             val body = file.asRequestBody("audio/mp4".toMediaTypeOrNull())
             val part = MultipartBody.Part.createFormData("attachment", "voice.m4a", body)
             val parts = mutableListOf(part, Uploads.textPart("kind", "voice"), Uploads.textPart("duration", seconds.toString()))
-            reply?.let { parts.add(Uploads.textPart("reply_to", it.toString())) }
-            runCatching { Repository.sendMessageAttachment(slug, parts) }.getOrNull()?.let { messages.add(it.toUi()) }
-            file.delete()
+            reply?.id?.let { parts.add(Uploads.textPart("reply_to", it.toString())) }
+            Repository.sendMessageAttachment(slug, parts).also { file.delete() }
         }
     }
 
@@ -804,9 +866,8 @@ fun ChatScreen(
         val idx = visible.indexOfFirst { it.id == id }
         if (idx < 0) { showToast("Сообщение не найдено"); return }
         scope.launch {
-            // Первый элемент ленты — плашка «Сегодня».
             val viewport = listState.layoutInfo.viewportSize.height
-            runCatching { listState.animateScrollToItem(idx + 1, -viewport / 3) }
+            runCatching { listState.animateScrollToItem(idx, -viewport / 3) }
             if (flash) {
                 flashId = id
                 delay(1100)
@@ -872,7 +933,8 @@ fun ChatScreen(
     fun exitSelect() { selectMode = false; selectDeleteMenu = false; selected.clear() }
 
     fun toggleSelect(id: Long) {
-        if (messages.firstOrNull { it.id == id }?.isSystem == true) return
+        // Временные пузыри (ещё не на сервере) выбрать нельзя.
+        if (id < 0 || messages.firstOrNull { it.id == id }?.isSystem == true) return
         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         if (id in selected) selected.remove(id) else selected.add(id)
     }
@@ -905,6 +967,7 @@ fun ChatScreen(
     }
 
     fun onLongPress(m: ChatMessage) {
+        if (m.failed && !selectMode) { failedMenuFor = m.id; return }
         if (m.uploading || m.isSystem || searchMode) return
         if (selectMode) { toggleSelect(m.id); return }
         focusManager.clearFocus()
@@ -1027,30 +1090,36 @@ fun ChatScreen(
                         if (!loaded) {
                             items(7) { i -> MessageSkeleton(mine = i % 3 == 0, wide = i % 2 == 0) }
                         } else {
-                            if (visible.isNotEmpty()) {
-                                item(key = "today") {
-                                    Box(Modifier.fillMaxWidth().padding(bottom = 12.dp), contentAlignment = Alignment.Center) {
-                                        Box(
-                                            modifier = Modifier.height(24.dp).liquidGlass(CapsuleShape).padding(horizontal = 12.dp),
-                                            contentAlignment = Alignment.Center,
-                                        ) { Text("Сегодня", style = AppFont.sans(T.FsSm)) }
-                                    }
-                                }
-                            }
                             itemsIndexed(visible, key = { _, m -> m.id }) { idx, m ->
                                 val prev = visible.getOrNull(idx - 1)
                                 val next = visible.getOrNull(idx + 1)
-                                val isTail = next?.let { !sameAuthor(m, it) } ?: true
-                                val isFirst = prev?.let { !sameAuthor(it, m) } ?: true
+                                // Разделитель по дням над первым сообщением каждого дня.
+                                val day = ChatDates.day(m.createdAt)
+                                val newDay = prev == null || ChatDates.day(prev.createdAt) != day
+                                val nextNewDay = next != null && ChatDates.day(next.createdAt) != day
+                                val isTail = next?.let { nextNewDay || !sameAuthor(m, it) } ?: true
+                                val isFirst = prev?.let { newDay || !sameAuthor(it, m) } ?: true
                                 val topPad = when {
-                                    prev == null -> 0.dp
+                                    prev == null || newDay -> 0.dp
                                     sameAuthor(prev, m) -> 4.dp
                                     else -> 12.dp
+                                }
+                                Column(Modifier.fillMaxWidth().animateItem(placementSpec = figmaTween())) {
+                                if (newDay) {
+                                    Box(
+                                        Modifier.fillMaxWidth().padding(top = if (prev == null) 0.dp else 12.dp, bottom = 12.dp),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Box(
+                                            modifier = Modifier.height(24.dp).liquidGlass(CapsuleShape).padding(horizontal = 12.dp),
+                                            contentAlignment = Alignment.Center,
+                                        ) { Text(ChatDates.dayLabel(day), style = AppFont.sans(T.FsSm)) }
+                                    }
                                 }
                                 if (m.isSystem) {
                                     SystemRow(
                                         m,
-                                        Modifier.fillMaxWidth().animateItem(placementSpec = figmaTween()).padding(top = if (prev == null) 0.dp else 12.dp),
+                                        Modifier.fillMaxWidth().padding(top = if (prev == null || newDay) 0.dp else 12.dp),
                                     ) { if (!selectMode) m.userId?.let { onUser(it) } }
                                 } else {
                                 val showAvatarColumn = !m.mine && !isDirect
@@ -1063,7 +1132,6 @@ fun ChatScreen(
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .animateItem(placementSpec = figmaTween())
                                         .padding(top = topPad)
                                         .background(T.Green.copy(alpha = 0.18f * flash), RoundedCornerShape(12.dp))
                                         .then(if (selectMode) Modifier.pressable(pressAlpha = 1f) { toggleSelect(m.id) } else Modifier),
@@ -1109,7 +1177,10 @@ fun ChatScreen(
                                                 .combinedClickable(
                                                     interactionSource = remember { MutableInteractionSource() },
                                                     indication = null,
-                                                    onClick = { if (selectMode) toggleSelect(m.id) },
+                                                    onClick = {
+                                                        if (selectMode) toggleSelect(m.id)
+                                                        else if (m.failed) failedMenuFor = m.id
+                                                    },
                                                     onLongClick = { onLongPress(m) },
                                                 ),
                                             isTail = isTail,
@@ -1124,6 +1195,7 @@ fun ChatScreen(
                                             highlight = if (searchMode) searchQuery else null,
                                         )
                                     }
+                                }
                                 }
                                 }
                             }
@@ -1176,11 +1248,11 @@ fun ChatScreen(
                                 onDown = { stepSearch(-1) },
                             )
                             selectMode -> Row(Modifier.fillMaxWidth()) {
-                                GlassCircleButton(AppIcons.trashX, iconSize = 24.dp, iconColor = T.Error) {
+                                GlassCircleButton(AppIcons.trashX, "Удалить выбранные", iconSize = 24.dp, iconColor = T.Error) {
                                     if (selected.isNotEmpty()) selectDeleteMenu = !selectDeleteMenu
                                 }
                                 Spacer(Modifier.weight(1f))
-                                GlassCircleButton(AppIcons.forward, iconSize = 24.dp) { forwardSelected() }
+                                GlassCircleButton(AppIcons.forward, "Переслать", iconSize = 24.dp) { forwardSelected() }
                             }
                             recording && recPaused -> PausedRecordingBar(
                                 clock = recordClock,
@@ -1469,6 +1541,18 @@ fun ChatScreen(
                 onCancel = { unpinConfirm = null },
             )
 
+            // MARK: Неотправленное сообщение
+            ConfirmDialog(
+                open = failedMenuFor != null,
+                title = "Сообщение не отправлено",
+                text = "Проверьте соединение и попробуйте ещё раз",
+                extraLabel = "Повторить",
+                onExtra = { failedMenuFor?.let { retryFailed(it) } },
+                confirmLabel = "Удалить",
+                onConfirm = { failedMenuFor?.let { discardFailed(it) } },
+                onCancel = { failedMenuFor = null },
+            )
+
             // MARK: Просмотр фото
             // Прототип: сообщение с фото → «Чат нажатие на фото» и назад — 800 мс.
             AnimatedVisibility(visible = viewerMsg != null, enter = fadeIn(figmaFade()), exit = fadeOut(figmaFade())) {
@@ -1478,7 +1562,7 @@ fun ChatScreen(
                     PhotoViewer(
                         imageUrl = fileUrl(m.imageUrl),
                         author = if (m.mine) "Вы" else (m.author ?: ""),
-                        time = m.time ?: "",
+                        time = ChatDates.stamp(m.createdAt, m.time),
                         canDelete = canDeleteAll(m),
                         onClose = { viewerMsg = null },
                         onDownload = { openUrl(fileUrl(m.imageUrl)) },
@@ -2159,7 +2243,7 @@ private fun PausedRecordingBar(clock: String, onCancel: () -> Unit, onSend: () -
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            GlassCircleButton(AppIcons.trashX, iconSize = 24.dp, iconColor = T.Error) { onCancel() }
+            GlassCircleButton(AppIcons.trashX, "Удалить запись", iconSize = 24.dp, iconColor = T.Error) { onCancel() }
             Box(
                 modifier = Modifier.weight(1f).height(42.dp).liquidGlass(T.ShapeInput),
                 contentAlignment = Alignment.Center,
@@ -2212,6 +2296,7 @@ private fun PausedRecordingBar(clock: String, onCancel: () -> Unit, onSend: () -
         }
         GlassCircleButton(
             AppIcons.mic,
+            contentDescription = "Продолжить запись",
             modifier = Modifier.align(Alignment.TopEnd).offset(y = (-66).dp),
             iconSize = 24.dp,
         ) { onResume() }
@@ -2385,13 +2470,14 @@ private fun PhotoViewer(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 if (author.isNotEmpty()) Text(author, style = AppFont.sans(T.FsBase, FontWeight.SemiBold), maxLines = 1)
-                if (time.isNotEmpty()) Text("Сегодня в $time", style = AppFont.sans(T.FsSm, color = Secondary))
+                if (time.isNotEmpty()) Text(time, style = AppFont.sans(T.FsSm, color = Secondary))
             }
-            GlassCircleButton(AppIcons.downloadCloud, iconSize = 24.dp) { onDownload() }
+            GlassCircleButton(AppIcons.downloadCloud, "Скачать", iconSize = 24.dp) { onDownload() }
         }
         if (canDelete) {
             GlassCircleButton(
                 AppIcons.trashX,
+                contentDescription = "Удалить фото",
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .padding(start = T.ScreenX, bottom = designBottom(45.dp)),

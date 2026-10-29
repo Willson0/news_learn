@@ -33,7 +33,7 @@
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|screenLayout|uiMode|density"
             android:exported="true"
             android:launchMode="singleTop"
-            android:theme="@style/Theme.Karta"
+            android:theme="@style/Theme.Karta.Starting"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

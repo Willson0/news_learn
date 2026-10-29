@@ -17,7 +17,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import app.karta.likvidnosti.ui.components.AppToast
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -82,17 +87,25 @@ fun NotificationsScreen(onBack: () -> Unit) {
         known = true
     }
 
-    fun saveInstruments() {
+    // Сервер не сохранил — переключатель возвращается в прежнее положение, и об этом видно.
+    fun saveFailed() = AppToast.show("Не удалось сохранить, попробуйте ещё раз")
+
+    fun saveInstruments(index: Int, previous: NotifInstrument) {
         scope.launch {
             runCatching { Repository.syncInstruments(instruments.filter { it.on }.map { it.key }) }
-            AppData.refreshProfile()
+                .onSuccess { AppData.refreshProfile() }
+                .onFailure {
+                    if (index < instruments.size && instruments[index].key == previous.key) instruments[index] = previous
+                    saveFailed()
+                }
         }
     }
 
-    fun saveNotifications(all: Boolean? = null, byInstrument: Boolean? = null) {
+    fun saveNotifications(all: Boolean? = null, byInstrument: Boolean? = null, revert: () -> Unit) {
         scope.launch {
             runCatching { Repository.updateNotifications(all = all, byInstrument = byInstrument) }
-            AppData.refreshProfile()
+                .onSuccess { AppData.refreshProfile() }
+                .onFailure { revert(); saveFailed() }
         }
     }
 
@@ -118,7 +131,7 @@ fun NotificationsScreen(onBack: () -> Unit) {
             } else {
                 SwitchRow("Все уведомления", all) {
                     all = it
-                    saveNotifications(all = it)
+                    saveNotifications(all = it) { all = !it }
                 }
                 // Прототип: «Профиль push-уведомления» 484:21266 ↔ 484:21302 — строка схлопывается,
                 // ниже всё подтягивается: SMART_ANIMATE 800 мс, ease-in-out-back.
@@ -129,7 +142,7 @@ fun NotificationsScreen(onBack: () -> Unit) {
                 ) {
                     SwitchRow("Только по инструментам", byInstrument) {
                         byInstrument = it
-                        saveNotifications(byInstrument = it)
+                        saveNotifications(byInstrument = it) { byInstrument = !it }
                     }
                 }
             }
@@ -159,7 +172,7 @@ fun NotificationsScreen(onBack: () -> Unit) {
             instruments.forEachIndexed { i, item ->
                 InstrumentChip(label = item.label, checked = item.on, onToggle = {
                     instruments[i] = item.copy(on = !item.on)
-                    saveInstruments()
+                    saveInstruments(i, item)
                 })
             }
         }
@@ -168,9 +181,22 @@ fun NotificationsScreen(onBack: () -> Unit) {
 
 @Composable
 private fun SwitchRow(title: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth().height(43.dp), verticalAlignment = Alignment.CenterVertically) {
+    // Нажимается вся строка; TalkBack читает её как «Все уведомления, переключатель, включено».
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(43.dp)
+            .toggleable(
+                value = checked,
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                role = Role.Switch,
+                onValueChange = onChange,
+            ),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Text(title, style = AppFont.sans(T.FsBase), modifier = Modifier.weight(1f))
         Spacer(Modifier.width(8.dp))
-        AppToggle(checked = checked, onCheckedChange = onChange)
+        AppToggle(checked = checked, onCheckedChange = onChange, modifier = Modifier.clearAndSetSemantics {})
     }
 }

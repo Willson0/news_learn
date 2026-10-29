@@ -1,5 +1,8 @@
 package app.karta.likvidnosti.ui.screens
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -7,7 +10,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
 import app.karta.likvidnosti.data.Repository
 import app.karta.likvidnosti.data.api.ApiException
 import app.karta.likvidnosti.ui.components.AppButton
@@ -15,6 +22,9 @@ import app.karta.likvidnosti.ui.components.AppInput
 import app.karta.likvidnosti.ui.components.AuthField
 import app.karta.likvidnosti.ui.components.AuthScaffold
 import app.karta.likvidnosti.ui.components.ButtonVariant
+import app.karta.likvidnosti.ui.components.pressable
+import app.karta.likvidnosti.ui.theme.AppFont
+import app.karta.likvidnosti.ui.theme.T
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -47,17 +57,6 @@ fun RegisterConfirmScreen(
         if (resendIn > 0) {
             delay(1000)
             resendIn -= 1
-        }
-    }
-
-    val masked = remember(email) {
-        val parts = email.split("@", limit = 2)
-        if (parts.size != 2) {
-            email
-        } else {
-            val name = parts[0]
-            val head = if (name.length <= 2) name else name.take(2) + "***"
-            "$head@${parts[1]}"
         }
     }
 
@@ -100,7 +99,8 @@ fun RegisterConfirmScreen(
 
     AuthScaffold(
         title = "Подтверждение почты",
-        subtitle = "Мы отправили код подтверждения на $masked. Введите его ниже",
+        // Адрес целиком: его только что ввели, и опечатку должно быть видно.
+        subtitle = "Мы отправили код подтверждения на $email. Введите его ниже",
         onBack = onBack,
         buttons = {
             AppButton(
@@ -122,6 +122,12 @@ fun RegisterConfirmScreen(
                 error = error != null,
                 keyboardType = KeyboardType.NumberPassword,
             )
+        }
+        Box(
+            modifier = Modifier.heightIn(min = 48.dp).pressable(pressAlpha = 0.6f) { onBack() },
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Text("Изменить почту", style = AppFont.sans(T.FsBase, FontWeight.SemiBold, color = T.Green))
         }
     }
 }

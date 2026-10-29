@@ -88,6 +88,7 @@ dependencies {
 
     implementation(libs.coil.compose)
     implementation(libs.androidx.browser)
+    implementation(libs.androidx.core.splashscreen)
 
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.messaging)

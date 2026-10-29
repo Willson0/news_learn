@@ -230,20 +230,31 @@ class AuthController extends Controller
     }
 
     /**
-     * Установка нового пароля. Требует код из письма: он обязателен и всегда
-     * проверяется. Срок действия кода — 15 минут, не больше 5 неверных попыток.
+     * Проверка кода из письма без смены пароля: приложение ведёт восстановление
+     * в три шага (почта → код → новый пароль) и сообщает о неверном коде сразу.
+     * Код при этом не тратится; неверные попытки считаются так же, как при смене.
      */
-    public function resetPassword(Request $request): JsonResponse
+    public function checkRecoveryCode(Request $request): JsonResponse
     {
         $data = $request->validate([
             'email' => ['required', 'email'],
-            'password' => ['required', 'string', 'min:8'],
             'code' => ['required', 'string'],
         ], [
             'code.required' => 'Введите код из письма.',
         ]);
 
-        $record = PasswordResetCode::where('email', $data['email'])
+        $this->verifiedRecoveryCode($data['email'], $data['code']);
+
+        return response()->json(['status' => 'ok']);
+    }
+
+    /**
+     * Действующий код восстановления для почты. Срок — 15 минут, не больше
+     * 5 неверных попыток; иначе — ошибка валидации с понятным текстом.
+     */
+    private function verifiedRecoveryCode(string $email, string $code): PasswordResetCode
+    {
+        $record = PasswordResetCode::where('email', $email)
             ->latest()
             ->first();
 
@@ -262,12 +273,31 @@ class AuthController extends Controller
             ]);
         }
 
-        if (! Hash::check($data['code'], $record->code)) {
+        if (! Hash::check($code, $record->code)) {
             $record->increment('attempts');
             throw ValidationException::withMessages([
                 'code' => 'Неверный код.',
             ]);
         }
+
+        return $record;
+    }
+
+    /**
+     * Установка нового пароля. Требует код из письма: он обязателен и всегда
+     * проверяется. Срок действия кода — 15 минут, не больше 5 неверных попыток.
+     */
+    public function resetPassword(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'email' => ['required', 'email'],
+            'password' => ['required', 'string', 'min:8'],
+            'code' => ['required', 'string'],
+        ], [
+            'code.required' => 'Введите код из письма.',
+        ]);
+
+        $record = $this->verifiedRecoveryCode($data['email'], $data['code']);
 
         $user = User::where('email', $data['email'])->first();
         if (! $user) {

@@ -1,6 +1,5 @@
 package app.karta.likvidnosti.ui.screens
 
-import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,7 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -31,25 +29,25 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import app.karta.likvidnosti.data.Repository
 import app.karta.likvidnosti.data.Session
-import app.karta.likvidnosti.ui.components.figmaFade
 import app.karta.likvidnosti.ui.components.AppButton
 import app.karta.likvidnosti.ui.components.ButtonVariant
 import app.karta.likvidnosti.ui.components.InnerScreen
+import app.karta.likvidnosti.ui.components.a11yButton
 import app.karta.likvidnosti.ui.components.pressable
 import app.karta.likvidnosti.ui.icons.AppIcon
 import app.karta.likvidnosti.ui.icons.AppIcons
 import app.karta.likvidnosti.ui.icons.IconDef
 import app.karta.likvidnosti.ui.theme.AppFont
 import app.karta.likvidnosti.ui.theme.T
-import app.karta.likvidnosti.ui.theme.hex
 import kotlinx.coroutines.launch
 
 /**
  * «Профиль Данные аккаунта» (iOS AccountDataView, Figma 337:27019 / 337:27032):
  * заголовок на y=160, блок с отступами 16/12 и строками 48 (подпись 14 белый
- * 65 %, значение белым, справа иконка 24: карандаш или глаз), пароль — семь
- * точек 12 (#D9D9D9) через 2; под блоком справа «Сменить пароль» 12; через
- * 24 — «Сменить пароль» и красная «Выйти из аккаунта».
+ * 65 %, значение белым, справа иконка 24: карандаш или стрелка). Пароль не
+ * показывается (сервер хранит только хэш): строка «Пароль: задан» со стрелкой
+ * ведёт на смену. Под блоком справа «Сменить пароль» 12; через 24 — «Сменить
+ * пароль» и красная «Выйти из аккаунта».
  */
 @Composable
 fun AccountDataScreen(
@@ -59,7 +57,6 @@ fun AccountDataScreen(
 ) {
     var email by remember { mutableStateOf(Session.user?.email ?: "") }
     var phone by remember { mutableStateOf(Session.user?.phone ?: "") }
-    var revealed by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
@@ -80,25 +77,9 @@ fun AccountDataScreen(
                 .background(T.Surface)
                 .padding(horizontal = 16.dp, vertical = 12.dp),
         ) {
-            DataRow(AppIcons.pencil, { onChange("email") }) { ValueText("Email:", email) }
-            DataRow(AppIcons.pencil, { onChange("phone") }) { ValueText("Номер телефона:", phone) }
-            DataRow(if (revealed) AppIcons.eye else AppIcons.eyeClosed, { revealed = !revealed }) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Пароль:", style = AppFont.sans(T.FsBase, color = T.TextSecondary))
-                    // Прототип: «Профиль Данные аккаунта» 484:21316 ↔ 484:21330 — 800 мс.
-                    Crossfade(targetState = revealed, animationSpec = figmaFade(), label = "password") { shown ->
-                        if (shown) {
-                            Text("password", style = AppFont.sans(T.FsBase))
-                        } else {
-                            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                                repeat(7) {
-                                    Box(Modifier.size(12.dp).clip(CircleShape).background(hex("#d9d9d9")))
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            DataRow(AppIcons.pencil, "Изменить почту", { onChange("email") }) { ValueText("Email:", email) }
+            DataRow(AppIcons.pencil, "Изменить номер телефона", { onChange("phone") }) { ValueText("Номер телефона:", phone) }
+            DataRow(AppIcons.chevronRight, "Сменить пароль", { onChange("password") }) { ValueText("Пароль:", "задан") }
         }
 
         Text(
@@ -138,12 +119,16 @@ private fun ValueText(label: String, value: String) {
 }
 
 @Composable
-private fun DataRow(icon: IconDef, onAction: () -> Unit, label: @Composable () -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
+private fun DataRow(icon: IconDef, actionLabel: String, onAction: () -> Unit, label: @Composable () -> Unit) {
+    // Нажимается вся строка 48: иконка 24 справа, цель — во всю ширину.
+    Row(
+        modifier = Modifier.fillMaxWidth().height(48.dp).pressable { onAction() }.a11yButton(actionLabel),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Box(modifier = Modifier.weight(1f)) { label() }
         Spacer(Modifier.width(8.dp))
         Box(
-            modifier = Modifier.size(32.dp).pressable { onAction() },
+            modifier = Modifier.size(32.dp),
             contentAlignment = Alignment.Center,
         ) {
             AppIcon(icon, size = 24.dp)

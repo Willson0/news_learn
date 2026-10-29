@@ -23,6 +23,9 @@ object AppData {
     var reports by mutableStateOf<List<ReportDto>?>(null)
     var chats by mutableStateOf<List<ChatSectionDto>?>(null)
 
+    /** Когда лента последний раз пришла с сервера — для плашки «Показаны данные от 14:05». */
+    var reportsAt by mutableStateOf<Long?>(null)
+
     /**
      * Профиль, подписка и карта: экраны «Профиль», «Управление подпиской» и
      * «Уведомления» сразу открываются в состоянии пользователя, без анимации
@@ -35,6 +38,7 @@ object AppData {
     /** Сбрасывает кэш (при выходе/смене аккаунта). */
     fun reset() {
         reports = null
+        reportsAt = null
         chats = null
         profile = null
         subscription = null
@@ -51,7 +55,7 @@ object AppData {
 
     /** Параллельно подгружает ленту (фильтр «все») и чаты. Ошибки гасит. */
     suspend fun preload() = coroutineScope {
-        launch { runCatching { Repository.reports() }.getOrNull()?.let { reports = it } }
+        launch { runCatching { Repository.reports() }.getOrNull()?.let { reports = it; reportsAt = System.currentTimeMillis() } }
         launch { refreshProfile() }
         launch {
             runCatching { Repository.chats() }.getOrNull()

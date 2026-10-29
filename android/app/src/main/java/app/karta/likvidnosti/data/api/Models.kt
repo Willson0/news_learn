@@ -134,6 +134,8 @@ data class ChatItemDto(
     val sender: String? = null,
     val preview: String? = null,
     val time: String? = null,
+    /** Время последнего сообщения, ISO 8601 — подпись «16:32 / вчера / 12 окт» считает приложение. */
+    @SerialName("last_at") val lastAt: String? = null,
     val unread: Int = 0,
     /** Личный чат и чат отчёта нельзя покинуть вручную. */
     val permanent: Boolean = false,
@@ -277,6 +279,9 @@ class EmailBody(val email: String)
 
 @Serializable
 class ResetBody(val email: String, val password: String, val code: String)
+
+@Serializable
+class RecoveryCheckBody(val email: String, val code: String)
 
 @Serializable
 class MessageBody(val body: String, @SerialName("reply_to") val replyTo: Long? = null)

@@ -68,8 +68,10 @@ object T {
     val Text = Color.White
     /** «белый неактив» (65 %). */
     val TextSecondary = Color.White.copy(alpha = 0.65f)
-    /** «Белый неактив 2» (40 %). */
-    val TextMuted = Color.White.copy(alpha = 0.4f)
+    /** «Белый неактив 2». Для текста поднят с 40 до 60 %: на #25262A это ≈ 4,6:1 (WCAG AA). */
+    val TextMuted = Color.White.copy(alpha = 0.6f)
+    /** Неактивные иконки (навбар): 40 % — для крупных значков достаточно 3:1. */
+    val IconMuted = Color.White.copy(alpha = 0.4f)
     /** Подписи «Сегодня» / превью чатов — белый 60 %. */
     val Caption = Color.White.copy(alpha = 0.6f)
     val Black = Color.Black

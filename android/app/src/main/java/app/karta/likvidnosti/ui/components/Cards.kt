@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,7 +18,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.karta.likvidnosti.data.api.ReportDto
 import app.karta.likvidnosti.data.fileUrl
@@ -28,21 +35,25 @@ import app.karta.likvidnosti.ui.theme.T
 /**
  * Block/Карточка отчета (iOS ReportCard): плашка «фон плашки», обложка 162,
  * справа сверху — бейдж статуса; заголовок Min Sans Bold 16, дата 14
- * «белый неактив», описание Regular 14, иконка материала 20 и кнопка
- * «Перейти в отчет».
+ * «белый неактив», описание Regular 14 (не больше трёх строк), иконка
+ * материала 20. Нажимается вся карточка, справа внизу — шеврон.
  */
 @Composable
 fun ReportCard(
     report: ReportDto,
     onOpen: (ReportDto) -> Unit,
     modifier: Modifier = Modifier,
-    actionLabel: String = "Перейти в отчет",
 ) {
     Column(
         modifier = modifier
             .fillMaxWidth()
             .clip(T.ShapeCard)
             .background(T.Surface)
+            .pressable(pressAlpha = 0.8f) { onOpen(report) }
+            .semantics(mergeDescendants = true) {
+                role = Role.Button
+                onClick(label = "Открыть отчет") { onOpen(report); true }
+            }
             .padding(bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -70,7 +81,7 @@ fun ReportCard(
             modifier = Modifier.padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
-            Row(verticalAlignment = Alignment.Top) {
+            Row(modifier = Modifier.height(IntrinsicSize.Min), verticalAlignment = Alignment.Top) {
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
@@ -84,15 +95,26 @@ fun ReportCard(
                         }
                     }
                     if (report.description.isNotEmpty()) {
-                        Text(report.description, style = AppFont.sans(T.FsBase))
+                        Text(
+                            report.description,
+                            style = AppFont.sans(T.FsBase),
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
                 }
                 Spacer(Modifier.size(0.dp))
-                Box(modifier = Modifier.size(20.dp), contentAlignment = Alignment.Center) {
-                    AppIcon(AppIcons.material(report.material), size = 17.5.dp)
+                Column(
+                    modifier = Modifier.fillMaxHeight(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Box(modifier = Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+                        AppIcon(AppIcons.material(report.material), size = 17.5.dp)
+                    }
+                    AppIcon(AppIcons.chevronRight, size = 20.dp, tint = T.TextSecondary)
                 }
             }
-            AppButton(text = actionLabel, variant = ButtonVariant.Soft) { onOpen(report) }
         }
     }
 }

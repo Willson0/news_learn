@@ -444,6 +444,24 @@ class ChatProductTest extends TestCase
         $this->assertSame(0, $unread());
     }
 
+    public function test_chat_list_and_messages_carry_full_dates(): void
+    {
+        Sanctum::actingAs($this->demo());
+        $this->travelTo(now()->subDays(3)->setTime(9, 15));
+        $sent = $this->postJson('/api/chats/general/messages', ['body' => 'Беру золото'])
+            ->assertCreated()->json('data');
+        $this->travelBack();
+
+        // В сообщении — полная дата: приложение само ставит «Сегодня / Вчера / 12 октября».
+        $this->assertNotNull($sent['created_at']);
+        $this->assertTrue(now()->subDays(3)->isSameDay(\Carbon\Carbon::parse($sent['created_at'])));
+
+        // В списке чатов — тоже: по «09:15» без даты не понять, что сообщение трёхдневное.
+        $item = collect($this->getJson('/api/chats')->json('data'))
+            ->flatMap(fn ($s) => $s['items'])->firstWhere('id', 'general');
+        $this->assertSame($sent['created_at'], $item['last_at']);
+    }
+
     public function test_members_for_mentions(): void
     {
         User::factory()->create(['name' => 'Владислав', 'username' => '@Submetal']);
