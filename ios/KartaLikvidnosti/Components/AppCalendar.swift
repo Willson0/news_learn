@@ -48,6 +48,7 @@ struct AppCalendar: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Предыдущий месяц")
                 Text(Self.months[viewMonth])
                     .font(Theme.sans(20, .semibold))
                     .foregroundStyle(Theme.text)
@@ -58,6 +59,7 @@ struct AppCalendar: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Следующий месяц")
             }
             .padding(.horizontal, 16)
             .frame(height: 51)

@@ -14,6 +14,16 @@ struct ReportDetailView: View {
     @State private var graphOpen = false
     /// html-отчёт открывается на весь экран, как отдельная страница.
     @State private var htmlOpen = false
+    /// Полный отчёт (с текстом) пришёл с сервера; в ленте текста нет.
+    @State private var detailLoaded = false
+    @State private var failed = false
+    @State private var seeded = false
+
+    /// Отчёт без текста и без HTML: кнопки «Открыть отчет» нет, вместо неё — честная подпись.
+    private var hasText: Bool { !(report.body ?? "").isEmpty || report.htmlUrl != nil }
+    private var showOpen: Bool { !detailLoaded || hasText }
+    /// Не загрузился, и показать нечего — экран ошибки вместо пустой обложки.
+    private var nothingToShow: Bool { failed && !seeded && !detailLoaded }
 
     struct ReportModel {
         var title: String
@@ -53,6 +63,11 @@ struct ReportDetailView: View {
     // ней, ниже — блок графика.
     var body: some View {
         GeometryReader { geo in
+            if nothingToShow {
+                LoadErrorState(text: "Не удалось загрузить отчет. Проверьте интернет и попробуйте ещё раз") { retry() }
+                    .padding(.horizontal, Theme.screenX)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
                     hero
@@ -80,6 +95,7 @@ struct ReportDetailView: View {
                 .frame(minHeight: geo.size.height + geo.safeAreaInsets.top + geo.safeAreaInsets.bottom, alignment: .top)
             }
             .ignoresSafeArea(.container, edges: [.top, .bottom])
+            }
         }
         .background(Theme.background.ignoresSafeArea())
         .overlay(alignment: .top) {
@@ -89,7 +105,7 @@ struct ReportDetailView: View {
                 }
             } trailing: {
                 if session.isAdmin, let id = reportId {
-                    GlassCircleButton(icon: AppIcons.settings) { router.push(.reportEdit(id: id)) }
+                    GlassCircleButton(icon: AppIcons.settings, label: "Редактировать отчет") { router.push(.reportEdit(id: id)) }
                 }
             }
             .ignoresSafeArea(.container, edges: .top)
@@ -112,15 +128,22 @@ struct ReportDetailView: View {
 
     private func actionsGap(screenHeight: CGFloat) -> CGFloat {
         if graphOpen || reportOpen { return 24 }
-        let count: CGFloat = chartSource != nil ? 3 : 2
+        let count: CGFloat = (chartSource != nil ? 3 : 2) - (showOpen ? 0 : 1)
         let actionsHeight = 48 * count + 12 * (count - 1)
         return max(24, screenHeight - 465 - actionsHeight - 45)
     }
 
     private var actions: some View {
         VStack(spacing: 12) {
-            ReportActionButton(label: "Открыть отчет", variant: .accent, icon: AppIcons.doc) {
-                if report.htmlUrl != nil { htmlOpen = true } else { reportOpen.toggle() }
+            if showOpen {
+                ReportActionButton(label: "Открыть отчет", variant: .accent, icon: AppIcons.doc) {
+                    if report.htmlUrl != nil { htmlOpen = true } else { reportOpen.toggle() }
+                }
+            } else {
+                Text("Текст отчёта ещё не опубликован")
+                    .font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.bottom, 4)
             }
             ReportActionButton(label: "Обсудить", variant: .pink, icon: AppIcons.chat) {
                 discuss()
@@ -195,9 +218,13 @@ struct ReportDetailView: View {
             VStack(alignment: .leading, spacing: 12) {
                 if let body = report.body, !body.isEmpty {
                     Text(body)
+                } else if failed {
+                    LoadErrorState(text: "Не удалось загрузить текст отчета") { retry() }
                 } else {
-                    Text("Нефть остаётся одним из ключевых индикаторов мировой экономики. В 2026 году на цену влияют баланс спроса и предложения, политика ОПЕК+ и курс доллара.")
-                    Text("В этом отчёте мы разбираем основные сценарии, факторы риска и возможные уровни цены на горизонте ближайших месяцев.")
+                    // Текст ещё грузится (из ленты пришёл отчёт без текста).
+                    SkeletonBlock(width: 300, height: 14)
+                    SkeletonBlock(width: 300, height: 14)
+                    SkeletonBlock(width: 220, height: 14)
                 }
             }
             .font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.text).lineSpacing(4)
@@ -217,7 +244,16 @@ struct ReportDetailView: View {
     private func seedFromFeed() {
         guard !loaded, let id = reportId, let d = appData.reports.first(where: { $0.id == id }) else { return }
         report = ReportModel(d)
+        seeded = true
         loaded = true
+    }
+
+    private func retry() {
+        Task {
+            failed = false
+            if !seeded { loaded = false }
+            await load()
+        }
     }
 
     private func load() async {
@@ -230,11 +266,18 @@ struct ReportDetailView: View {
             return
         }
         #endif
-        guard let id = reportId else { loaded = true; return }
+        guard let id = reportId else { failed = true; loaded = true; return }
         do {
-            guard let d = try await Api.fetchReport(id: String(id)) else { loaded = true; return }
-            report = ReportModel(d)
-        } catch {}
+            if let d = try await Api.fetchReport(id: String(id)) {
+                report = ReportModel(d)
+                detailLoaded = true
+                failed = false
+            } else {
+                failed = true
+            }
+        } catch {
+            failed = true
+        }
         loaded = true
     }
 }
@@ -248,7 +291,7 @@ struct HtmlReportView: View {
         ZStack(alignment: .topTrailing) {
             Color.black.ignoresSafeArea()
             WebView(url: url).ignoresSafeArea()
-            GlassCircleButton(icon: AppIcons.close, iconSize: 20) { dismiss() }
+            GlassCircleButton(icon: AppIcons.close, label: "Закрыть", iconSize: 20) { dismiss() }
                 .padding(16)
         }
     }

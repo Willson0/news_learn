@@ -88,7 +88,7 @@ struct ReportFormView: View {
                 GlassBackButton()
                 Spacer()
                 if isEdit {
-                    GlassCircleButton(icon: AppIcons.trashX, iconSize: 24, iconColor: Theme.error) { confirmOpen = true }
+                    GlassCircleButton(icon: AppIcons.trashX, label: "Удалить отчет", iconSize: 24, iconColor: Theme.error) { confirmOpen = true }
                 }
             }
             .padding(.horizontal, Theme.screenX)
@@ -120,7 +120,7 @@ struct ReportFormView: View {
             Button("Удалить", role: .destructive) { remove() }
             Button("Отмена", role: .cancel) {}
         } message: {
-            Text("Удалив отчет он пропадет у всех пользователей, включая чат")
+            Text("Отчёт и его чат пропадут у всех пользователей")
         }
     }
 
@@ -136,7 +136,8 @@ struct ReportFormView: View {
                       prompt: Text("Введите текст").foregroundColor(Theme.textMuted), axis: .vertical)
                 .lineLimit(3...6)
                 .font(Theme.sans(Theme.fontBase))
-                .foregroundStyle(errors["description"] != nil ? Theme.error : Theme.text)
+                .foregroundStyle(Theme.text)
+                .accessibilityLabel("Описание")
                 .tint(Theme.green)
                 .onChange(of: descriptionText) { v in
                     if v.count > descriptionMax { descriptionText = String(v.prefix(descriptionMax)) }
@@ -148,6 +149,12 @@ struct ReportFormView: View {
         .padding(.vertical, 12)
         .frame(minHeight: 101, alignment: .top)
         .liquidGlass(RoundedRectangle(cornerRadius: Theme.radiusInput, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.radiusInput, style: .continuous)
+                .stroke(Theme.error.opacity(0.8), lineWidth: 1)
+                .opacity(errors["description"] != nil ? 1 : 0)
+                .allowsHitTesting(false)
+        )
     }
 
     private var addIcon: some View {

@@ -118,7 +118,7 @@ struct AnalyticsView: View {
         .ignoresSafeArea(.container, edges: .top)
         .screenBackground()
         .withGlassNavBar(extra: session.isAdmin
-            ? .init(icon: AppIcons.plusBig) { router.push(.reportCreate) }
+            ? .init(icon: AppIcons.plusBig, label: "Создать отчет") { router.push(.reportCreate) }
             : nil)
         .overlay {
             FiltersOverlay(isOpen: $filtersOpen, applied: appliedFilters,

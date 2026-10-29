@@ -49,9 +49,9 @@ struct ProfileEditView: View {
                 }
 
                 VStack(spacing: 12) {
-                    AppInput(text: $name, placeholder: "Введите имя", label: "Имя", textContentType: .name)
+                    AppInput(text: $name, placeholder: "например, Иван", label: "Имя", textContentType: .name)
                     AuthField(error: tagError) {
-                        AppInput(text: $tag, placeholder: "Придумайте тег", label: "Тег", error: tagError != nil)
+                        AppInput(text: $tag, placeholder: "например, ivan_trader", label: "Тег", error: tagError != nil)
                             .onChange(of: tag) { _ in tagError = nil }
                     }
                 }
@@ -102,12 +102,15 @@ struct ProfileEditView: View {
         uploading = true
         Task { @MainActor in
             defer { photoItem = nil; uploading = false }
-            if let data = try? await item.loadTransferable(type: Data.self) {
-                if let user = try? await Api.uploadAvatar(data: data, filename: "avatar.jpg", mime: "image/jpeg") {
-                    avatarUrl = user.avatarUrl
-                }
-                await session.load(force: true)
+            guard let data = try? await item.loadTransferable(type: Data.self) else {
+                AppToast.shared.show("Не удалось загрузить фото"); return
             }
+            if let user = try? await Api.uploadAvatar(data: data, filename: "avatar.jpg", mime: "image/jpeg") {
+                avatarUrl = user.avatarUrl
+            } else {
+                AppToast.shared.show("Не удалось загрузить фото")
+            }
+            await session.load(force: true)
         }
     }
 
@@ -116,8 +119,12 @@ struct ProfileEditView: View {
         uploading = true
         Task { @MainActor in
             defer { uploading = false }
-            _ = try? await Api.removeAvatar()
-            avatarUrl = nil
+            do {
+                _ = try await Api.removeAvatar()
+                avatarUrl = nil
+            } catch {
+                AppToast.shared.show("Не удалось удалить фото")
+            }
             await session.load(force: true)
         }
     }

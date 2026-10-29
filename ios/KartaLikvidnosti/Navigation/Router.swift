@@ -2,6 +2,16 @@ import SwiftUI
 
 enum Tab: String, CaseIterable {
     case home, analytics, community, profile
+
+    /// Название вкладки для VoiceOver.
+    var label: String {
+        switch self {
+        case .home: return "Главная"
+        case .analytics: return "Аналитика"
+        case .community: return "Сообщество"
+        case .profile: return "Профиль"
+        }
+    }
 }
 
 /// Экраны, открываемые поверх корневой вкладки (аналог pushed-маршрутов роутера).

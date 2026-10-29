@@ -32,6 +32,11 @@ enum Api {
         _ = try await ApiClient.post("auth/recovery", body: ["email": email], as: StatusResponse.self)
     }
 
+    /// Проверка кода из письма без смены пароля (код не тратится) — шаг 2 восстановления.
+    static func checkRecoveryCode(email: String, code: String) async throws {
+        _ = try await ApiClient.post("auth/recovery/check", body: ["email": email, "code": code], as: StatusResponse.self)
+    }
+
     static func resetPassword(email: String, password: String, code: String) async throws -> UserDto? {
         let r = try await ApiClient.post("auth/recovery/reset",
             body: ["email": email, "password": password, "code": code], as: TokenResponse.self)

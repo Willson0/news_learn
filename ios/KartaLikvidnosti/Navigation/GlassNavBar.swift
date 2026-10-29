@@ -24,6 +24,8 @@ struct GlassNavBar: View {
 
     struct Extra {
         let icon: IconDef
+        /// Подпись для VoiceOver: «Создать отчет», «Чат с администратором».
+        let label: String
         var iconSize: CGFloat = 30
         let action: () -> Void
     }
@@ -190,6 +192,7 @@ struct GlassNavBar: View {
             .liquidGlass(Circle(), fill: Theme.surfaceMuted, interactive: true)
         }
         .buttonStyle(PressableStyle())
+        .accessibilityLabel(extra.label)
     }
 
     private func extraLabel(_ extra: Extra) -> some View {
@@ -216,11 +219,14 @@ struct GlassNavBar: View {
                     Haptics.light()
                     router.selectTab(item.tab)
                 } label: {
-                    Icon(item.icon, size: 24, color: (lensTab ?? current) == item.tab ? Theme.text : Theme.textMuted)
+                    Icon(item.icon, size: 24, color: (lensTab ?? current) == item.tab ? Theme.text : Theme.iconMuted)
                         .frame(width: 40, height: 40)
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
+                // VoiceOver: «Главная, вкладка, выбрано».
+                .accessibilityLabel(item.tab.label)
+                .accessibilityAddTraits((lensTab ?? current) == item.tab ? [.isSelected] : [])
                 .offset(x: item.x, y: 12)
             }
         }

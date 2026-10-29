@@ -23,7 +23,7 @@ struct ProfileView: View {
     /// не откатывает их к закэшированным, а только тихо обновляет.
     @State private var seeded = false
 
-    private let sortOptions = [("new", "Сначала новые"), ("old", "Сначала Старые"), ("name", "По названию")]
+    private let sortOptions = [("new", "Сначала новые"), ("old", "Сначала старые"), ("name", "По названию")]
     /// «Сегодня» / «Вчера» и подписи в блоке подписки — белый 60 %.
     private let caption = Color.white.opacity(0.6)
 
@@ -57,6 +57,7 @@ struct ProfileView: View {
             .pullToRefreshAnchor()
         }
         .pullToRefresh { await load() }
+        .overlayPreferenceValue(SortButtonAnchor.self) { sortOverlay($0) }
         #if DEBUG
         .onAppear {
             // -kl_scroll instruments|history — для скриншотов длинного экрана.
@@ -68,7 +69,7 @@ struct ProfileView: View {
         }
         .ignoresSafeArea(.container, edges: .top)
         .screenBackground()
-        .withGlassNavBar(extra: .init(icon: AppIcons.chat) { openAdminChat() })
+        .withGlassNavBar(extra: .init(icon: AppIcons.chat, label: session.isAdmin ? "Личные чаты" : "Чат с администратором") { openAdminChat() })
         .onAppear(perform: seed)
         .task { await load() }
     }
@@ -124,7 +125,7 @@ struct ProfileView: View {
                     .padding(.top, 12)
             }
             if subPrice.isEmpty {
-                Text("После определение тарифа Вам придет уведомление и стоимость")
+                Text("Когда тариф будет назначен, мы пришлём уведомление со стоимостью")
                     .font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
                     .frame(maxWidth: 300, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
@@ -209,7 +210,7 @@ struct ProfileView: View {
 
             HStack {
                 Spacer()
-                GlassCircleButton(icon: AppIcons.settings, iconSize: 26) { router.push(.profileEdit) }
+                GlassCircleButton(icon: AppIcons.settings, label: "Настройки профиля", iconSize: 26) { router.push(.profileEdit) }
             }
             .padding(.horizontal, Theme.screenX)
             .padding(.top, 78)
@@ -258,7 +259,7 @@ struct ProfileView: View {
             ForEach(instruments.indices, id: \.self) { i in
                 InstrumentChip(label: instruments[i].label, on: Binding(
                     get: { instruments[i].on },
-                    set: { instruments[i].on = $0; saveInstruments() }))
+                    set: { v in instruments[i].on = v; saveInstruments(index: i, value: v) }))
             }
         }
         .padding(12)
@@ -311,20 +312,34 @@ struct ProfileView: View {
                     .liquidGlass(Circle(), fill: ActiveFill(), interactive: true)
             }
             .buttonStyle(PressableStyle())
+            .accessibilityLabel("Сортировка истории")
+            .accessibilityValue(sortOptions.first { $0.0 == sort }?.1 ?? "")
+            .anchorPreference(key: SortButtonAnchor.self, value: .bounds) { $0 }
         }
         .frame(height: 48)
-        .overlay(alignment: .topTrailing) {
-            if sortOpen {
-                sortPopup
-                    .offset(y: 56)
-                    .transition(.opacity)
+    }
+
+    /// Попап сортировки поверх экрана: тап мимо него закрывает.
+    @ViewBuilder private func sortOverlay(_ anchor: Anchor<CGRect>?) -> some View {
+        if sortOpen, let anchor {
+            GeometryReader { geo in
+                let r = geo[anchor]
+                ZStack(alignment: .topLeading) {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { withAnimation(Motion.standard) { sortOpen = false } }
+                        .accessibilityHidden(true)
+                    sortPopup
+                        .offset(x: r.maxX - 203, y: r.maxY + 8)
+                }
             }
+            .transition(.opacity)
         }
     }
 
     /// Попап сортировки (Figma 495:21374): 203 pt, стекло «чёрный 2», радиус 24.
     private var sortPopup: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 0) {
             ForEach(sortOptions, id: \.0) { opt in
                 Button {
                     Haptics.light()
@@ -340,13 +355,14 @@ struct ProfileView: View {
                             Icon(AppIcons.check, size: 20, color: Theme.text)
                         }
                     }
-                    .frame(height: 19)
+                    .frame(height: 43)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityAddTraits(sort == opt.0 ? .isSelected : [])
             }
         }
-        .padding(.vertical, 16)
+        .padding(.vertical, 4)
         .padding(.horizontal, 12)
         .frame(width: 203)
         .liquidGlass(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous), fill: Theme.black2)
@@ -461,10 +477,22 @@ struct ProfileView: View {
         do { history = try await Api.fetchReports() } catch { /* оставляем предзагруженную историю */ }
     }
 
-    private func saveInstruments() {
+    /// При ошибке чип возвращается назад и всплывает тост.
+    private func saveInstruments(index: Int, value: Bool) {
         let keys = instruments.filter { $0.on }.map { $0.key }
-        Task { try? await Api.syncInstruments(keys) }
+        Task { @MainActor in
+            do { try await Api.syncInstruments(keys) }
+            catch {
+                if instruments.indices.contains(index) { withoutAnimation { instruments[index].on = !value } }
+                AppToast.shared.show("Не удалось сохранить, попробуйте ещё раз")
+            }
+        }
     }
+}
+
+private struct SortButtonAnchor: PreferenceKey {
+    static var defaultValue: Anchor<CGRect>? = nil
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) { value = value ?? nextValue() }
 }
 
 private extension String {

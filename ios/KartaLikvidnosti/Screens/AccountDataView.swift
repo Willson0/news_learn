@@ -7,44 +7,27 @@ struct AccountDataView: View {
     @State private var email = ""
     @State private var loggingOut = false
     @State private var phone = ""
-    @State private var passwordRevealed = false
-    private let passwordMask = "●●●●●●●"
-    private let password = "password"
 
     // «Профиль Данные аккаунта» (Figma 337:27019 / 337:27032): заголовок на
     // y=160, блок 361 с отступом 12 и строками 48 (подпись 14 pt белый 65 %,
-    // значение белым, справа иконка 24: карандаш или глаз), пароль — семь
-    // точек 12 (#D9D9D9) через 2; под блоком справа «Сменить пароль» 12 pt;
-    // через 24 — «Сменить пароль» и красная «Выйти из аккаунта».
+    // значение белым, справа иконка 24: карандаш или стрелка). Пароль не
+    // показывается (сервер хранит только хэш): строка «Пароль: задан» со стрелкой
+    // ведёт на смену. Под блоком справа «Сменить пароль» 12 pt; через 24 —
+    // «Сменить пароль» и красная «Выйти из аккаунта».
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
                 Text("Данные пользователя").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
 
                 VStack(spacing: 0) {
-                    row(icon: AppIcons.pencil, action: { router.push(.accountChange(field: "email")) }) {
+                    row(icon: AppIcons.pencil, actionLabel: "Изменить почту", action: { router.push(.accountChange(field: "email")) }) {
                         valueText("Email:", email)
                     }
-                    row(icon: AppIcons.pencil, action: { router.push(.accountChange(field: "phone")) }) {
+                    row(icon: AppIcons.pencil, actionLabel: "Изменить номер телефона", action: { router.push(.accountChange(field: "phone")) }) {
                         valueText("Номер телефона:", phone)
                     }
-                    row(icon: passwordRevealed ? AppIcons.eye : AppIcons.eyeClosed, action: {
-                        // Прототип: «Профиль Данные аккаунта» 484:21316 ↔ 484:21330 — 800 мс.
-                        withAnimation(Motion.standard) { passwordRevealed.toggle() }
-                    }) {
-                        HStack(spacing: 4) {
-                            Text("Пароль:").foregroundStyle(Theme.textSecondary)
-                            if passwordRevealed {
-                                Text(password).foregroundStyle(Theme.text)
-                            } else {
-                                HStack(spacing: 2) {
-                                    ForEach(0..<7, id: \.self) { _ in
-                                        Circle().fill(Color(hex: "#d9d9d9")).frame(width: 12, height: 12)
-                                    }
-                                }
-                            }
-                        }
-                        .font(Theme.sans(Theme.fontBase))
+                    row(icon: AppIcons.back, flip: true, actionLabel: "Сменить пароль", action: { router.push(.accountChange(field: "password")) }) {
+                        valueText("Пароль:", "задан")
                     }
                 }
                 .padding(.horizontal, 16)
@@ -78,16 +61,23 @@ struct AccountDataView: View {
             .lineLimit(1)
     }
 
-    private func row<Label: View>(icon: IconDef, action: @escaping () -> Void, @ViewBuilder label: () -> Label) -> some View {
-        HStack(spacing: 8) {
-            label()
-            Spacer(minLength: 8)
-            Button(action: { Haptics.light(); action() }) {
-                Icon(icon, size: 24, color: Theme.text).frame(width: 32, height: 32).contentShape(Rectangle())
+    /// Нажимается вся строка 48: иконка 24 справа, цель — во всю ширину.
+    private func row<Label: View>(icon: IconDef, flip: Bool = false, actionLabel: String,
+                                  action: @escaping () -> Void, @ViewBuilder label: () -> Label) -> some View {
+        Button(action: { Haptics.light(); action() }) {
+            HStack(spacing: 8) {
+                label()
+                Spacer(minLength: 8)
+                Icon(icon, size: flip ? 16 : 24, color: Theme.text)
+                    .scaleEffect(x: flip ? -1 : 1, y: 1)
+                    .frame(width: 32, height: 32)
             }
-            .buttonStyle(.plain)
+            .frame(height: 48)
+            .contentShape(Rectangle())
         }
-        .frame(height: 48)
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(actionLabel)
     }
 
     private func load() async {

@@ -5,10 +5,21 @@ import SwiftUI
 /// зелёный или красный, «до …» 14 pt белый 65 %, линия 10 %); через 12 —
 /// блок счёта 64 pt (белый круг 32 + «СБП 1488» 16 pt, пурпурная пилюля
 /// «Отвязать»; без счёта — круг с «+» и «Новый счет», «Привязать»); блок
-/// «Авто-платеж» со свитчем.
+/// «Автопродление» со свитчем и строкой «Следующее списание …».
+/// После возврата из Т-Кассы — полноэкранное «Проверяем платёж…» и итог.
 struct SubscriptionView: View {
     @EnvironmentObject var session: Session
     @EnvironmentObject var appData: AppData
+    @EnvironmentObject var router: Router
+    @Environment(\.scenePhase) private var scenePhase
+
+    enum PaymentCheck: Equatable {
+        case checking
+        case active(until: String)
+        case pending(String)
+        case failed(String)
+    }
+    @State private var paymentCheck: PaymentCheck? = nil
     /// Состояние подписки известно (из кэша или с сервера). До этого вместо статуса —
     /// мигающие блоки: экран не «доезжает» из «Неактивна» и выключенного автоплатежа.
     @State private var known = false
@@ -90,14 +101,22 @@ struct SubscriptionView: View {
                 }
 
                 HStack {
-                    Text("Авто-платеж").font(Theme.sans(Theme.fontMd)).foregroundStyle(Theme.text)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Автопродление").font(Theme.sans(Theme.fontMd)).foregroundStyle(Theme.text)
+                        // Когда и сколько спишется — видно до того, как это случится.
+                        if known, autoPay, active, !until.isEmpty {
+                            Text("Следующее списание \(until)" + (price.isEmpty ? "" : ", \(price)"))
+                                .font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.textSecondary)
+                        }
+                    }
                     Spacer(minLength: 8)
                     // Переключение пользователем сразу уходит на сервер; значение с сервера
                     // ставится без анимации и без повторной отправки.
                     AppToggle(isOn: Binding(get: { autoPay }, set: { setAutoPay($0) }), disabled: !known)
+                        .accessibilityLabel("Автопродление")
                 }
                 .padding(.horizontal, 16)
-                .frame(height: 64)
+                .frame(minHeight: 64)
                 .background(Theme.surface, in: card)
                 .padding(.top, 12)
             }
@@ -116,6 +135,20 @@ struct SubscriptionView: View {
             await load()
             await reloadCard()
         }
+        // Вернулись в приложение (например, из браузера банка) — статус мог измениться.
+        .onChange(of: scenePhase) { phase in
+            if phase == .active, paymentCheck == nil { Task { await load() } }
+        }
+        .overlay {
+            if let paymentCheck {
+                PaymentCheckView(check: paymentCheck,
+                                 onToMaterials: { self.paymentCheck = nil; router.switchTab(.home) },
+                                 onRetry: { self.paymentCheck = nil; bindCard() },
+                                 onClose: { self.paymentCheck = nil })
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: paymentCheck)
     }
 
     private func apply(_ s: SubscriptionDto) {
@@ -132,6 +165,7 @@ struct SubscriptionView: View {
                 await load()
             } catch {
                 withoutAnimation { autoPay = !value }
+                AppToast.shared.show("Не удалось сохранить, попробуйте ещё раз")
             }
         }
     }
@@ -171,21 +205,42 @@ struct SubscriptionView: View {
             defer { cardBusy = false }
             do {
                 try await CardBinding.run()
-                // Уведомление Т-Кассы сохраняет карту чуть позже возврата в приложение, поэтому опрашиваем.
-                for _ in 0..<5 {
-                    await reloadCard()
-                    if isBound {
-                        // Карта привязана: сразу списываем подписку (если её ещё нет), обновляем статус.
-                        await load()
-                        return
-                    }
-                    try? await Task.sleep(nanoseconds: 2_000_000_000)
-                }
-                cardError = "Карта ещё обрабатывается, обновите экран через минуту"
+                await checkPayment()
+            } catch let err as ApiError where err.status == CardBinding.declinedStatus {
+                paymentCheck = .failed("Платёж не прошёл: его отменили или банк отклонил карту. Деньги не списаны.")
+                await reloadCard()
             } catch {
                 cardError = (error as? ApiError)?.message ?? "Не удалось привязать карту"
             }
         }
+    }
+
+    /// Списание приходит асинхронно (уведомлением банка): «Проверяем платёж…» и опрос
+    /// раз в 2,5 с до 30 с. Успех — «Подписка активна до …», иначе — понятный текст.
+    private func checkPayment() async {
+        let wasActive = active
+        paymentCheck = .checking
+        var bound = false
+        let deadline = Date().addingTimeInterval(30)
+        while Date() < deadline {
+            // Запрос карты сам дожидается результата привязки и списывает подписку.
+            await reloadCard()
+            bound = isBound
+            let sub = try? await Api.fetchSubscription()
+            if let sub {
+                withoutAnimation { apply(sub) }
+                appData.subscription = sub
+                session.setSubscription(sub)
+            }
+            if let sub, sub.active, !wasActive || bound {
+                paymentCheck = wasActive ? nil : .active(until: sub.until ?? "")
+                return
+            }
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+        }
+        paymentCheck = .pending(bound
+            ? "Карта привязана. Подписка включится, как только пройдёт списание или администратор назначит тариф — мы пришлём уведомление."
+            : "Платёж ещё обрабатывается. Мы пришлём уведомление, как только он пройдёт.")
     }
 
     private func unbindCard() {
@@ -201,5 +256,64 @@ struct SubscriptionView: View {
                 cardError = (error as? ApiError)?.message ?? "Не удалось отвязать карту"
             }
         }
+    }
+}
+
+/// Полноэкранное состояние оплаты: проверка, успех, «ещё обрабатывается» или ошибка.
+private struct PaymentCheckView: View {
+    let check: SubscriptionView.PaymentCheck
+    let onToMaterials: () -> Void
+    let onRetry: () -> Void
+    let onClose: () -> Void
+
+    var body: some View {
+        VStack(spacing: 16) {
+            switch check {
+            case .checking:
+                ProgressView().tint(Theme.green).scaleEffect(1.4).frame(height: 40)
+                title("Проверяем платёж…")
+                note("Банк подтверждает оплату, обычно это несколько секунд")
+            case .active(let until):
+                title(until.isEmpty ? "Подписка активна" : "Подписка активна до \(until)")
+                note("Все материалы уже открыты")
+                AppButton(title: "К материалам", variant: .accent) { onToMaterials() }.padding(.top, 8)
+            case .pending(let text):
+                title("Платёж обрабатывается")
+                note(text)
+                AppButton(title: "Понятно", variant: .accent) { onClose() }.padding(.top, 8)
+            case .failed(let text):
+                title("Оплата не прошла")
+                note(text)
+                AppButton(title: "Попробовать снова", variant: .accent) { onRetry() }.padding(.top, 8)
+                AppButton(title: "Закрыть", variant: .secondary) { onClose() }
+            }
+        }
+        .padding(.horizontal, Theme.screenX)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.bg.ignoresSafeArea())
+        .contentShape(Rectangle())
+        .onTapGesture {}
+        .accessibilityElement(children: .contain)
+        .onAppear { announce() }
+        .onChange(of: check) { _ in announce() }
+    }
+
+    private func announce() {
+        let text: String
+        switch check {
+        case .checking: text = "Проверяем платёж"
+        case .active(let until): text = until.isEmpty ? "Подписка активна" : "Подписка активна до \(until)"
+        case .pending: text = "Платёж обрабатывается"
+        case .failed: text = "Оплата не прошла"
+        }
+        UIAccessibility.post(notification: .screenChanged, argument: text)
+    }
+
+    private func title(_ t: String) -> some View {
+        Text(t).font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text).multilineTextAlignment(.center)
+    }
+
+    private func note(_ t: String) -> some View {
+        Text(t).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
     }
 }

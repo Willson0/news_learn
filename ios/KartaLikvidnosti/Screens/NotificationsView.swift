@@ -19,12 +19,12 @@ struct NotificationsView: View {
                 VStack(spacing: 0) {
                     switchRow("Все уведомления", Binding(get: { allNotifications }, set: { v in
                         allNotifications = v
-                        Task { try? await Api.updateNotifications(["all": v]) }
+                        save(["all": v]) { allNotifications = !v }
                     }))
                     if !allNotifications {
                         switchRow("Только по инструментам", Binding(get: { byInstrument }, set: { v in
                             byInstrument = v
-                            Task { try? await Api.updateNotifications(["by_instrument": v]) }
+                            save(["by_instrument": v]) { byInstrument = !v }
                         }))
                             .transition(.opacity)
                     }
@@ -44,7 +44,7 @@ struct NotificationsView: View {
                     ForEach(instruments.indices, id: \.self) { i in
                         InstrumentChip(label: instruments[i].label, on: Binding(
                             get: { instruments[i].on },
-                            set: { instruments[i].on = $0; saveInstruments() }))
+                            set: { v in instruments[i].on = v; saveInstruments(index: i, value: v) }))
                     }
                 }
                 .padding(12)
@@ -81,6 +81,7 @@ struct NotificationsView: View {
             AppToggle(isOn: isOn)
         }
         .frame(height: 43)
+        .accessibilityElement(children: .combine)
     }
 
     private func load() async {
@@ -91,7 +92,25 @@ struct NotificationsView: View {
         } catch {}
     }
 
-    private func saveInstruments() {
-        Task { try? await Api.syncInstruments(instruments.filter { $0.on }.map { $0.key }) }
+    /// Сохранение настройки: при ошибке переключатель возвращается назад и всплывает тост.
+    private func save(_ payload: [String: Any?], revert: @escaping () -> Void) {
+        Task { @MainActor in
+            do { try await Api.updateNotifications(payload) }
+            catch {
+                withoutAnimation { revert() }
+                AppToast.shared.show("Не удалось сохранить, попробуйте ещё раз")
+            }
+        }
+    }
+
+    private func saveInstruments(index: Int, value: Bool) {
+        let keys = instruments.filter { $0.on }.map { $0.key }
+        Task { @MainActor in
+            do { try await Api.syncInstruments(keys) }
+            catch {
+                if instruments.indices.contains(index) { withoutAnimation { instruments[index].on = !value } }
+                AppToast.shared.show("Не удалось сохранить, попробуйте ещё раз")
+            }
+        }
     }
 }

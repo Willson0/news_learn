@@ -77,6 +77,8 @@ struct PinkFill: View {
 /// Круглая стеклянная кнопка 42×42 (Button/back, Button/Settings, Button/add …).
 struct GlassCircleButton: View {
     let icon: IconDef
+    /// Подпись для VoiceOver: «Назад», «Удалить», «Скачать».
+    let label: String
     var iconSize: CGFloat = 24
     var size: CGFloat = 42
     var iconColor: Color = Theme.text
@@ -90,6 +92,7 @@ struct GlassCircleButton: View {
                 .liquidGlass(Circle(), interactive: true)
         }
         .buttonStyle(PressableStyle())
+        .accessibilityLabel(label)
     }
 }
 
@@ -101,7 +104,7 @@ struct GlassBackButton: View {
     init(action: (() -> Void)? = nil) { self.action = action }
 
     var body: some View {
-        GlassCircleButton(icon: AppIcons.back, iconSize: 22) {
+        GlassCircleButton(icon: AppIcons.back, label: "Назад", iconSize: 22) {
             Haptics.light()
             if let action { action() } else { dismiss() }
         }

@@ -146,9 +146,7 @@ struct LoginView: View {
             VStack(alignment: .leading, spacing: 4) {
                 AppInput(text: $password, placeholder: "Пароль", isSecure: true, error: errors["password"] != nil,
                          textContentType: .newPassword)
-                Text(errors["password"] ?? "Пароль должен содержать от 8 символов")
-                    .font(Theme.sans(Theme.fontSm))
-                    .foregroundStyle(errors["password"] != nil ? Theme.error.opacity(0.7) : Theme.text)
+                if let e = errors["password"] { errorText(e) } else { PasswordHint(password: password) }
             }
             field(error: errors["passwordConfirm"]) {
                 AppInput(text: $passwordConfirm, placeholder: "Подтвердите пароль", isSecure: true,
@@ -235,7 +233,7 @@ struct LoginView: View {
 
     private func validateRegister() -> Bool {
         var e: [String: String] = [:]
-        if !matches(email.trimmed, emailRE) { e["email"] = "Несуществующий email" }
+        if !matches(email.trimmed, emailRE) { e["email"] = "Проверьте адрес: например, name@mail.ru" }
         if PhoneMask.digits(phone).count != 11 { e["phone"] = "Неверный номер телефона" }
         if password.count < 8 { e["password"] = "Пароль должен содержать от 8 символов" }
         if passwordConfirm != password { e["passwordConfirm"] = "Пароль не совпадает" }

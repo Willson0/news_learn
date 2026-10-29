@@ -78,18 +78,29 @@ struct AppInput: View {
                 field
             }
             if isSecure {
+                // Цель 44×44 (иконка 24 по центру), VoiceOver читает действие.
                 Button {
                     revealed.toggle()
                 } label: {
                     Icon(revealed ? AppIcons.eye : AppIcons.eyeClosed, size: 24, color: Theme.text)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(revealed ? "Скрыть пароль" : "Показать пароль")
             }
         }
         .padding(.leading, 16)
-        .padding(.trailing, isSecure ? 16 : 12)
+        .padding(.trailing, isSecure ? 6 : 12)
         .frame(height: height ?? (label == nil ? 48 : 64))
         .liquidGlass(RoundedRectangle(cornerRadius: Theme.radiusInput, style: .continuous))
+        // Ошибка — красная рамка поля; введённый текст остаётся белым и читаемым.
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.radiusInput, style: .continuous)
+                .stroke(Theme.error.opacity(0.8), lineWidth: 1)
+                .opacity(error ? 1 : 0)
+                .allowsHitTesting(false)
+        )
     }
 
     @ViewBuilder private var field: some View {
@@ -104,8 +115,9 @@ struct AppInput: View {
             }
         }
         .font(Theme.sans(Theme.fontBase))
-        .foregroundStyle(error ? Theme.error : Theme.text)
+        .foregroundStyle(Theme.text)
         .textContentType(textContentType)
+        .accessibilityLabel(label ?? placeholder)
         .tint(Theme.green)
     }
 
@@ -137,6 +149,8 @@ struct AppToggle: View {
         .buttonStyle(.plain)
         .opacity(disabled ? 0.5 : 1)
         .disabled(disabled)
+        .accessibilityValue(isOn ? "Включено" : "Выключено")
+        .accessibilityHint("Переключить")
         // Прототип: «Профиль push-уведомления», Button/Switch — SMART_ANIMATE 800 мс.
         .animation(Motion.standard, value: isOn)
     }
@@ -178,6 +192,9 @@ struct InstrumentChip: View {
             .modifier(Fill(on: on, shape: shape))
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .accessibilityValue(on ? "Выбрано" : "Не выбрано")
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 
     private struct Fill: ViewModifier {
@@ -348,6 +365,10 @@ struct PurplePillButton: View {
                 .frame(height: 32)
                 .liquidGlass(Capsule(), fill: PurpleFill())
                 .clipShape(Capsule())
+                // Зона нажатия 44 pt при видимой высоте 32: раскладка не меняется.
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+                .padding(.vertical, -6)
         }
         .buttonStyle(PressableStyle())
     }

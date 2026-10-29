@@ -4,6 +4,7 @@ struct RegisterConfirmView: View {
     @EnvironmentObject var router: Router
     @EnvironmentObject var session: Session
     let email: String
+    @Environment(\.dismiss) private var dismiss
 
     @State private var code = ""
     @State private var error = ""
@@ -11,20 +12,13 @@ struct RegisterConfirmView: View {
     @State private var resendIn = 60
     @State private var timer: Timer?
 
-    private var maskedEmail: String {
-        let parts = email.split(separator: "@", maxSplits: 1)
-        guard parts.count == 2 else { return email }
-        let name = String(parts[0])
-        let head = name.count <= 2 ? name : String(name.prefix(2)) + "***"
-        return "\(head)@\(parts[1])"
-    }
-
     // Подтверждение почты — в макете отдельного кадра нет, экран собран
     // на каркасе «Восстановления пароля»: заголовок на y=234, поле кода,
     // внизу «Повторное сообщение через m:ss» и «Далее».
     var body: some View {
         AuthScaffold(title: "Подтверждение почты",
-                     subtitle: "Мы отправили код подтверждения на \(maskedEmail). Введите его ниже") {
+                     subtitle: "Мы отправили код подтверждения на \(email). Введите его ниже") {
+            VStack(spacing: 4) {
             AuthField(error: error.isEmpty ? nil : error) {
                 AppInput(text: $code, placeholder: "Код из письма", error: !error.isEmpty,
                          keyboard: .numberPad, textContentType: .oneTimeCode)
@@ -33,6 +27,14 @@ struct RegisterConfirmView: View {
                         if digits != newValue { code = digits }
                         error = ""
                     }
+            }
+            // Опечатка в адресе — возвращаемся к форме регистрации и меняем почту.
+            Button("Изменить почту") { Haptics.light(); dismiss() }
+                .font(Theme.sans(Theme.fontBase, .semibold))
+                .foregroundStyle(Theme.green)
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
             }
         } buttons: {
             AppButton(title: resendIn > 0 ? String(format: "Повторное сообщение через %d:%02d", resendIn / 60, resendIn % 60)

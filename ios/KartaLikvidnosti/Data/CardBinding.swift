@@ -5,6 +5,8 @@ import UIKit
 /// сервер возвращает пользователя на karta://billing?status=ok|error.
 enum CardBinding {
     static let callbackScheme = "karta"
+    /// Код ошибки, когда Т-Касса вернула karta://billing?status=error (отмена или отказ банка).
+    static let declinedStatus = -1
     /// Сессия и её контекст живут, пока открыт браузер оплаты.
     private static var active: (session: ASWebAuthenticationSession, presenter: CardWindowPresenter)?
 
@@ -27,7 +29,7 @@ enum CardBinding {
                 if items.first(where: { $0.name == "status" })?.value == "ok" {
                     continuation.resume()
                 } else {
-                    continuation.resume(throwing: ApiError("Не удалось привязать карту", status: 0))
+                    continuation.resume(throwing: ApiError("Не удалось привязать карту", status: declinedStatus))
                 }
             }
             session.presentationContextProvider = presenter

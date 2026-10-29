@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AccountChangeView: View {
     @EnvironmentObject var router: Router
+    @EnvironmentObject var session: Session
     let field: String
 
     @State private var values: [String: String] = ["old": "", "new": "", "confirm": ""]
@@ -14,7 +15,6 @@ struct AccountChangeView: View {
         switch field {
         case "phone":
             return Config(title: "Смена номера телефона", fields: [
-                FieldDef(key: "old", placeholder: "Прежний номер телефона", secure: false, keyboard: .phonePad),
                 FieldDef(key: "new", placeholder: "Новый номер телефона", secure: false, keyboard: .phonePad),
             ], button: "Сменить номер")
         case "password":
@@ -24,9 +24,17 @@ struct AccountChangeView: View {
             ], button: "Сменить пароль")
         default:
             return Config(title: "Смена почты", fields: [
-                FieldDef(key: "old", placeholder: "Прежняя почта", secure: false, keyboard: .emailAddress),
                 FieldDef(key: "new", placeholder: "Новая почта", secure: false, keyboard: .emailAddress),
             ], button: "Сменить почту")
+        }
+    }
+
+    /// Текущее значение приложение знает само — показываем его текстом, спрашиваем только новое.
+    private var current: String? {
+        switch field {
+        case "phone": return (session.user?.phone).flatMap { $0.isEmpty ? nil : "Текущий номер: \($0)" }
+        case "password": return nil
+        default: return (session.user?.email).flatMap { $0.isEmpty ? nil : "Текущая почта: \($0)" }
         }
     }
 
@@ -36,6 +44,10 @@ struct AccountChangeView: View {
     var body: some View {
         AuthScaffold(title: config.title, showBack: false, contentTop: 278) {
             VStack(spacing: 12) {
+                if let current {
+                    Text(current).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
                 ForEach(config.fields, id: \.key) { f in
                     AppInput(text: binding(f.key), placeholder: f.placeholder, isSecure: f.secure,
                              error: !error.isEmpty, keyboard: f.keyboard)

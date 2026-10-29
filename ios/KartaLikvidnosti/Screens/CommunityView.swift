@@ -7,25 +7,13 @@ struct CommunityView: View {
 
     @State private var query = ""
     @State private var tab = "all"
-    @State private var sections: [ChatSectionDto] = CommunityView.demo
+    @State private var sections: [ChatSectionDto] = []
     @State private var loaded = false
+    /// Список не загрузился: без кэша — экран ошибки, с кэшем — плашка над списком.
+    @State private var failed = false
     /// Чаты без звука (локально, как «Без звука» в инфо чата) — для подписи в меню.
     @State private var muted: Set<String> = []
     @State private var leaveTarget: ChatItemDto? = nil
-
-    static let demo: [ChatSectionDto] = [
-        ChatSectionDto(key: "admin", title: "Чат с админом", items: [
-            ChatItemDto(id: "admin", title: "Игорь Гломозда", sender: "Игор", preview: "Что интересует?", time: "16:32", unread: 1)
-        ]),
-        ChatSectionDto(key: "main", title: "Чаты", items: [
-            ChatItemDto(id: "general", title: "Общий чат", sender: "Артем", preview: "Кто читал новый отчет по золоту?", time: "16:32", unread: 234)
-        ]),
-        ChatSectionDto(key: "reports", title: "Чаты по отчетам", items: [
-            ChatItemDto(id: "gold", title: "Отчет по золоту 26.02.26", pinned: true, sender: "Вы", preview: "Я вот что не понял это хедж и к...", time: "16:32", unread: 12),
-            ChatItemDto(id: "oil", title: "Нефть 12.12.27", sender: "Артем", preview: "Кто читал новый отчет по золоту?", time: "16:32", unread: 234),
-            ChatItemDto(id: "plat1", title: "Отчет по платине 26.02.26", sender: "Артем", preview: "Кто читал новый отчет по золоту?", time: "16:32", unread: 234),
-        ]),
-    ]
 
     private var visibleSections: [ChatSectionDto] {
         var result = sections
@@ -72,7 +60,16 @@ struct CommunityView: View {
                     }
                     .padding(.horizontal, Theme.screenX)
                     .padding(.top, 24)
+                } else if failed && sections.isEmpty {
+                    LoadErrorState { retry() }
+                        .padding(.horizontal, Theme.screenX)
+                        .padding(.top, 24)
                 } else {
+                    if failed {
+                        StaleDataBanner(savedAt: nil) { retry() }
+                            .padding(.horizontal, Theme.screenX)
+                            .padding(.top, 24)
+                    }
                     VStack(alignment: .leading, spacing: 40) {
                         ForEach(visibleSections) { section in
                             VStack(alignment: .leading, spacing: 24) {
@@ -200,17 +197,24 @@ struct CommunityView: View {
                 }
                 VStack(alignment: .trailing, spacing: 0) {
                     HStack(spacing: 4) {
-                        Text(item.time ?? "").font(Theme.sans(Theme.fontBase)).foregroundStyle(Color.white.opacity(0.6))
+                        if muted.contains(item.id) {
+                            Icon(AppIcons.bellSlash, size: 14, color: Color.white.opacity(0.6))
+                                .accessibilityLabel("Без звука")
+                        }
+                        Text(ChatDates.listStamp(item.lastAt, fallback: item.time))
+                            .font(Theme.sans(Theme.fontBase)).foregroundStyle(Color.white.opacity(0.6))
                         if item.pinned { Icon(AppIcons.pinSmall, size: 12, color: Theme.text) }
                     }
                     .frame(height: 19)
                     if item.unread > 0 {
-                        Text("\(item.unread)")
-                            .font(Theme.sans(10)).foregroundStyle(Color.white.opacity(0.6))
-                            .padding(.horizontal, 8).padding(.vertical, 4)
-                            .frame(minWidth: 28)
-                            .liquidGlass(Capsule())
-                            .padding(.top, 19)
+                        // Непрочитанные: зелёный бейдж 12; у чата без звука — серый.
+                        Text(item.unread > 999 ? "999+" : "\(item.unread)")
+                            .font(Theme.sans(12, .semibold)).foregroundStyle(Theme.text)
+                            .padding(.horizontal, 7).padding(.vertical, 3)
+                            .frame(minWidth: 24)
+                            .background(muted.contains(item.id) ? Color(hex: "#5a5b5f") : Theme.green, in: Capsule())
+                            .padding(.top, 17)
+                            .accessibilityLabel("Непрочитанных: \(item.unread)")
                     }
                 }
                 .padding(.top, hasDetails ? 3 : 0)
@@ -279,11 +283,23 @@ struct CommunityView: View {
         muted = Set(sections.flatMap(\.items).map(\.id).filter { UserDefaults.standard.bool(forKey: "kl_muted_\($0)") })
     }
 
+    private func retry() {
+        Task {
+            if sections.isEmpty { loaded = false }
+            await load()
+            refreshMuted()
+        }
+    }
+
     private func load() async {
         do {
             let s = try await Api.fetchChats()
-            if !s.isEmpty { sections = s }
-        } catch {}
+            sections = s
+            appData.chats = s
+            failed = false
+        } catch {
+            failed = true
+        }
         loaded = true
     }
 }

@@ -39,8 +39,10 @@ enum Theme {
     static let text = Color.white
     /// «белый неактив» (65%).
     static let textSecondary = Color.white.opacity(0.65)
-    /// «Белый неактив 2» (40%).
-    static let textMuted = Color.white.opacity(0.4)
+    /// «Белый неактив 2». Для текста поднят с 40 до 60 %: на #25262A это ≈ 4,6:1 (WCAG AA).
+    static let textMuted = Color.white.opacity(0.6)
+    /// Неактивные иконки (навбар): 40 % — для крупных значков достаточно 3:1.
+    static let iconMuted = Color.white.opacity(0.4)
 
     // MARK: - Акценты
     /// «red 100».

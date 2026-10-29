@@ -366,7 +366,7 @@ struct ChatView: View {
         HStack(spacing: 12) {
             HStack(spacing: 8) {
                 Icon(AppIcons.search, size: 18, color: secondary)
-                TextField("", text: $searchQuery, prompt: Text("Поиск").foregroundColor(Color.white.opacity(0.4)))
+                TextField("", text: $searchQuery, prompt: Text("Поиск").foregroundColor(Theme.textMuted))
                     .font(Theme.sans(Theme.fontBase))
                     .foregroundStyle(Theme.text)
                     .tint(Theme.green)
@@ -713,7 +713,7 @@ struct ChatView: View {
                 searchBottomBar
             } else if selectMode {
                 HStack {
-                    GlassCircleButton(icon: AppIcons.trashX, iconSize: 24, iconColor: Theme.error) {
+                    GlassCircleButton(icon: AppIcons.trashX, label: "Удалить выбранные", iconSize: 24, iconColor: Theme.error) {
                         guard !selected.isEmpty else { return }
                         selectDeleteMenu.toggle()
                     }
@@ -727,7 +727,7 @@ struct ChatView: View {
                     }
                     .zIndex(1)
                     Spacer()
-                    GlassCircleButton(icon: AppIcons.forward, iconSize: 24) { forwardSelected() }
+                    GlassCircleButton(icon: AppIcons.forward, label: "Переслать", iconSize: 24) { forwardSelected() }
                 }
             } else if audio.recording && audio.paused {
                 pausedRecordingBar
@@ -796,7 +796,7 @@ struct ChatView: View {
                     .transition(.opacity)
                 }
                 HStack(spacing: 10) {
-                    TextField("", text: $draft, prompt: Text("Напишите что-нибудь").foregroundColor(Color.white.opacity(0.4)), axis: .vertical)
+                    TextField("", text: $draft, prompt: Text("Напишите что-нибудь").foregroundColor(Theme.textMuted), axis: .vertical)
                         .lineLimit(1...5)
                         .font(Theme.sans(Theme.fontBase))
                         .foregroundStyle(Theme.text)
@@ -986,7 +986,7 @@ struct ChatView: View {
     /// зелёная «отправить»; над ней — микрофон для продолжения записи.
     private var pausedRecordingBar: some View {
         HStack(spacing: 12) {
-            GlassCircleButton(icon: AppIcons.trashX, iconSize: 24, iconColor: Theme.error) { Haptics.warning(); cancelVoice() }
+            GlassCircleButton(icon: AppIcons.trashX, label: "Удалить запись", iconSize: 24, iconColor: Theme.error) { Haptics.warning(); cancelVoice() }
             ZStack {
                 HStack(spacing: 1.5) {
                     ForEach(0..<64, id: \.self) { i in
@@ -1020,7 +1020,7 @@ struct ChatView: View {
             }
         }
         .overlay(alignment: .topTrailing) {
-            GlassCircleButton(icon: AppIcons.mic, iconSize: 24) { Haptics.medium(); audio.resumeRecording() }
+            GlassCircleButton(icon: AppIcons.mic, label: "Продолжить запись", iconSize: 24) { Haptics.medium(); audio.resumeRecording() }
                 .offset(y: -66)
         }
     }
@@ -1297,7 +1297,7 @@ struct ChatView: View {
             HStack {
                 GlassBackButton { photoViewerURL = nil }
                 Spacer()
-                GlassCircleButton(icon: AppIcons.downloadCloud, iconSize: 24) { openURL(photoViewerURL) }
+                GlassCircleButton(icon: AppIcons.downloadCloud, label: "Скачать", iconSize: 24) { openURL(photoViewerURL) }
             }
             .padding(.horizontal, Theme.screenX)
             .padding(.top, Theme.topBarY)

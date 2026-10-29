@@ -57,11 +57,11 @@ struct RegisterProfileView: View {
 
                 VStack(spacing: 12) {
                     AuthField(error: errors["name"]) {
-                        AppInput(text: $name, placeholder: "Введите имя", label: "Имя",
+                        AppInput(text: $name, placeholder: "например, Иван", label: "Имя",
                                  error: errors["name"] != nil, textContentType: .givenName)
                     }
                     AuthField(error: errors["username"]) {
-                        AppInput(text: $tag, placeholder: "Придумайте тег", label: "Тег",
+                        AppInput(text: $tag, placeholder: "например, ivan_trader", label: "Тег",
                                  error: errors["username"] != nil, textContentType: .username)
                             .onChange(of: tag) { _ in errors["username"] = nil }
                     }
@@ -81,7 +81,7 @@ struct RegisterProfileView: View {
 
     private var legal: some View {
         (Text("Нажимая на кнопку «Зарегистрироваться», Вы соглашаетесь с ")
-            .foregroundColor(Color.white.opacity(0.4))
+            .foregroundColor(Theme.textMuted)
          + Text("Правовой документацией").foregroundColor(Theme.text))
             .font(Theme.sans(Theme.fontBase))
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -95,6 +95,8 @@ struct RegisterProfileView: View {
             if let data = try? await item.loadTransferable(type: Data.self),
                let user = try? await Api.uploadAvatar(data: data, filename: "avatar.jpg", mime: "image/jpeg") {
                 avatarUrl = user.avatarUrl
+            } else {
+                AppToast.shared.show("Не удалось загрузить фото")
             }
         }
     }
