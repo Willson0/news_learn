@@ -103,7 +103,12 @@ sealed class ChartSource {
             return Uri.parse("https://s.tradingview.com/widgetembed/").buildUpon()
                 .appendQueryParameter("symbol", safe)
                 .appendQueryParameter("interval", "D")
+                // Без панелей управления TradingView: только сам график.
                 .appendQueryParameter("hidesidetoolbar", "1")
+                .appendQueryParameter("hidetoptoolbar", "1")
+                .appendQueryParameter("hidelegend", "1")
+                .appendQueryParameter("withdateranges", "0")
+                .appendQueryParameter("enable_publishing", "0")
                 .appendQueryParameter("symboledit", "0")
                 .appendQueryParameter("saveimage", "0")
                 .appendQueryParameter("toolbarbg", "25262A")

@@ -76,7 +76,12 @@ enum ChartSource: Equatable {
         c?.queryItems = [
             URLQueryItem(name: "symbol", value: safe),
             URLQueryItem(name: "interval", value: "D"),
+            // Без панелей управления TradingView: только сам график.
             URLQueryItem(name: "hidesidetoolbar", value: "1"),
+            URLQueryItem(name: "hidetoptoolbar", value: "1"),
+            URLQueryItem(name: "hidelegend", value: "1"),
+            URLQueryItem(name: "withdateranges", value: "0"),
+            URLQueryItem(name: "enable_publishing", value: "0"),
             URLQueryItem(name: "symboledit", value: "0"),
             URLQueryItem(name: "saveimage", value: "0"),
             URLQueryItem(name: "toolbarbg", value: "25262A"),
