@@ -129,6 +129,14 @@ class SubscriptionBilling
                     return;
                 }
 
+                Log::info('Продление подписки: ответ Т-Кассы', [
+                    'user_id' => $user->id,
+                    'payment_id' => $payment['PaymentId'] ?? null,
+                    'status' => $payment['Status'] ?? null,
+                    'error_code' => $payment['ErrorCode'] ?? null,
+                    'message' => $payment['Message'] ?? null,
+                    'details' => $payment['Details'] ?? null,
+                ]);
                 $this->apply($user, $payment);
                 $count++;
             });

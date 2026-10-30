@@ -124,6 +124,7 @@ class BillingController extends Controller
         }
 
         $paymentId = (string) ($payload['PaymentId'] ?? '');
+        $this->logPayment('уведомление', $payload);
         if ($paymentId !== '') {
             $this->settle($paymentId, $payload);
         }
@@ -148,6 +149,8 @@ class BillingController extends Controller
 
             return;
         }
+
+        $this->logPayment('состояние', $state);
 
         // Уведомление и GetState должны относиться к одному платежу.
         if ((string) ($state['PaymentId'] ?? $paymentId) !== $paymentId) {
@@ -222,6 +225,7 @@ class BillingController extends Controller
             return;
         }
 
+        $this->logPayment('проверка привязки', $state);
         $status = $state['Status'] ?? null;
         $state['PaymentId'] = $paymentId;
         if ($status === TbankClient::SUCCESS_STATUS) {
@@ -281,6 +285,33 @@ class BillingController extends Controller
         }
 
         return true;
+    }
+
+    /**
+     * Логирует статус платежа Т-Кассы и причину отказа (код и сообщение банка), чтобы было видно,
+     * почему оплата не прошла. Номер карты не пишем: только маску и статус.
+     *
+     * @param  array<string, mixed>  $payment
+     */
+    private function logPayment(string $source, array $payment): void
+    {
+        $status = $payment['Status'] ?? null;
+        $context = [
+            'source' => $source,
+            'payment_id' => $payment['PaymentId'] ?? null,
+            'order_id' => $payment['OrderId'] ?? null,
+            'status' => $status,
+            'error_code' => $payment['ErrorCode'] ?? null,
+            'message' => $payment['Message'] ?? null,
+            'details' => $payment['Details'] ?? null,
+            'pan' => $payment['Pan'] ?? null,
+        ];
+
+        if (in_array($status, TbankClient::FAILED_STATUSES, true)) {
+            Log::warning('Т-Касса: платёж не прошёл', $context);
+        } else {
+            Log::info('Т-Касса: статус платежа', $context);
+        }
     }
 
     private function pendingKey(User $user): string
