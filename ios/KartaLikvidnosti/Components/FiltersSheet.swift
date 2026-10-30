@@ -267,8 +267,11 @@ struct FiltersSheet: View {
                     defer { dragsSheet = nil }
                     guard dragsSheet == true else { return }
                     if v.predictedEndTranslation.height > 260 || (v.translation.height > 120 && v.predictedEndTranslation.height >= v.translation.height) {
+                        // Лист доезжает вниз с места, где его отпустили, и только потом закрывается.
+                        // Иначе переход закрытия (1.25 с, пружина SLOW) тянется поверх жеста и лагает.
+                        withAnimation(.easeIn(duration: 0.2)) { dragY = UIScreen.main.bounds.height }
                         // Выбор не теряется: закрытие свайпом применяет его.
-                        onClose()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onClose() }
                     } else {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { dragY = 0 }
                     }

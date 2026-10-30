@@ -11,6 +11,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableFloatState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -134,42 +136,53 @@ fun PullToRefreshBox(
         ) {
             content()
         }
-        if (pull.floatValue > 0f || spinning) {
-            val progress = (pull.floatValue / triggerPx).coerceIn(0f, 1f)
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = insetTop() + 6.dp)
-                    .offset { IntOffset(0, (minOf(pull.floatValue, triggerPx) * 0.15f).roundToInt()) }
-                    .graphicsLayer {
-                        val scale = if (spinning) 1f else 0.6f + 0.4f * progress
-                        scaleX = scale
-                        scaleY = scale
-                        alpha = if (spinning) 1f else (progress * 4f).coerceAtMost(1f)
-                    }
-                    .size(40.dp)
-                    .liquidGlass(CircleShape, IndicatorFill),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (spinning) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        color = T.Text,
-                        strokeWidth = 2.5.dp,
-                        trackColor = Color.Transparent,
-                        strokeCap = StrokeCap.Round,
-                    )
-                } else {
-                    CircularProgressIndicator(
-                        progress = { 0.75f * progress },
-                        modifier = Modifier.size(20.dp).rotate(progress * 270f),
-                        color = T.Text,
-                        strokeWidth = 2.5.dp,
-                        trackColor = Color.Transparent,
-                        strokeCap = StrokeCap.Round,
-                    )
-                }
+        // Показ меняется только на границе, а не на каждом кадре вытягивания.
+        val pulled by remember { derivedStateOf { pull.floatValue > 0f } }
+        if (pulled || spinning) {
+            PullIndicator(pull = pull, triggerPx = triggerPx, spinning = spinning)
+        }
+    }
+}
+
+/**
+ * Стеклянный кружок под статус-баром. Читает [pull] сам: кадры вытягивания
+ * пересоставляют только его, а не весь экран под ним.
+ */
+@Composable
+private fun BoxScope.PullIndicator(pull: MutableFloatState, triggerPx: Float, spinning: Boolean) {
+    val progress = (pull.floatValue / triggerPx).coerceIn(0f, 1f)
+    Box(
+        modifier = Modifier
+            .align(Alignment.TopCenter)
+            .padding(top = insetTop() + 6.dp)
+            .offset { IntOffset(0, (minOf(pull.floatValue, triggerPx) * 0.15f).roundToInt()) }
+            .graphicsLayer {
+                val scale = if (spinning) 1f else 0.6f + 0.4f * progress
+                scaleX = scale
+                scaleY = scale
+                alpha = if (spinning) 1f else (progress * 4f).coerceAtMost(1f)
             }
+            .size(40.dp)
+            .liquidGlass(CircleShape, IndicatorFill),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (spinning) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(20.dp),
+                color = T.Text,
+                strokeWidth = 2.5.dp,
+                trackColor = Color.Transparent,
+                strokeCap = StrokeCap.Round,
+            )
+        } else {
+            CircularProgressIndicator(
+                progress = { 0.75f * progress },
+                modifier = Modifier.size(20.dp).rotate(progress * 270f),
+                color = T.Text,
+                strokeWidth = 2.5.dp,
+                trackColor = Color.Transparent,
+                strokeCap = StrokeCap.Round,
+            )
         }
     }
 }

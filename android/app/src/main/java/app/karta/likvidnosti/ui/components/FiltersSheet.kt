@@ -6,6 +6,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -49,6 +50,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Velocity
@@ -208,10 +210,16 @@ fun FiltersSheet(
     // Лист закрывается свайпом вниз за любое место, в том числе за список,
     // когда он прокручен к самому верху (как системные листы).
     var dragY by remember { mutableFloatStateOf(0f) }
+    var sheetHeight by remember { mutableFloatStateOf(0f) }
     fun settle(velocity: Float) {
         val closeBy = with(density) { 120.dp.toPx() }
         if ((dragY > closeBy && velocity >= 0f) || velocity > 1800f) {
-            onClose()
+            // Лист доезжает вниз с места, где его отпустили, и только потом закрывается.
+            // Без этого выход из композиции добавляет свой сдвиг поверх dragY: лист дёргается.
+            scope.launch {
+                animate(dragY, max(sheetHeight, dragY), animationSpec = tween(durationMillis = 180)) { v, _ -> dragY = v }
+                onClose()
+            }
         } else {
             scope.launch { animate(dragY, 0f, animationSpec = spring(dampingRatio = 0.85f)) { v, _ -> dragY = v } }
         }
@@ -259,6 +267,7 @@ fun FiltersSheet(
         Box(
             modifier = modifier
                 .fillMaxSize()
+                .onSizeChanged { sheetHeight = it.height.toFloat() }
                 .offset { IntOffset(0, max(dragY, 0f).roundToInt()) }
                 .background(T.Surface, sheetShape)
                 .pressable(pressAlpha = 1f) {}

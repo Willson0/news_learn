@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -34,6 +35,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import app.karta.likvidnosti.data.Session
 import app.karta.likvidnosti.ui.icons.AppIcon
@@ -135,8 +137,10 @@ fun GlassNavBar(
     }
     SideEffect { TabMemory.extras[current] = shownExtra }
 
-    val p = progress.value
-    val shown = p.coerceIn(0f, 1f)
+    // Значения анимации кадра читаются только внутри лямбд модификаторов (offset {},
+    // graphicsLayer {}) и дочерних композаблов: иначе каждый кадр перехода
+    // пересоставлял бы весь навбар.
+    fun shownNow(): Float = progress.value.coerceIn(0f, 1f)
     val startShift = when {
         !entering -> 0.dp
         prevExtra == null && shownExtra != null -> ExtraShift
@@ -147,10 +151,10 @@ fun GlassNavBar(
     // капсула уезжает из центра, кнопка проявляется на месте.
     val unlockShift by animateDpAsState(if (restricted && extra != null) ExtraShift else 0.dp, figmaTween(), label = "unlockShift")
     val unlockAlpha by animateFloatAsState(if (restricted) 0f else 1f, figmaFade(), label = "unlockAlpha")
-    val barShift = startShift * (1f - p) + if (shownExtra != null) unlockShift else 0.dp
     val targetX = itemX[current]
     val fromX = itemX[from] ?: targetX
-    val lensX = if (targetX != null && fromX != null) fromX + (targetX - fromX) * p else null
+    // Переход идёт, пока линза не доехала: меняется только на границах, а не каждый кадр.
+    val transitioning by remember { derivedStateOf { progress.value < 1f } }
     // Кнопка есть на обеих вкладках — растворяется только иконка внутри неё.
     val crossIcon = if (prevExtra != null && shownExtra != null) prevExtra else null
 
@@ -170,14 +174,20 @@ fun GlassNavBar(
             ) {
                 Box(
                     modifier = Modifier
-                        .offset(x = barShift)
+                        .offset {
+                            val shift = startShift * (1f - progress.value) + if (shownExtra != null) unlockShift else 0.dp
+                            IntOffset(shift.roundToPx(), 0)
+                        }
                         .size(width = barWidth, height = 64.dp)
                         .liquidGlass(CapsuleShape, Fills.NavBar),
                 ) {
-                    if (lensX != null) {
+                    if (targetX != null && fromX != null) {
                         Box(
                             modifier = Modifier
-                                .offset(x = lensX, y = 12.dp)
+                                .offset {
+                                    val x = fromX + (targetX - fromX) * progress.value
+                                    IntOffset(x.roundToPx(), 12.dp.roundToPx())
+                                }
                                 .size(40.dp)
                                 .liquidGlass(CircleShape, Fills.Active),
                         )
@@ -207,20 +217,14 @@ fun GlassNavBar(
                                 },
                             contentAlignment = Alignment.Center,
                         ) {
-                            // Подсветка иконки растворяется вместе с переездом линзы.
-                            val tint = when (item.tab) {
-                                current -> lerp(if (entering) T.IconMuted else T.Text, T.Text, shown)
-                                from -> lerp(T.Text, T.IconMuted, shown)
-                                else -> T.IconMuted
-                            }
-                            AppIcon(item.icon, size = 24.dp, tint = tint)
+                            NavTabIcon(item.icon, item.tab, current, from, entering) { progress.value }
                         }
                     }
                 }
                 if (shownExtra != null) {
                     Box(
                         modifier = Modifier
-                            .graphicsLayer { alpha = (if (prevExtra == null && entering) shown else 1f) * unlockAlpha }
+                            .graphicsLayer { alpha = (if (prevExtra == null && entering) shownNow() else 1f) * unlockAlpha }
                             .size(64.dp)
                             .liquidGlass(CircleShape, GlassFill(T.SurfaceMuted))
                             .pressable {
@@ -234,10 +238,10 @@ fun GlassNavBar(
                         contentAlignment = Alignment.Center,
                     ) {
                         if (crossIcon != null) {
-                            Box(Modifier.graphicsLayer { alpha = 1f - shown }) {
+                            Box(Modifier.graphicsLayer { alpha = 1f - shownNow() }) {
                                 AppIcon(crossIcon.icon, size = crossIcon.iconSize)
                             }
-                            Box(Modifier.graphicsLayer { alpha = shown }) {
+                            Box(Modifier.graphicsLayer { alpha = shownNow() }) {
                                 AppIcon(shownExtra.icon, size = shownExtra.iconSize)
                             }
                         } else {
@@ -248,11 +252,11 @@ fun GlassNavBar(
             }
             // Кнопка прошлой вкладки растворяется там, где стояла (слой без пары на
             // новом кадре Figma SMART_ANIMATE исчезает на месте).
-            if (shownExtra == null && prevExtra != null && shown < 1f) {
+            if (shownExtra == null && prevExtra != null && transitioning) {
                 Box(
                     modifier = Modifier
                         .offset(x = ExtraCenterX)
-                        .graphicsLayer { alpha = 1f - shown }
+                        .graphicsLayer { alpha = 1f - shownNow() }
                         .size(64.dp)
                         .liquidGlass(CircleShape, GlassFill(T.SurfaceMuted)),
                     contentAlignment = Alignment.Center,
@@ -262,6 +266,29 @@ fun GlassNavBar(
             }
         }
     }
+}
+
+/**
+ * Иконка пункта навбара. Подсветка зависит от кадра перехода, поэтому читает
+ * [progress] здесь: пересоставляется только сама иконка, а не весь навбар.
+ */
+@Composable
+private fun NavTabIcon(
+    icon: IconDef,
+    tab: AppTab,
+    current: AppTab,
+    from: AppTab,
+    entering: Boolean,
+    progress: () -> Float,
+) {
+    val shown = progress().coerceIn(0f, 1f)
+    // Подсветка иконки растворяется вместе с переездом линзы.
+    val tint = when (tab) {
+        current -> lerp(if (entering) T.IconMuted else T.Text, T.Text, shown)
+        from -> lerp(T.Text, T.IconMuted, shown)
+        else -> T.IconMuted
+    }
+    AppIcon(icon, size = 24.dp, tint = tint)
 }
 
 /**
