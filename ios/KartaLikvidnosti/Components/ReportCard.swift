@@ -2,21 +2,14 @@ import SwiftUI
 
 /// Block/Карточка отчета: плашка «фон плашки», обложка 162, справа сверху —
 /// бейдж статуса; заголовок Min Sans Bold 16, дата 14 «белый неактив»,
-/// описание Regular 14 (не больше трёх строк), иконка материала 20.
-/// Нажимается вся карточка, справа внизу — шеврон.
+/// описание Regular 14, иконка материала 20 и кнопка «Перейти в отчет».
+/// Кроме кнопки, отчёт открывается и нажатием на карточку.
 struct ReportCard: View {
     let report: ReportDto
+    var actionLabel: String = "Перейти в отчет"
     let onOpen: () -> Void
 
     var body: some View {
-        Button(action: onOpen) { content }
-            .buttonStyle(PressableStyle())
-            .accessibilityElement(children: .combine)
-            .accessibilityAddTraits(.isButton)
-            .accessibilityHint("Открыть отчет")
-    }
-
-    private var content: some View {
         VStack(alignment: .leading, spacing: 16) {
             ZStack(alignment: .topTrailing) {
                 ZStack {
@@ -56,24 +49,21 @@ struct ReportCard: View {
                         Text(report.description)
                             .font(Theme.sans(Theme.fontBase))
                             .foregroundStyle(Theme.text)
-                            .lineLimit(3)
-                            .multilineTextAlignment(.leading)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 0)
-                    VStack(spacing: 0) {
-                        Icon(AppIcons.material(report.material), size: 17.5, color: Theme.text)
-                            .frame(width: 20, height: 20)
-                        Spacer(minLength: 8)
-                        Icon(AppIcons.back, size: 16, color: Theme.textSecondary).scaleEffect(x: -1, y: 1)
-                    }
+                    Icon(AppIcons.material(report.material), size: 17.5, color: Theme.text)
+                        .frame(width: 20, height: 20)
                 }
+
+                AppButton(title: actionLabel, variant: .soft, action: onOpen)
             }
             .padding(.horizontal, 16)
         }
         .padding(.bottom, 16)
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+        .onTapGesture(perform: onOpen)
     }
 }
 
