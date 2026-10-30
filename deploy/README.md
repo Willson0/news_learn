@@ -121,7 +121,7 @@ docker compose -f deploy/docker-compose.yml exec -w /app/backend app php artisan
 - `FCM_PROJECT_ID` и `FCM_CREDENTIALS` (путь к JSON сервисного аккаунта Firebase
   внутри контейнера, например `/app/backend/storage/app/fcm.json`); файл должен
   лежать по этому пути внутри контейнера;
-- `TBANK_TERMINAL_KEY` и `TBANK_PASSWORD` (Т-Касса) для выставления счетов и автопродления. URL уведомлений в настройках терминала: `https://<домен>/api/tbank/webhook`.
+- `TBANK_TERMINAL_KEY` и `TBANK_PASSWORD` (Т-Касса) для выставления счетов и автопродления. URL уведомлений в настройках терминала: `https://<домен>/api/tbank/webhook`. `TBANK_MODE=test` для тестового терминала (тестовые карты), `prod` для боевого (по умолчанию).
 
 Главный администратор приложения задан в `backend/config/admin.php` (`root_telegram_id`).
 Остальных админов приложения главный добавляет в разделе «Администраторы» админки

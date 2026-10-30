@@ -46,7 +46,11 @@ return [
     'tbank' => [
         'terminal_key' => env('TBANK_TERMINAL_KEY'),
         'password' => env('TBANK_PASSWORD'),
-        'api_base' => env('TBANK_API_BASE', 'https://securepay.tinkoff.ru/v2'),
+        // TBANK_MODE=test — тестовый терминал (тестовые карты), иначе боевой. TBANK_API_BASE перекрывает адрес целиком.
+        'mode' => env('TBANK_MODE', 'prod'),
+        'api_base' => env('TBANK_API_BASE') ?: (env('TBANK_MODE', 'prod') === 'test'
+            ? 'https://rest-api-test.tinkoff.ru/v2'
+            : 'https://securepay.tinkoff.ru/v2'),
         'notification_url' => env('TBANK_NOTIFICATION_URL', 'https://wilflw.ru/api/tbank/webhook'),
         'return_url' => env('TBANK_RETURN_URL', 'https://wilflw.ru/api/billing/card/return'),
         'fail_url' => env('TBANK_FAIL_URL', 'https://wilflw.ru/api/billing/card/return?status=cancel'),
