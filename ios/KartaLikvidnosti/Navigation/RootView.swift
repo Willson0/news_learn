@@ -14,6 +14,9 @@ struct RootView: View {
             }
         }
         .appToastHost()
+        // Клавиатура: тап мимо поля и прокрутка вниз убирают её на любом экране.
+        .dismissesKeyboardOnTap()
+        .scrollDismissesKeyboard(.interactively)
         .task {
             await session.load()
             await appData.preload()
@@ -44,6 +47,7 @@ private struct AuthFlow: View {
                     }
                 }
         }
+        .onChange(of: router.authPath) { _ in KeyboardDismiss.hide() }
     }
 }
 
@@ -62,7 +66,10 @@ private struct MainFlow: View {
         }
         .tint(Theme.text)
         .onChange(of: session.restricted) { _ in enforceRestriction() }
-        .onChange(of: router.tab) { _ in enforceRestriction() }
+        .onChange(of: router.tab) { _ in enforceRestriction(); KeyboardDismiss.hide() }
+        // Клавиатура не переживает переход между экранами (в том числе свайп назад):
+        // при возврате, например, из инфо чата она не всплывает и не закрывает экран.
+        .onChange(of: router.paths) { _ in KeyboardDismiss.hide() }
         .onAppear(perform: enforceRestriction)
     }
 

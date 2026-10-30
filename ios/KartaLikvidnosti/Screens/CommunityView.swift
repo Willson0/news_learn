@@ -14,6 +14,9 @@ struct CommunityView: View {
     /// Чаты без звука (локально, как «Без звука» в инфо чата) — для подписи в меню.
     @State private var muted: Set<String> = []
     @State private var leaveTarget: ChatItemDto? = nil
+    /// Закреплённые пользователем чаты (на устройстве, у каждого аккаунта свои),
+    /// последний закреплённый — первым.
+    @State private var pinnedChats: [String] = []
 
     private var visibleSections: [ChatSectionDto] {
         var result = sections
@@ -25,11 +28,25 @@ struct CommunityView: View {
             result = result.filter { tab == "direct" ? $0.key == "direct" : $0.key != "direct" }
         }
         let q = query.trimmed.lowercased()
-        guard !q.isEmpty else { return result }
-        return result.compactMap { s in
-            let items = s.items.filter { "\($0.title) \($0.preview ?? "")".lowercased().contains(q) }
+        if !q.isEmpty {
+            result = result.compactMap { s in
+                let items = s.items.filter { "\($0.title) \($0.preview ?? "")".lowercased().contains(q) }
+                return items.isEmpty ? nil : ChatSectionDto(key: s.key, title: s.title, items: items)
+            }
+        }
+        return withPinnedOnTop(result)
+    }
+
+    /// Закреплённые чаты — отдельной секцией над остальными (из своих секций убираются).
+    private func withPinnedOnTop(_ sections: [ChatSectionDto]) -> [ChatSectionDto] {
+        let all = sections.flatMap(\.items)
+        let pinnedItems = pinnedChats.compactMap { id in all.first { $0.id == id } }
+        guard !pinnedItems.isEmpty else { return sections }
+        let rest: [ChatSectionDto] = sections.compactMap { s in
+            let items = s.items.filter { !pinnedChats.contains($0.id) }
             return items.isEmpty ? nil : ChatSectionDto(key: s.key, title: s.title, items: items)
         }
+        return [ChatSectionDto(key: "pinned", title: "Закрепленные", items: pinnedItems)] + rest
     }
 
     private var placeholder: String {
@@ -107,7 +124,8 @@ struct CommunityView: View {
         .ignoresSafeArea(.container, edges: .top)
         .screenBackground()
         .withGlassNavBar()
-        .onAppear { seed(); refreshMuted() }
+        .onAppear { seed(); refreshMuted(); loadPins() }
+        .animation(.easeOut(duration: 0.25), value: pinnedChats)
         .task { await load(); refreshMuted() }
         .alert(
             "Выйти из чата?",
@@ -159,6 +177,15 @@ struct CommunityView: View {
                 Label("Отметить прочитанным", systemImage: "checkmark.message")
             }
         }
+        if !session.restricted {
+            Button { togglePin(item) } label: {
+                if pinnedChats.contains(item.id) {
+                    Label("Открепить", systemImage: "pin.slash")
+                } else {
+                    Label("Закрепить", systemImage: "pin")
+                }
+            }
+        }
         Button { toggleMute(item) } label: {
             if muted.contains(item.id) {
                 Label("Включить звук", systemImage: "bell")
@@ -203,7 +230,10 @@ struct CommunityView: View {
                         }
                         Text(ChatDates.listStamp(item.lastAt, fallback: item.time))
                             .font(Theme.sans(Theme.fontBase)).foregroundStyle(Color.white.opacity(0.6))
-                        if item.pinned { Icon(AppIcons.pinSmall, size: 12, color: Theme.text) }
+                        if item.pinned || pinnedChats.contains(item.id) {
+                            Icon(AppIcons.pinSmall, size: 12, color: Theme.text)
+                                .accessibilityLabel("Закреплен")
+                        }
                     }
                     .frame(height: 19)
                     if item.unread > 0 {
@@ -261,7 +291,24 @@ struct CommunityView: View {
         if on { muted.insert(item.id) } else { muted.remove(item.id) }
     }
 
+    private var pinsKey: String { "kl_pinned_chats_\(session.user?.id ?? 0)" }
+
+    private func loadPins() {
+        pinnedChats = UserDefaults.standard.stringArray(forKey: pinsKey) ?? []
+    }
+
+    private func togglePin(_ item: ChatItemDto) {
+        Haptics.light()
+        if let i = pinnedChats.firstIndex(of: item.id) {
+            pinnedChats.remove(at: i)
+        } else {
+            pinnedChats.insert(item.id, at: 0)
+        }
+        UserDefaults.standard.set(pinnedChats, forKey: pinsKey)
+    }
+
     private func leave(_ item: ChatItemDto) {
+        if pinnedChats.contains(item.id) { togglePin(item) }
         let before = sections
         sections = sections.compactMap { s in
             let items = s.items.filter { $0.id != item.id }

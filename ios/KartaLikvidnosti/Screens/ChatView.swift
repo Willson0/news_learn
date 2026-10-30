@@ -228,6 +228,10 @@ struct ChatView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
             withAnimation(.easeOut(duration: 0.25)) { keyboardShown = false }
         }
+        // В режиме выбора поля ввода нет — фокус ему не возвращаем (его восстанавливает
+        // закрывшееся системное меню сообщения).
+        .onChange(of: inputFocused) { focused in if focused && selectMode { inputFocused = false } }
+        .onDisappear { inputFocused = false; searchFocused = false }
         .onAppear {
             hiddenIds = Self.loadHidden(chatId)
             if router.chatSearchRequest == chatId { router.chatSearchRequest = nil; openSearch() }
@@ -240,7 +244,7 @@ struct ChatView: View {
     private var topBar: some View {
         VStack(spacing: 24) {
             if searchMode {
-                searchTopBar
+                searchTopBar.keepsKeyboardOnTap()
             } else if selectMode {
                 HStack {
                     Text("Выбрано \(selected.count)")
@@ -256,7 +260,7 @@ struct ChatView: View {
                 HStack(spacing: 0) {
                     GlassBackButton()
                     Spacer(minLength: 12)
-                    Button { router.push(.chatInfo(id: chatId)) } label: {
+                    Button { openInfo() } label: {
                         VStack(spacing: 0) {
                             Text(chatTitle.title)
                                 .font(Theme.sans(Theme.fontBase, .semibold))
@@ -276,7 +280,7 @@ struct ChatView: View {
                     .buttonStyle(PressableStyle())
                     Spacer(minLength: 12)
                     // Иконка чата открывает то же инфо, что и название.
-                    Button { router.push(.chatInfo(id: chatId)) } label: {
+                    Button { openInfo() } label: {
                         chatAvatar
                             // Почти прозрачная подложка: картинка сама нажатия не ловит.
                             .background(Circle().fill(Color.white.opacity(0.001)))
@@ -750,6 +754,9 @@ struct ChatView: View {
         }
         .padding(.horizontal, Theme.screenX)
         .padding(.top, 12)
+        // Тап по полю, «+», «Отправить», упоминаниям не прячет клавиатуру;
+        // тап по ленте — прячет (KeyboardDismiss), свайп ленты вниз — тоже.
+        .keepsKeyboardOnTap()
         .padding(.bottom, keyboardShown ? 12 : 45)
     }
 
@@ -1313,7 +1320,19 @@ struct ChatView: View {
         selectMode = true
         inputFocused = false
     }
-    private func exitSelect() { selectMode = false; selected = []; selectDeleteMenu = false }
+    private func exitSelect() {
+        selectMode = false; selected = []; selectDeleteMenu = false
+        // Поле ввода возвращается без фокуса: системное меню «Выбрать» при закрытии
+        // восстанавливает прежний фокус, и без этого клавиатура всплывала на выходе.
+        inputFocused = false
+    }
+
+    /// Инфо чата: клавиатура прячется до перехода и не всплывает при возврате.
+    private func openInfo() {
+        inputFocused = false
+        searchFocused = false
+        router.push(.chatInfo(id: chatId))
+    }
     private func toggleSelect(_ id: Int) {
         // Временные пузыри (ещё не на сервере) выбрать нельзя.
         guard id > 0 else { return }

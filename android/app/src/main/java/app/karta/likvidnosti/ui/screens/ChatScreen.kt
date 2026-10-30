@@ -87,6 +87,9 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -413,6 +416,20 @@ fun ChatScreen(
     val keyboardShown = imeBottom > 0.dp
     // Отступ плавно идёт за клавиатурой и не прыгает с 12 на 45 в конце её скрытия.
     val bottomPad = maxOf(imeBottom + 12.dp, designBottom(45.dp))
+
+    // Палец тянет ленту вниз (к старым сообщениям) — клавиатура уходит, как в iOS.
+    val keyboardOpen by rememberUpdatedState(keyboardShown)
+    val dragDismissKeyboard = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput && available.y > 4f && keyboardOpen) {
+                    focusManager.clearFocus()
+                    keyboard?.hide()
+                }
+                return Offset.Zero
+            }
+        }
+    }
 
     // К последнему сообщению — при новых сообщениях и когда клавиатура появилась.
     // Когда она убрана (долгое нажатие, выбор), лента остаётся на месте: иначе
@@ -930,7 +947,19 @@ fun ChatScreen(
         keyboard?.hide()
     }
 
-    fun exitSelect() { selectMode = false; selectDeleteMenu = false; selected.clear() }
+    fun exitSelect() {
+        selectMode = false; selectDeleteMenu = false; selected.clear()
+        // Выход из выбора не возвращает клавиатуру: поле ввода снова появляется без фокуса.
+        focusManager.clearFocus()
+        keyboard?.hide()
+    }
+
+    /** Инфо чата: клавиатура прячется до перехода и не всплывает при возврате. */
+    fun openInfo() {
+        focusManager.clearFocus()
+        keyboard?.hide()
+        onInfo()
+    }
 
     fun toggleSelect(id: Long) {
         // Временные пузыри (ещё не на сервере) выбрать нельзя.
@@ -1078,7 +1107,7 @@ fun ChatScreen(
                     // MARK: Сообщения
                     LazyColumn(
                         state = listState,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize().nestedScroll(dragDismissKeyboard),
                         contentPadding = PaddingValues(
                             start = T.ScreenX,
                             end = T.ScreenX,
@@ -1221,7 +1250,7 @@ fun ChatScreen(
                         onSearchQuery = { searchQuery = it; searchIndex = 0 },
                         onCloseSearch = { closeSearch() },
                         onBack = onBack,
-                        onInfo = onInfo,
+                        onInfo = { openInfo() },
                         onCancelSelect = { exitSelect() },
                         onOpenPin = { openPin(it) },
                         onUnpin = { unpinConfirm = it },

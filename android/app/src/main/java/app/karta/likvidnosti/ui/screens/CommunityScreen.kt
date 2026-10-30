@@ -132,8 +132,19 @@ fun CommunityScreen(
 
     // Меню по долгому нажатию на чат (как в Телеграме) и подтверждение выхода.
     val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
     var menuItem by remember { mutableStateOf<ChatItemDto?>(null) }
     var leaveTarget by remember { mutableStateOf<ChatItemDto?>(null) }
+    // Закреплённые пользователем чаты (на устройстве, у каждого аккаунта свои),
+    // последний закреплённый — первым.
+    val userId = Session.user?.id ?: 0L
+    var pinnedChats by remember(userId) { mutableStateOf(pinnedChats(context, userId)) }
+
+    fun togglePin(item: ChatItemDto) {
+        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        pinnedChats = if (item.id in pinnedChats) pinnedChats - item.id else listOf(item.id) + pinnedChats
+        setPinnedChats(context, userId, pinnedChats)
+    }
 
     fun updateSections(next: List<ChatSectionDto>) {
         sections = next
@@ -146,6 +157,7 @@ fun CommunityScreen(
     }
 
     fun leave(item: ChatItemDto) {
+        if (item.id in pinnedChats) togglePin(item)
         val before = sections
         updateSections(
             sections.map { s -> ChatSectionDto(s.key, s.title, s.items.filter { it.id != item.id }) }.filter { it.items.isNotEmpty() },
@@ -156,7 +168,7 @@ fun CommunityScreen(
         }
     }
 
-    val visible = remember(query, tab, sections, isAdmin, restricted) {
+    val visible = remember(query, tab, sections, isAdmin, restricted, pinnedChats) {
         if (restricted) {
             sections.filter { it.key == "main" }.map { ChatSectionDto(it.key, "Чаты", it.items) }
         } else {
@@ -165,10 +177,12 @@ fun CommunityScreen(
                 list = list.filter { if (tab == "direct") it.key == "direct" else it.key != "direct" }
             }
             val q = query.trim().lowercase()
-            if (q.isEmpty()) list
-            else list.map { s ->
-                ChatSectionDto(s.key, s.title, s.items.filter { "${it.title} ${it.preview ?: ""}".lowercase().contains(q) })
-            }.filter { it.items.isNotEmpty() }
+            if (q.isNotEmpty()) {
+                list = list.map { s ->
+                    ChatSectionDto(s.key, s.title, s.items.filter { "${it.title} ${it.preview ?: ""}".lowercase().contains(q) })
+                }.filter { it.items.isNotEmpty() }
+            }
+            withPinnedOnTop(list, pinnedChats)
         }
     }
 
@@ -178,6 +192,9 @@ fun CommunityScreen(
             ChatListMenu(
                 item = menuItem,
                 muted = menuItem?.let { chatMuted(context, it.id) } ?: false,
+                pinned = menuItem?.let { it.id in pinnedChats } ?: false,
+                canPin = !restricted,
+                onPin = { item -> menuItem = null; togglePin(item) },
                 onClose = { menuItem = null },
                 onOpen = { item -> menuItem = null; onOpenChat(item.id) },
                 onRead = { item -> menuItem = null; markRead(item) },
@@ -257,6 +274,7 @@ fun CommunityScreen(
                                             item,
                                             Modifier.padding(horizontal = T.ScreenX),
                                             muted = chatMuted(context, item.id),
+                                            userPinned = item.id in pinnedChats,
                                             onLongPress = { menuItem = item },
                                         ) { onOpenChat(item.id) }
                                     }
@@ -289,6 +307,7 @@ private fun ChatRow(
     item: ChatItemDto,
     modifier: Modifier = Modifier,
     muted: Boolean = false,
+    userPinned: Boolean = false,
     onLongPress: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
@@ -357,7 +376,7 @@ private fun ChatRow(
             ) {
                 if (muted) AppIcon(AppIcons.bellSlash, size = 14.dp, tint = Caption)
                 Text(ChatDates.listStamp(item.lastAt, item.time), style = AppFont.sans(T.FsBase, color = Caption))
-                if (item.pinned) AppIcon(AppIcons.pinSmall, size = 12.dp)
+                if (item.pinned || userPinned) AppIcon(AppIcons.pinSmall, size = 12.dp)
             }
             if (item.unread > 0) {
                 // Непрочитанные: зелёный бейдж 12; у чата без звука — серый.
@@ -387,6 +406,24 @@ private fun chatMuted(context: Context, slug: String) = chatPrefs(context).getBo
 private fun setChatMuted(context: Context, slug: String, muted: Boolean) =
     chatPrefs(context).edit().putBoolean("kl_muted_$slug", muted).apply()
 
+/** Закреплённые чаты аккаунта: id через перевод строки, последний закреплённый — первым. */
+private fun pinnedChats(context: Context, userId: Long): List<String> =
+    chatPrefs(context).getString("kl_pinned_chats_$userId", null)
+        ?.split('\n')?.filter { it.isNotEmpty() } ?: emptyList()
+
+private fun setPinnedChats(context: Context, userId: Long, ids: List<String>) =
+    chatPrefs(context).edit().putString("kl_pinned_chats_$userId", ids.joinToString("\n")).apply()
+
+/** Закреплённые чаты — отдельной секцией над остальными (из своих секций убираются). */
+private fun withPinnedOnTop(sections: List<ChatSectionDto>, pinned: List<String>): List<ChatSectionDto> {
+    val all = sections.flatMap { it.items }
+    val pinnedItems = pinned.mapNotNull { id -> all.firstOrNull { it.id == id } }
+    if (pinnedItems.isEmpty()) return sections
+    val rest = sections.map { s -> ChatSectionDto(s.key, s.title, s.items.filter { it.id !in pinned }) }
+        .filter { it.items.isNotEmpty() }
+    return listOf(ChatSectionDto("pinned", "Закрепленные", pinnedItems)) + rest
+}
+
 /**
  * Меню чата по долгому нажатию (как в Телеграме): фон размывается и
  * затемняется, чат поднимается карточкой, под ним — стеклянное меню.
@@ -396,9 +433,12 @@ private fun setChatMuted(context: Context, slug: String, muted: Boolean) =
 private fun ChatListMenu(
     item: ChatItemDto?,
     muted: Boolean,
+    pinned: Boolean,
+    canPin: Boolean,
     onClose: () -> Unit,
     onOpen: (ChatItemDto) -> Unit,
     onRead: (ChatItemDto) -> Unit,
+    onPin: (ChatItemDto) -> Unit,
     onMute: (ChatItemDto) -> Unit,
     onInfo: (ChatItemDto) -> Unit,
     onLeave: (ChatItemDto) -> Unit,
@@ -449,6 +489,7 @@ private fun ChatListMenu(
                 ) {
                     ChatMenuRow("Открыть", AppIcons.chat) { onOpen(chat) }
                     if (chat.unread > 0) ChatMenuRow("Отметить прочитанным", AppIcons.check) { onRead(chat) }
+                    if (canPin) ChatMenuRow(if (pinned) "Открепить" else "Закрепить", AppIcons.pin) { onPin(chat) }
                     ChatMenuRow(if (muted) "Включить звук" else "Без звука", if (muted) AppIcons.bell else AppIcons.bellSlash) { onMute(chat) }
                     ChatMenuRow("Информация о чате", AppIcons.dots) { onInfo(chat) }
                     if (!chat.permanent) {

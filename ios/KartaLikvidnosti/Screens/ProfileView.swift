@@ -178,15 +178,17 @@ struct ProfileView: View {
 
     private var header: some View {
         ZStack(alignment: .top) {
-            ZStack {
-                Color(hex: "#3b5839")
-                if let avatar { RemoteImage(url: avatar) }
-            }
-            .frame(height: 309)
-            .frame(maxWidth: .infinity)
-            .blur(radius: 50, opaque: true)
-            .overlay(Color.black.opacity(0.5))
-            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+            // Фото — только оверлей поверх фона заданного размера: в режиме .fill
+            // широкая картинка шире экрана, и, будучи частью раскладки, она
+            // раздвигала шапку — аватар и тег съезжали вправо.
+            Color(hex: "#3b5839")
+                .frame(maxWidth: .infinity)
+                .frame(height: 309)
+                .overlay { if let avatar { RemoteImage(url: avatar) } }
+                .clipped()
+                .blur(radius: 50, opaque: true)
+                .overlay(Color.black.opacity(0.5))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
 
             VStack(spacing: 0) {
                 AvatarCircle(url: avatar, size: 148, initial: avatarInitial)
@@ -215,6 +217,7 @@ struct ProfileView: View {
             .padding(.horizontal, Theme.screenX)
             .padding(.top, 78)
         }
+        .frame(maxWidth: .infinity)
         .frame(height: 309)
     }
 

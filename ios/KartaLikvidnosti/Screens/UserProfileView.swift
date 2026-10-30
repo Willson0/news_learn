@@ -19,12 +19,14 @@ struct UserProfileView: View {
     // 40, имя Kreadon 20 через 12, тег 14 pt через 4.
     var body: some View {
         ZStack(alignment: .top) {
+            // Фото — оверлей поверх фона: в режиме .fill широкая картинка шире
+            // экрана и, будучи частью раскладки, раздвигала ZStack — аватар,
+            // имя и тег съезжали вправо.
             Color(hex: "#3b5839")
-            if let url = fileURL(user?.avatarUrl) {
-                RemoteImage(url: url)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipped()
-            }
+                .overlay {
+                    if let url = fileURL(user?.avatarUrl) { RemoteImage(url: url) }
+                }
+                .clipped()
             ZStack { BackdropBlur(radius: 50); Color.black.opacity(0.5) }
 
             if let u = user {

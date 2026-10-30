@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.media.MediaPlayer
 import android.net.Uri
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.fadeIn
@@ -418,7 +419,12 @@ fun ChatInfoScreen(
             ) {
                 GlassBackButton(onClick = onBack)
                 Spacer(Modifier.weight(1f))
-                GlassCircleButton(AppIcons.news, if (canManage ?: Session.isAdmin) "Редактировать чат" else "Открыть отчет", iconSize = 24.dp) { newsTapped() }
+                // Кнопка справа ведёт в настройки чата или к отчёту. Если ни того, ни
+                // другого нет (обычный участник не-отчётного чата) — её не показываем.
+                val manage = canManage ?: Session.isAdmin
+                AnimatedVisibility(visible = manage || reportId != null, enter = fadeIn(), exit = fadeOut()) {
+                    GlassCircleButton(AppIcons.news, if (manage) "Редактировать чат" else "Открыть отчет", iconSize = 24.dp) { newsTapped() }
+                }
             }
         },
     )

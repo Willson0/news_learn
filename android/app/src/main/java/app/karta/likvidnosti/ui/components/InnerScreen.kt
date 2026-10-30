@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -42,6 +43,8 @@ fun InnerScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    // Клавиатура не закрывает поля: область прокрутки сжимается над ней.
+                    .imePadding()
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = T.ScreenX)
                     .padding(top = designTop(contentTop), bottom = designBottom(bottomPadding)),

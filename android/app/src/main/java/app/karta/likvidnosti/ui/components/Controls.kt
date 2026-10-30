@@ -1,5 +1,8 @@
 package app.karta.likvidnosti.ui.components
 
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
@@ -120,6 +123,7 @@ fun AppInput(
     height: Dp? = null,
 ) {
     var revealed by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
     val textColor = if (error) T.Error else T.Text
     // Своё состояние с курсором: если родитель переформатировал ввод (маска
     // телефона, фильтр цифр), курсор ставится в конец, а не посреди текста.
@@ -151,7 +155,10 @@ fun AppInput(
                 visualTransformation = if (isPassword && !revealed) PasswordVisualTransformation() else VisualTransformation.None,
                 keyboardOptions = KeyboardOptions(
                     keyboardType = if (isPassword && !revealed) KeyboardType.Password else keyboardType,
+                    // Однострочное поле: кнопка «Готово» на клавиатуре убирает её.
+                    imeAction = if (singleLine) ImeAction.Done else ImeAction.Default,
                 ),
+                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                 modifier = Modifier.fillMaxWidth(),
                 decorationBox = { inner ->
                     Box(contentAlignment = Alignment.CenterStart) {

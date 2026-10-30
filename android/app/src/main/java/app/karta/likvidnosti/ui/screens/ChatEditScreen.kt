@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -109,6 +110,8 @@ fun ChatEditScreen(slug: String, onBack: () -> Unit) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    // Клавиатура не закрывает поля: область прокрутки сжимается над ней.
+                    .imePadding()
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = T.ScreenX)
                     .padding(top = designTop(78.dp), bottom = 40.dp),

@@ -18,6 +18,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -35,6 +37,7 @@ import app.karta.likvidnosti.ui.components.AppTab
 import app.karta.likvidnosti.ui.components.AppToastHost
 import app.karta.likvidnosti.ui.components.GlassNavBar
 import app.karta.likvidnosti.ui.components.NavBarExtra
+import app.karta.likvidnosti.ui.components.dismissKeyboardOnBackgroundTap
 import app.karta.likvidnosti.ui.icons.AppIcons
 import app.karta.likvidnosti.ui.nav.NavActions
 import app.karta.likvidnosti.ui.nav.Routes
@@ -163,7 +166,24 @@ fun AppRoot() {
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(T.Bg)) {
+    // Клавиатура не переживает переход между экранами: при возврате из инфо чата,
+    // профиля и т. п. она не всплывает сама и не перекрывает экран без поля ввода.
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(backStack?.id) {
+        focusManager.clearFocus(force = true)
+        keyboard?.hide()
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(T.Bg)
+            .dismissKeyboardOnBackgroundTap {
+                focusManager.clearFocus()
+                keyboard?.hide()
+            },
+    ) {
         NavHost(
             navController = nav,
             startDestination = start,

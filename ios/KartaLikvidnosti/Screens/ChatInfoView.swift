@@ -52,13 +52,21 @@ struct ChatInfoView: View {
             HStack {
                 GlassBackButton()
                 Spacer()
-                Button { newsTapped() } label: {
-                    Icon(AppIcons.news, size: 24, color: Theme.text)
-                        .frame(width: 42, height: 42)
-                        .liquidGlass(Circle(), interactive: true)
+                // Кнопка справа ведёт в настройки чата или к отчёту. Если ни того, ни
+                // другого нет (обычный участник не-отчётного чата) — её не показываем.
+                if newsAvailable {
+                    Button { newsTapped() } label: {
+                        Icon(AppIcons.news, size: 24, color: Theme.text)
+                            .frame(width: 42, height: 42)
+                            .liquidGlass(Circle(), interactive: true)
+                    }
+                    .buttonStyle(PressableStyle())
+                    .accessibilityLabel(canManage ?? session.isAdmin ? "Редактировать чат" : "Открыть отчет")
+                    .transition(.opacity)
                 }
-                .buttonStyle(PressableStyle())
             }
+            .frame(height: 42)
+            .animation(.easeOut(duration: 0.2), value: newsAvailable)
             .padding(.horizontal, Theme.screenX)
             .padding(.top, Theme.topBarY)
             .ignoresSafeArea(.container, edges: .top)
@@ -349,6 +357,8 @@ struct ChatInfoView: View {
             .buttonStyle(.plain)
         }
     }
+
+    private var newsAvailable: Bool { (canManage ?? session.isAdmin) || reportId != nil }
 
     private func newsTapped() {
         if canManage ?? session.isAdmin { router.push(.chatEdit(id: chatId)) }
