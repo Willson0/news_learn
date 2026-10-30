@@ -50,8 +50,6 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
@@ -59,10 +57,8 @@ import app.karta.likvidnosti.ui.icons.AppIcon
 import app.karta.likvidnosti.ui.icons.AppIcons
 import app.karta.likvidnosti.ui.theme.AppFont
 import app.karta.likvidnosti.ui.theme.T
-import app.karta.likvidnosti.ui.theme.designBottom
 import app.karta.likvidnosti.ui.theme.designTop
 import app.karta.likvidnosti.ui.theme.hex
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import kotlin.math.max
@@ -161,10 +157,9 @@ private fun shortDate(d: LocalDate?): String? = d?.let { "${it.dayOfMonth} ${SHO
 
 /**
  * Лист фильтров «Аналитика фильтры» (iOS FiltersSheet): плашка «фон плашки»,
- * радиус 24 сверху, полоска-хват 32 на 11; заголовки Kreadon 24; блоки «Фон
- * плашки 2» с чипами; календарь — стеклянный поп-ап над блоками. Внизу
- * закреплены «Показать N материалов» и «Сбросить». Тянется вниз, чтобы закрыть
- * (выбор при этом применяется, а не теряется).
+ * радиус 24 сверху, полоска-хват 32 на 11; «Искать» справа сверху; заголовки
+ * Kreadon 24; блоки «Фон плашки 2» с чипами; календарь — стеклянный поп-ап
+ * над блоками. Тянется вниз, чтобы закрыть.
  */
 @Composable
 fun FiltersSheet(
@@ -172,8 +167,6 @@ fun FiltersSheet(
     onApply: (FiltersResult) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
-    /** Сколько материалов найдётся с такими фильтрами (null — неизвестно). */
-    countFor: (suspend (FiltersResult) -> Int?)? = null,
     /** Текущий выбор в листе — чтобы применить его при закрытии свайпом. */
     onDraftChange: (FiltersResult) -> Unit = {},
 ) {
@@ -188,36 +181,22 @@ fun FiltersSheet(
             addAll(STATUS_OPTIONS.map { (key, label) -> Toggleable(key, label, key in initial.statuses) })
         }
     }
-    var dateMode by remember { mutableStateOf(initial.normalized().dateMode) }
+    var dateMode by remember { mutableStateOf(initial.dateMode) }
     var dateStart by remember { mutableStateOf(initial.dateStart) }
     var dateEnd by remember { mutableStateOf(initial.dateEnd) }
     var calendarOpen by remember { mutableStateOf(false) }
 
-    val current = FiltersResult(
-        instruments = instruments.filter { it.on }.map { it.key },
-        statuses = statuses.filter { it.on }.map { it.key },
-        dateMode = dateMode,
-        dateStart = dateStart,
-        dateEnd = dateEnd,
-    ).normalized()
-    LaunchedEffect(current) { onDraftChange(current) }
-
-    // «Показать N материалов»: число с сервера с небольшой задержкой после выбора.
-    var count by remember { mutableStateOf<Int?>(null) }
-    var counting by remember { mutableStateOf(false) }
-    LaunchedEffect(current) {
-        val counter = countFor ?: return@LaunchedEffect
-        counting = true
-        delay(300)
-        count = counter(current)
-        counting = false
-    }
-
-    fun reset() {
-        for (i in instruments.indices) instruments[i] = instruments[i].copy(on = false)
-        for (i in statuses.indices) statuses[i] = statuses[i].copy(on = false)
-        dateMode = null; dateStart = null; dateEnd = null
-        calendarOpen = false
+    // Выбор не теряется при закрытии свайпом или «назад»: оверлей применяет черновик.
+    LaunchedEffect(instruments.toList(), statuses.toList(), dateMode, dateStart, dateEnd) {
+        onDraftChange(
+            FiltersResult(
+                instruments = instruments.filter { it.on }.map { it.key },
+                statuses = statuses.filter { it.on }.map { it.key },
+                dateMode = dateMode,
+                dateStart = dateStart,
+                dateEnd = dateEnd,
+            ).normalized(),
+        )
     }
 
     val rangeLabel = shortDate(dateStart)?.let { s ->
@@ -262,7 +241,18 @@ fun FiltersSheet(
         }
     }
 
-    fun apply() = onApply(current)
+    fun apply() {
+        onApply(
+            FiltersResult(
+                instruments = instruments.filter { it.on }.map { it.key },
+                statuses = statuses.filter { it.on }.map { it.key },
+                dateMode = dateMode,
+                dateStart = dateStart,
+                dateEnd = dateEnd,
+            ),
+        )
+        onClose()
+    }
 
     val sheetShape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
     CompositionLocalProvider(LocalBackdrop provides null) {
@@ -284,7 +274,7 @@ fun FiltersSheet(
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = T.ScreenX)
-                    .padding(bottom = designBottom(24.dp) + 140.dp),
+                    .padding(bottom = 60.dp),
             ) {
                 Text("Инструменты", style = AppFont.heading(T.FsTitle), modifier = Modifier.padding(top = 35.dp))
                 ChipCard(Modifier.padding(top = 24.dp)) {
@@ -310,45 +300,40 @@ fun FiltersSheet(
                 ) {
                     Text("По дате", style = AppFont.heading(T.FsTitle))
                     Spacer(Modifier.weight(1f))
-                    AnimatedVisibility(visible = dateMode == CUSTOM_DATES && rangeLabel.isNotEmpty(), enter = fadeIn(), exit = fadeOut()) {
-                        // Выбранный диапазон (Figma 474:15508): крестик (область нажатия 48),
-                        // пилюля 32 со стеклом «active», 14 Regular; нажатие на пилюлю — календарь.
+                    AnimatedVisibility(visible = rangeLabel.isNotEmpty(), enter = fadeIn(), exit = fadeOut()) {
+                        // Выбранный диапазон (Figma 474:15508): крестик в области 38×32,
+                        // пилюля 32 со стеклом «active», 14 Regular.
                         Row(
+                            modifier = Modifier.padding(end = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(0.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(48.dp)
-                                    .pressable(pressAlpha = 1f) { dateStart = null; dateEnd = null; dateMode = null; calendarOpen = false }
-                                    .semantics(mergeDescendants = true) { contentDescription = "Убрать диапазон дат" },
+                                    .size(width = 38.dp, height = 32.dp)
+                                    .pressable(pressAlpha = 1f) { dateStart = null; dateEnd = null },
                                 contentAlignment = Alignment.Center,
                             ) { AppIcon(AppIcons.close, size = 24.dp) }
                             Box(
                                 modifier = Modifier
                                     .height(32.dp)
                                     .liquidGlass(CapsuleShape, Fills.Active)
-                                    .pressable(pressAlpha = 1f) { calendarOpen = !calendarOpen }
                                     .padding(horizontal = 12.dp),
                                 contentAlignment = Alignment.Center,
                             ) { Text(rangeLabel, style = AppFont.sans(T.FsBase)) }
                         }
                     }
+                    AppIcon(
+                        AppIcons.calendarNumber,
+                        size = 32.dp,
+                        modifier = Modifier.pressable(pressAlpha = 1f) { calendarOpen = !calendarOpen },
+                    )
                 }
 
-                // Период и диапазон — один выбор: «Свои даты» открывает календарь.
                 SegmentedControl(
                     value = dateMode.orEmpty(),
-                    options = PERIOD_OPTIONS + (CUSTOM_DATES to "Свои даты"),
-                    onSelect = { v ->
-                        dateMode = v
-                        if (v == CUSTOM_DATES) {
-                            calendarOpen = true
-                        } else {
-                            dateStart = null; dateEnd = null
-                            calendarOpen = false
-                        }
-                    },
+                    options = listOf("week" to "Неделя", "month" to "Месяц", "year" to "Год"),
+                    onSelect = { dateMode = it },
                     modifier = Modifier.padding(top = 24.dp),
                 )
             }
@@ -359,46 +344,14 @@ fun FiltersSheet(
                 exit = scaleOut(targetScale = 0.92f, transformOrigin = TransformOrigin(1f, 1f)) + fadeOut(),
                 modifier = Modifier.padding(horizontal = T.ScreenX).padding(top = 87.dp),
             ) {
-                AppCalendar(start = dateStart, end = dateEnd, onChange = { s, e ->
-                    dateStart = s; dateEnd = e; dateMode = CUSTOM_DATES
-                    if (s != null && e != null) calendarOpen = false
-                })
+                AppCalendar(start = dateStart, end = dateEnd, onChange = { s, e -> dateStart = s; dateEnd = e })
             }
 
-            // Закреплённые внизу «Показать N материалов» и «Сбросить» — в зоне большого пальца.
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .background(T.Surface)
-                    .padding(horizontal = T.ScreenX)
-                    .padding(top = 12.dp, bottom = designBottom(24.dp)),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                val n = count
-                AppButton(
-                    text = when {
-                        countFor == null || n == null -> "Показать материалы"
-                        n == 0 -> "Ничего не найдено"
-                        else -> "Показать ${materialsCount(n)}"
-                    },
-                    enabled = countFor == null || counting || n == null || n > 0,
-                    onClick = { apply() },
-                )
-                Box(
-                    modifier = Modifier
-                        .padding(top = 4.dp)
-                        .height(48.dp)
-                        .pressable(enabled = current.activeCount > 0, pressAlpha = 0.6f) { reset() }
-                        .padding(horizontal = 24.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        "Сбросить",
-                        style = AppFont.sans(T.FsBase, color = if (current.activeCount > 0) Color.White else T.TextSecondary),
-                    )
-                }
-            }
+            PillActionButton(
+                "Искать",
+                modifier = Modifier.align(Alignment.TopEnd).padding(end = T.ScreenX, top = 12.dp),
+                onClick = { apply() },
+            )
 
             Box(
                 modifier = Modifier
@@ -435,12 +388,12 @@ fun FiltersOverlay(
     applied: FiltersResult,
     onClose: () -> Unit,
     onApply: (FiltersResult) -> Unit,
-    countFor: (suspend (FiltersResult) -> Int?)? = null,
 ) {
     // Выбор в листе не теряется: закрытие свайпом, «назад» или тапом по фону его применяет.
     var draft by remember(open) { mutableStateOf(applied.normalized()) }
+    var appliedByButton by remember(open) { mutableStateOf(false) }
     fun dismiss() {
-        if (draft != applied.normalized()) onApply(draft)
+        if (!appliedByButton && draft != applied.normalized()) onApply(draft)
         onClose()
     }
     BackHandler(enabled = open) { dismiss() }
@@ -463,9 +416,8 @@ fun FiltersOverlay(
         ) {
             FiltersSheet(
                 initial = applied,
-                onApply = { onApply(it); onClose() },
+                onApply = { appliedByButton = true; onApply(it) },
                 onClose = { dismiss() },
-                countFor = countFor,
                 onDraftChange = { draft = it },
             )
         }

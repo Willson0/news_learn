@@ -231,7 +231,7 @@ fun PasswordRecoveryScreen(
                         )
                     }
                     if (!errors.containsKey("newPassword")) {
-                        PasswordHint(newPassword, Modifier.padding(start = 4.dp))
+                        PasswordHint(Modifier.padding(start = 4.dp))
                     }
                 }
             }

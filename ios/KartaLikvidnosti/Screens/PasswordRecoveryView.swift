@@ -114,7 +114,7 @@ struct PasswordRecoveryView: View {
                 .onChange(of: newPassword) { _ in if !errors.isEmpty { errors = [:] } }
         }
         if errors["newPassword"] == nil {
-            PasswordHint(password: newPassword).padding(.leading, 4)
+            PasswordHint().padding(.leading, 4)
         }
     }
 
@@ -214,19 +214,12 @@ struct PasswordRecoveryView: View {
     }
 }
 
-/// Подсказка к паролю: вторичным цветом, при 8+ символах — зелёная с галочкой.
+/// Подсказка под паролем, белым 12 pt — как под полем пароля в регистрации.
 struct PasswordHint: View {
-    let password: String
     var body: some View {
-        let ok = password.count >= 8
-        HStack(spacing: 4) {
-            if ok { Icon(AppIcons.check, size: 14, color: Theme.green) }
-            Text("Пароль должен содержать от 8 символов")
-                .font(Theme.sans(Theme.fontSm))
-                .foregroundStyle(ok ? Theme.green : Theme.textSecondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
-        .accessibilityValue(ok ? "Выполнено" : "")
+        Text("Пароль должен содержать от 8 символов")
+            .font(Theme.sans(Theme.fontSm))
+            .foregroundStyle(Theme.text)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

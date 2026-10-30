@@ -92,13 +92,8 @@ struct FiltersSheet: View {
     let initial: FiltersResult
     let onApply: (FiltersResult) -> Void
     let onClose: () -> Void
-    /// Сколько материалов найдётся с такими фильтрами (nil — неизвестно).
-    var countFor: ((FiltersResult) async -> Int?)? = nil
     /// Текущий выбор в листе — чтобы применить его при закрытии свайпом.
     var onDraftChange: (FiltersResult) -> Void = { _ in }
-
-    @State private var count: Int? = nil
-    @State private var counting = false
 
     @State private var instruments: [InstrumentDto]
     @State private var statuses: [InstrumentDto]
@@ -108,15 +103,14 @@ struct FiltersSheet: View {
     @State private var calendarOpen = false
 
     init(initial: FiltersResult, onApply: @escaping (FiltersResult) -> Void, onClose: @escaping () -> Void,
-         countFor: ((FiltersResult) async -> Int?)? = nil, onDraftChange: @escaping (FiltersResult) -> Void = { _ in }) {
+         onDraftChange: @escaping (FiltersResult) -> Void = { _ in }) {
         self.initial = initial
         self.onApply = onApply
         self.onClose = onClose
-        self.countFor = countFor
         self.onDraftChange = onDraftChange
         _instruments = State(initialValue: Self.options(FiltersResult.instrumentOptions, selected: initial.instruments))
         _statuses = State(initialValue: Self.options(FiltersResult.statusOptions, selected: initial.statuses))
-        _dateMode = State(initialValue: initial.normalized.dateMode)
+        _dateMode = State(initialValue: initial.dateMode)
         _dateStart = State(initialValue: initial.dateStart)
         _dateEnd = State(initialValue: initial.dateEnd)
     }
@@ -125,17 +119,8 @@ struct FiltersSheet: View {
         list.map { InstrumentDto(key: $0.key, label: $0.label, on: selected.contains($0.key)) }
     }
 
-    /// Период и диапазон — один выбор: «Свои даты» открывает календарь, период сбрасывает диапазон.
     private var dateModeBinding: Binding<String> {
-        Binding(get: { dateMode ?? "" }, set: { v in
-            dateMode = v
-            if v == FiltersResult.customDates {
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { calendarOpen = true }
-            } else {
-                dateStart = nil; dateEnd = nil
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { calendarOpen = false }
-            }
-        })
+        Binding(get: { dateMode ?? "" }, set: { dateMode = $0 })
     }
 
     private var current: FiltersResult {
@@ -146,11 +131,6 @@ struct FiltersSheet: View {
             dateStart: dateStart,
             dateEnd: dateEnd
         ).normalized
-    }
-
-    private var applyTitle: String {
-        guard countFor != nil, let count else { return "Показать материалы" }
-        return count == 0 ? "Ничего не найдено" : "Показать \(materialsCount(count))"
     }
 
     private static let shortMonths = ["ЯНВ", "ФЕВ", "МАР", "АПР", "МАЙ", "ИЮН",
@@ -200,49 +180,49 @@ struct FiltersSheet: View {
                     HStack(alignment: .center) {
                         Text("По дате").font(Theme.heading(Theme.fontTitle)).foregroundStyle(Theme.text)
                         Spacer()
-                        if dateMode == FiltersResult.customDates && !rangeLabel.isEmpty {
-                            // Выбранный диапазон (Figma 474:15508): крестик 12 в области 44,
-                            // пилюля 32 со стеклом «active», 14 Regular; нажатие на пилюлю — календарь.
-                            HStack(spacing: 0) {
+                        if !rangeLabel.isEmpty {
+                            // Выбранный диапазон (Figma 474:15508): крестик 12 в
+                            // области 38×32, пилюля 32 со стеклом «active», 14 Regular.
+                            HStack(spacing: 4) {
                                 Button {
                                     Haptics.light()
                                     withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
                                         dateStart = nil
                                         dateEnd = nil
-                                        dateMode = nil
-                                        calendarOpen = false
                                     }
                                 } label: {
                                     Icon(AppIcons.close, size: 12, color: Theme.text)
-                                        .frame(width: 44, height: 44)
+                                        .frame(width: 38, height: 32)
                                         .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
-                                .accessibilityLabel("Убрать диапазон дат")
-                                Button {
-                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { calendarOpen.toggle() }
-                                } label: {
-                                    Text(rangeLabel)
-                                        .font(Theme.sans(Theme.fontBase))
-                                        .foregroundStyle(Theme.text)
-                                        .padding(.horizontal, 12)
-                                        .frame(height: 32)
-                                        .liquidGlass(Capsule(), fill: ActiveFill())
-                                }
-                                .buttonStyle(.plain)
+                                Text(rangeLabel)
+                                    .font(Theme.sans(Theme.fontBase))
+                                    .foregroundStyle(Theme.text)
+                                    .padding(.horizontal, 12)
+                                    .frame(height: 32)
+                                    .liquidGlass(Capsule(), fill: ActiveFill())
                             }
+                            .padding(.trailing, 8)
                             .transition(.opacity)
                         }
+                        Button {
+                            Haptics.light()
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { calendarOpen.toggle() }
+                        } label: {
+                            Icon(AppIcons.calendarNumber, size: 32, color: Theme.text)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .frame(minHeight: 44)
                     .padding(.top, 40)
 
-                    SegmentedControl(selection: dateModeBinding,
-                                     options: FiltersResult.periodOptions + [(value: FiltersResult.customDates, label: "Свои даты")])
+                    SegmentedControl(selection: dateModeBinding, options: [
+                        ("week", "Неделя"), ("month", "Месяц"), ("year", "Год"),
+                    ], highlight: rangeLabel.isEmpty)
                     .padding(.top, 24)
                 }
                 .padding(.horizontal, Theme.screenX)
-                .padding(.bottom, 180)
+                .padding(.bottom, 60)
             }
             .coordinateSpace(name: "filtersScroll")
             .onPreferenceChange(SheetScrollTopKey.self) { scrollAtTop = $0 >= -1 }
@@ -252,44 +232,24 @@ struct FiltersSheet: View {
                 VStack(spacing: 8) {
                     AppCalendar(start: $dateStart, end: $dateEnd)
                 }
-                .onChange(of: dateEnd) { end in
-                    if dateStart != nil { dateMode = FiltersResult.customDates }
-                    if end != nil { withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { calendarOpen = false } }
-                }
                 .padding(.horizontal, Theme.screenX)
                 .padding(.top, 87)
                 .transition(.scale(scale: 0.92, anchor: .bottomTrailing).combined(with: .opacity))
             }
 
-            // Закреплённые внизу «Показать N материалов» и «Сбросить» — в зоне большого пальца.
-            VStack(spacing: 4) {
-                AppButton(title: applyTitle,
-                          disabled: countFor != nil && !counting && count == 0,
-                          action: apply)
-                Button(action: reset) {
-                    Text("Сбросить")
-                        .font(Theme.sans(Theme.fontBase))
-                        .foregroundStyle(current.activeCount > 0 ? Theme.text : Theme.textSecondary)
-                        .padding(.horizontal, 24)
-                        .frame(height: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(PressableStyle())
-                .disabled(current.activeCount == 0)
+            HStack {
+                Spacer()
+                PillActionButton(title: "Искать", action: apply)
             }
             .padding(.horizontal, Theme.screenX)
             .padding(.top, 12)
-            .padding(.bottom, 24)
-            .background(Theme.surface)
-            .padding(.bottom, 16)
-            .frame(maxHeight: .infinity, alignment: .bottom)
 
             Capsule().fill(Color.white).frame(width: 32, height: 1.5)
                 .frame(maxWidth: .infinity)
                 .padding(.top, 11)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .task(id: current) { await recount(current) }
+        .onChange(of: current) { onDraftChange($0) }
         .background(Theme.surface, in: UnevenRoundedRectangle(topLeadingRadius: 24, topTrailingRadius: 24, style: .continuous))
         .ignoresSafeArea(.container, edges: .bottom)
         .offset(y: max(dragY, 0))
@@ -329,28 +289,14 @@ struct FiltersSheet: View {
 
     private func apply() {
         Haptics.medium()
-        onApply(current)
-    }
-
-    private func reset() {
-        Haptics.light()
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
-            for i in instruments.indices { instruments[i].on = false }
-            for i in statuses.indices { statuses[i].on = false }
-            dateMode = nil; dateStart = nil; dateEnd = nil
-            calendarOpen = false
-        }
-    }
-
-    /// «Показать N материалов»: число с сервера с небольшой задержкой после выбора.
-    private func recount(_ filters: FiltersResult) async {
-        onDraftChange(filters)
-        guard let countFor else { return }
-        counting = true
-        try? await Task.sleep(nanoseconds: 300_000_000)
-        guard !Task.isCancelled else { return }
-        count = await countFor(filters)
-        counting = false
+        onApply(FiltersResult(
+            instruments: instruments.filter { $0.on }.map { $0.key },
+            statuses: statuses.filter { $0.on }.map { $0.key },
+            dateMode: dateMode,
+            dateStart: dateStart,
+            dateEnd: dateEnd
+        ))
+        onClose()
     }
 }
 
@@ -359,7 +305,6 @@ struct FiltersOverlay: View {
     @Binding var isOpen: Bool
     let applied: FiltersResult
     let onApply: (FiltersResult) -> Void
-    var countFor: ((FiltersResult) async -> Int?)? = nil
 
     /// Выбор в листе: закрытие свайпом или тапом по фону применяет его, а не теряет.
     @State private var draft: FiltersResult? = nil
@@ -378,7 +323,6 @@ struct FiltersOverlay: View {
                 FiltersSheet(initial: applied,
                              onApply: { onApply($0); draft = nil; isOpen = false },
                              onClose: close,
-                             countFor: countFor,
                              onDraftChange: { draft = $0 })
                     .padding(.top, 172)
                     .transition(.move(edge: .bottom))

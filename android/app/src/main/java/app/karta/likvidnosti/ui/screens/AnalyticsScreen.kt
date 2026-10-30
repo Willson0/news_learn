@@ -168,7 +168,6 @@ fun AnalyticsScreen(onOpenReport: (Long) -> Unit, navBar: @Composable () -> Unit
                 applied = applied,
                 onClose = { filtersOpen = false },
                 onApply = { applyFilters(it) },
-                countFor = { f -> runCatching { matchesQuery(load(f)).size }.getOrNull() },
             )
         },
     ) {

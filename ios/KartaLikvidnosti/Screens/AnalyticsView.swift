@@ -122,11 +122,7 @@ struct AnalyticsView: View {
             : nil)
         .overlay {
             FiltersOverlay(isOpen: $filtersOpen, applied: appliedFilters,
-                           onApply: { apply($0) },
-                           countFor: { f in
-                               guard let list = try? await fetch(f) else { return nil }
-                               return matchesQuery(list).count
-                           })
+                           onApply: { apply($0) })
         }
         .onAppear {
             seed()

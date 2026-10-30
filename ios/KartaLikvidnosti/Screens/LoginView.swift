@@ -146,7 +146,9 @@ struct LoginView: View {
             VStack(alignment: .leading, spacing: 4) {
                 AppInput(text: $password, placeholder: "Пароль", isSecure: true, error: errors["password"] != nil,
                          textContentType: .newPassword)
-                if let e = errors["password"] { errorText(e) } else { PasswordHint(password: password) }
+                Text(errors["password"] ?? "Пароль должен содержать от 8 символов")
+                    .font(Theme.sans(Theme.fontSm))
+                    .foregroundStyle(errors["password"] != nil ? Theme.error.opacity(0.7) : Theme.text)
             }
             field(error: errors["passwordConfirm"]) {
                 AppInput(text: $passwordConfirm, placeholder: "Подтвердите пароль", isSecure: true,

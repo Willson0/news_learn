@@ -120,8 +120,7 @@ fun AppInput(
     height: Dp? = null,
 ) {
     var revealed by remember { mutableStateOf(false) }
-    // При ошибке текст остаётся белым (его нужно прочитать, чтобы исправить), красная — обводка.
-    val textColor = T.Text
+    val textColor = if (error) T.Error else T.Text
     // Своё состояние с курсором: если родитель переформатировал ввод (маска
     // телефона, фильтр цифр), курсор ставится в конец, а не посреди текста.
     var fieldValue by remember { mutableStateOf(TextFieldValue(value, TextRange(value.length))) }
@@ -131,7 +130,6 @@ fun AppInput(
             .fillMaxWidth()
             .height(height ?: if (label == null) 48.dp else 64.dp)
             .liquidGlass(T.ShapeInput)
-            .then(if (error) Modifier.border(1.dp, T.Error, T.ShapeInput) else Modifier)
             // У пароля справа — «глаз» в области 48: отступ 4 + 12 внутри области = прежние 16.
             .padding(start = 16.dp, end = if (isPassword) 4.dp else 12.dp),
         verticalAlignment = Alignment.CenterVertically,

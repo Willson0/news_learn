@@ -136,7 +136,7 @@ struct ReportFormView: View {
                       prompt: Text("Введите текст").foregroundColor(Theme.textMuted), axis: .vertical)
                 .lineLimit(3...6)
                 .font(Theme.sans(Theme.fontBase))
-                .foregroundStyle(Theme.text)
+                .foregroundStyle(errors["description"] != nil ? Theme.error : Theme.text)
                 .accessibilityLabel("Описание")
                 .tint(Theme.green)
                 .onChange(of: descriptionText) { v in
@@ -149,12 +149,6 @@ struct ReportFormView: View {
         .padding(.vertical, 12)
         .frame(minHeight: 101, alignment: .top)
         .liquidGlass(RoundedRectangle(cornerRadius: Theme.radiusInput, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.radiusInput, style: .continuous)
-                .stroke(Theme.error.opacity(0.8), lineWidth: 1)
-                .opacity(errors["description"] != nil ? 1 : 0)
-                .allowsHitTesting(false)
-        )
     }
 
     private var addIcon: some View {

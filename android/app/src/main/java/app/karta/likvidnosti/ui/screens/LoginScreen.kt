@@ -33,8 +33,6 @@ import app.karta.likvidnosti.ui.components.AppButton
 import app.karta.likvidnosti.ui.components.AppInput
 import app.karta.likvidnosti.ui.components.AuthField
 import app.karta.likvidnosti.ui.components.AuthFieldError
-import app.karta.likvidnosti.ui.icons.AppIcon
-import app.karta.likvidnosti.ui.icons.AppIcons
 import app.karta.likvidnosti.ui.components.ButtonVariant
 import app.karta.likvidnosti.ui.components.pressable
 import app.karta.likvidnosti.ui.components.screenBackground
@@ -263,12 +261,14 @@ fun LoginScreen(
                                 isPassword = true,
                                 error = errors.containsKey("password"),
                             )
-                            val passwordError = errors["password"]
-                            if (passwordError != null) {
-                                AuthFieldError(passwordError)
-                            } else {
-                                PasswordHint(password)
-                            }
+                            Text(
+                                errors["password"] ?: "Пароль должен содержать от 8 символов",
+                                style = AppFont.sans(
+                                    T.FsSm,
+                                    color = if (errors.containsKey("password")) T.Error.copy(alpha = 0.7f) else T.Text,
+                                ),
+                                modifier = Modifier.fillMaxWidth(),
+                            )
                         }
                         AuthField(errors["passwordConfirm"]) {
                             AppInput(
@@ -313,22 +313,12 @@ fun LoginScreen(
     }
 }
 
-/**
- * Подсказка под паролем: вторичным цветом, пока условие не выполнено; как только
- * в пароле 8 символов — зелёная галочка.
- */
+/** Подсказка под паролем, белым 12 pt — как под полем пароля в регистрации. */
 @Composable
-internal fun PasswordHint(password: String, modifier: Modifier = Modifier) {
-    val ok = password.length >= 8
-    Row(
+internal fun PasswordHint(modifier: Modifier = Modifier) {
+    Text(
+        "Пароль должен содержать от 8 символов",
+        style = AppFont.sans(T.FsSm, color = T.Text),
         modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        if (ok) AppIcon(AppIcons.check, size = 14.dp, tint = T.Green)
-        Text(
-            "Пароль должен содержать от 8 символов",
-            style = AppFont.sans(T.FsSm, color = if (ok) T.Green else T.TextSecondary),
-        )
-    }
+    )
 }

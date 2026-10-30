@@ -94,13 +94,6 @@ struct AppInput: View {
         .padding(.trailing, isSecure ? 6 : 12)
         .frame(height: height ?? (label == nil ? 48 : 64))
         .liquidGlass(RoundedRectangle(cornerRadius: Theme.radiusInput, style: .continuous))
-        // Ошибка — красная рамка поля; введённый текст остаётся белым и читаемым.
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.radiusInput, style: .continuous)
-                .stroke(Theme.error.opacity(0.8), lineWidth: 1)
-                .opacity(error ? 1 : 0)
-                .allowsHitTesting(false)
-        )
     }
 
     @ViewBuilder private var field: some View {
@@ -115,7 +108,7 @@ struct AppInput: View {
             }
         }
         .font(Theme.sans(Theme.fontBase))
-        .foregroundStyle(Theme.text)
+        .foregroundStyle(error ? Theme.error : Theme.text)
         .textContentType(textContentType)
         .accessibilityLabel(label ?? placeholder)
         .tint(Theme.green)
