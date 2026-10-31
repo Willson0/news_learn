@@ -38,3 +38,9 @@ val EaseInOutBackAlpha: Easing = Easing { EaseInOutBack.transform(it).coerceIn(0
 
 /** DISSOLVE прототипа: растворение 800 мс, ease-in-out-back. */
 fun <T> figmaFade(): FiniteAnimationSpec<T> = tween(FigmaMs, easing = EaseInOutBackAlpha)
+
+/**
+ * Лента чата (как в Telegram): новое сообщение и сдвиг соседей — быстрая пружина без
+ * выброса назад; у back-кривой первые ~200 мс почти нет движения, и отправка «подвисала».
+ */
+fun <T> chatSpring(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.86f, stiffness = 420f)

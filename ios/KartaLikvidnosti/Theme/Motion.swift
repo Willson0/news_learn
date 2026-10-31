@@ -18,6 +18,10 @@ enum Motion {
     /// чипсы, свитчи, вкладки «Инфо о чате», сообщения в чате.
     static var standard: Animation { back() }
 
+    /// Лента чата (как в Telegram): новое сообщение и сдвиг соседей — быстрая пружина
+    /// без выброса назад; у back-кривой первые ~200 мс почти нет движения.
+    static var chatInsert: Animation { reduced ? fade : .spring(response: 0.32, dampingFraction: 0.86) }
+
     /// Figma SLOW (пружина: масса 1, жёсткость 80, затухание 20; ≈1.25 с) —
     /// раскрытие графика в отчёте, лист фильтров аналитики.
     static var slow: Animation { reduced ? fade : .interpolatingSpring(mass: 1, stiffness: 80, damping: 20) }

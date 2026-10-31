@@ -29,6 +29,9 @@ enum ChatDates {
     private static let shortDayFmt = formatter("d MMM")
     private static let shortFmt = formatter("dd.MM.yy")
 
+    /// Сейчас в ISO 8601 — время отправки у своего сообщения до ответа сервера.
+    static func isoNow() -> String { isoPlain.string(from: Date()) }
+
     static func parse(_ iso: String?) -> Date? {
         guard let iso, !iso.isEmpty else { return nil }
         return isoPlain.date(from: iso) ?? isoFraction.date(from: iso)

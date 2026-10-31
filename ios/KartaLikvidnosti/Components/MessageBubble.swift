@@ -36,6 +36,12 @@ struct ChatMessage: Identifiable {
     var privateLabel: String? = nil
     /// Сервер разрешает удалить у всех (nil — старый сервер: решает клиент).
     var canDelete: Bool? = nil
+    /// Ключ строки в ленте, пока сообщение рождено на этом устройстве: временный пузырь
+    /// и пришедшее ему на смену сообщение сервера — одна и та же строка (без мигания).
+    var localKey: String? = nil
+
+    /// Постоянный ключ строки ленты: не меняется, когда часики сменяются ответом сервера.
+    var uiKey: String { localKey ?? "s\(id)" }
 
     struct Reply { let author: String; let text: String }
     struct ImageAtt { let url: URL?; let width: Int?; let height: Int? }
@@ -81,13 +87,46 @@ struct ChatMessage: Identifiable {
     /// Текст служебного сообщения без имени («зашел в чат» / «вышел из чата»).
     var eventText: String { event == "leave" ? "вышел из чата" : "зашел в чат" }
 
-    /// Локальное сообщение с фото, которое ещё отправляется.
+    /// Своё сообщение, которое ещё отправляется: сразу в окончательном виде — со временем
+    /// отправки и размером фото, как в Telegram, чтобы ответ сервера ничего не сдвигал.
     init(pendingId: Int, localImages: [UIImage], text: String?) {
         id = pendingId
         mine = true
         pending = true
+        localKey = "l\(pendingId)"
         self.localImages = localImages
         self.text = text
+        let now = ChatDates.isoNow()
+        createdAt = now
+        time = ChatDates.time(now)
+        if let first = localImages.first, first.size.width > 0, first.size.height > 0 {
+            image = ImageAtt(url: nil, width: Int(first.size.width), height: Int(first.size.height))
+        }
+    }
+
+    /// Сообщение сервера на месте прежней версии той же строки: ключ ленты прежний,
+    /// а уже показанные локальные фото остаются (не перезагружаются и не мигают).
+    func adopting(_ old: ChatMessage) -> ChatMessage {
+        var m = self
+        m.localKey = old.localKey
+        if !old.localImages.isEmpty && !images.isEmpty { m.localImages = old.localImages }
+        return m
+    }
+
+    /// Своя реакция: поставить или снять (сервер делает так же).
+    func toggledReactions(_ emoji: String) -> [Reaction] {
+        var list = reactions
+        if let j = list.firstIndex(where: { $0.emoji == emoji }) {
+            let r = list[j]
+            if r.mine {
+                if r.count <= 1 { list.remove(at: j) } else { list[j] = .init(emoji: emoji, count: r.count - 1, mine: false) }
+            } else {
+                list[j] = .init(emoji: emoji, count: r.count + 1, mine: true)
+            }
+        } else {
+            list.append(.init(emoji: emoji, count: 1, mine: true))
+        }
+        return list
     }
 }
 
@@ -377,13 +416,20 @@ struct MessageBubble: View {
                     Text(time).font(Theme.sans(10)).foregroundStyle(secondary)
                 }
                 if message.mine {
-                    if message.failed {
-                        FailedMark().padding(.bottom, 0.5)
-                    } else if message.pending {
-                        SendingMark().padding(.bottom, 1.5)
-                    } else {
-                        ReadMark(read: message.read).padding(.bottom, 2.5)
+                    // Отметка в слоте постоянного размера: часики → кружок сменяются
+                    // растворением, время и ширина пузыря не сдвигаются (как в Telegram).
+                    ZStack(alignment: .bottomLeading) {
+                        if message.failed {
+                            FailedMark().padding(.bottom, 0.5).transition(.opacity)
+                        } else if message.pending {
+                            SendingMark().padding(.bottom, 1.5).transition(.opacity)
+                        } else {
+                            ReadMark(read: message.read).padding(.bottom, 2.5).transition(.opacity)
+                        }
                     }
+                    .frame(width: 12, height: 12.5, alignment: .bottomLeading)
+                    .animation(.easeOut(duration: 0.18), value: message.pending)
+                    .animation(.easeOut(duration: 0.18), value: message.failed)
                 }
             }
             .fixedSize()

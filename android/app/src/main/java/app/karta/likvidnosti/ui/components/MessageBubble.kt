@@ -1,6 +1,7 @@
 package app.karta.likvidnosti.ui.components
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.spring
 import androidx.compose.runtime.key
 import androidx.compose.ui.layout.Layout
@@ -113,8 +114,16 @@ data class ChatMessage(
     val uploadProgress: Float? = null,
     /** Ключ отправки: повтор не создаёт дубль, догруженное с сервера сообщение заменяет часики. */
     val clientId: String? = null,
+    /**
+     * Ключ строки в ленте, пока сообщение рождено на этом устройстве: временный пузырь
+     * и пришедшее ему на смену сообщение сервера — одна и та же строка (без мигания).
+     */
+    val localKey: String? = null,
 ) {
     val isSystem: Boolean get() = event != null
+
+    /** Постоянный ключ строки ленты: не меняется, когда часики сменяются ответом сервера. */
+    val key: String get() = localKey ?: "s$id"
 
     /** Текст служебного сообщения без имени. */
     val eventText: String get() = if (event == "leave") "вышел из чата" else "зашел в чат"
@@ -540,10 +549,26 @@ private fun Footer(message: ChatMessage, onToggleReaction: ((String) -> Unit)?) 
                     Text(message.time, style = AppFont.sans(10.sp, color = Secondary))
                 }
                 if (message.mine) {
-                    when {
-                        message.failed -> FailedMark(Modifier.padding(bottom = 1.dp))
-                        message.uploading -> SendingMark(Modifier.padding(bottom = 2.dp))
-                        else -> ReadMark(read = message.read, modifier = Modifier.padding(bottom = 3.dp))
+                    // Отметка в слоте постоянного размера: часики → кружок сменяются
+                    // растворением, время и ширина пузыря не сдвигаются (как в Telegram).
+                    val status = when {
+                        message.failed -> 2
+                        message.uploading -> 1
+                        else -> 0
+                    }
+                    Crossfade(
+                        targetState = status,
+                        animationSpec = tween(180),
+                        modifier = Modifier.size(12.dp, 13.dp),
+                        label = "status",
+                    ) { s ->
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomStart) {
+                            when (s) {
+                                2 -> FailedMark(Modifier.padding(bottom = 1.dp))
+                                1 -> SendingMark(Modifier.padding(bottom = 2.dp))
+                                else -> ReadMark(read = message.read, modifier = Modifier.padding(bottom = 3.dp))
+                            }
+                        }
                     }
                 }
             }

@@ -137,6 +137,7 @@ import app.karta.likvidnosti.data.fileUrl
 import app.karta.likvidnosti.ui.components.AvatarCircle
 import app.karta.likvidnosti.ui.components.figmaFade
 import app.karta.likvidnosti.ui.components.figmaTween
+import app.karta.likvidnosti.ui.components.chatSpring
 import app.karta.likvidnosti.ui.components.BackdropBox
 import app.karta.likvidnosti.ui.components.CapsuleShape
 import app.karta.likvidnosti.ui.components.ChatMessage
@@ -174,6 +175,7 @@ import okhttp3.RequestBody.Companion.asRequestBody
 import java.io.File
 import java.time.LocalDate
 import java.time.OffsetDateTime
+import kotlin.coroutines.cancellation.CancellationException
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -227,6 +229,44 @@ private fun MessageDto.toUi() = ChatMessage(
     canDelete = canDelete,
     clientId = clientId,
 )
+
+/**
+ * Временный пузырь сразу в окончательном виде: своя строка ленты (ключ не сменится
+ * с ответом сервера) и время отправки — как в Telegram, без дорисовки после ответа.
+ */
+private fun ChatMessage.asOutgoing(): ChatMessage {
+    val now = OffsetDateTime.now().toString()
+    return copy(
+        localKey = localKey ?: "l$id",
+        createdAt = createdAt ?: now,
+        time = time ?: ChatDates.time(now),
+    )
+}
+
+/**
+ * Сообщение сервера встаёт на место прежней версии той же строки: ключ ленты прежний,
+ * а уже показанные локальные фото остаются (не перезагружаются и не мигают).
+ */
+private fun ChatMessage.adopting(old: ChatMessage): ChatMessage = copy(
+    localKey = old.localKey,
+    localImageUris = if (old.localImageUris.isNotEmpty() && (imageUrl != null || imageUrls.isNotEmpty())) {
+        old.localImageUris
+    } else {
+        emptyList()
+    },
+)
+
+/** Своя реакция: поставить или снять (сервер делает так же). */
+private fun List<Reaction>.toggled(emoji: String): List<Reaction> {
+    val existing = firstOrNull { it.emoji == emoji }
+    return when {
+        existing == null -> this + Reaction(emoji, 1, true)
+        existing.mine -> mapNotNull {
+            if (it.emoji != emoji) it else if (it.count > 1) it.copy(count = it.count - 1, mine = false) else null
+        }
+        else -> map { if (it.emoji == emoji) it.copy(count = it.count + 1, mine = true) else it }
+    }
+}
 
 /** Запрос «открыть поиск» из инфо чата: экран чата открывает поиск, когда к нему возвращаются. */
 object ChatSearchBus {
@@ -328,7 +368,7 @@ fun ChatScreen(
     var searchListOpen by remember { mutableStateOf(false) }
     var loaded by remember { mutableStateOf(false) }
     // Сообщения первой загрузки появляются без анимации «всплытия».
-    val initialIds = remember { HashSet<Long>() }
+    val initialIds = remember { HashSet<String>() }
 
     var draft by remember { mutableStateOf(TextFieldValue("")) }
     // Фото, выбранные через системный Photo Picker, ждут «отправить».
@@ -392,6 +432,9 @@ fun ChatScreen(
 
     // MARK: - Загрузка
 
+    // Неотправленные сообщения: id временного пузыря → запрос, которым его можно отправить ещё раз.
+    val retryRequests = remember { HashMap<Long, suspend () -> MessageDto?>() }
+
     suspend fun reloadMessages() {
         runCatching { Repository.messages(slug) }.getOrNull()?.let { resp ->
             resp.chat?.let {
@@ -407,16 +450,31 @@ fun ChatScreen(
             val newPins = resp.pins ?: listOfNotNull(resp.pinned)
             pins.clear(); pins.addAll(newPins)
             pinIndex = pinIndex.coerceIn(0, (pins.size - 1).coerceAtLeast(0))
-            // Сообщения, которые ещё отправляются или не отправились, остаются в ленте.
-            val pending = messages.filter { it.uploading || it.failed }
+            // Строки ленты сохраняют ключи: сообщение, уже стоящее на экране, обновляется
+            // на месте, а не пересоздаётся. Отправляемое, которое сервер уже принял
+            // (потерялся только ответ), сменяется серверным без дубля.
+            val byId = messages.associateBy { it.id }
+            val outgoing = messages.filter { it.uploading || it.failed }
+            val outgoingByCid = outgoing.filter { it.clientId != null }.associateBy { it.clientId }
+            val server = resp.data.map { dto ->
+                val ui = dto.toUi()
+                val old = byId[ui.id] ?: ui.clientId?.let { outgoingByCid[it] }
+                if (old != null) ui.adopting(old) else ui
+            }
+            val serverCids = server.mapNotNull { it.clientId }.toHashSet()
+            val pending = outgoing.filter { m ->
+                val landed = m.clientId != null && m.clientId in serverCids
+                if (landed) {
+                    retryRequests.remove(m.id)
+                    ChatOutbox.remove(slug, m.id)
+                }
+                !landed
+            }
             messages.clear()
-            messages.addAll(resp.data.map { it.toUi() })
+            messages.addAll(server)
             messages.addAll(pending)
         }
     }
-
-    // Неотправленные сообщения: id временного пузыря → запрос, которым его можно отправить ещё раз.
-    val retryRequests = remember { HashMap<Long, suspend () -> MessageDto?>() }
 
     /** Запрос отправки альбома из jpeg-файлов очереди, с кольцом загрузки на превью. */
     fun photoRequest(localId: Long, clientId: String, files: List<File>, caption: String, reply: Long?): suspend () -> MessageDto? = {
@@ -463,7 +521,7 @@ fun ChatScreen(
                     replyText = e.replyText,
                     isPrivate = e.isPrivate,
                     clientId = e.clientId,
-                ),
+                ).asOutgoing(),
             )
             retryRequests[e.localId] = if (files.isEmpty()) {
                 { Repository.sendMessage(slug, e.text.orEmpty(), e.replyTo, e.clientId) }
@@ -489,18 +547,21 @@ fun ChatScreen(
         val known = messages.map { it.id }.toHashSet()
         val fresh = resp.data.filter { it.id > lastId && it.id !in known }.map { it.toUi() }
         if (fresh.isEmpty()) return
-        fresh.forEach { m ->
-            val cid = m.clientId ?: return@forEach
+        // Своё сообщение, пришедшее раньше ответа на отправку, занимает строку своих
+        // часиков (тот же ключ ленты) — без исчезновения и повторного появления.
+        val ordered = fresh.map { m ->
+            val cid = m.clientId ?: return@map m
             val i = messages.indexOfFirst { it.id < 0 && it.clientId == cid }
-            if (i >= 0) {
-                retryRequests.remove(messages[i].id)
-                ChatOutbox.remove(slug, messages[i].id)
-                messages.removeAt(i)
-            }
+            if (i < 0) return@map m
+            val old = messages[i]
+            retryRequests.remove(old.id)
+            ChatOutbox.remove(slug, old.id)
+            messages.removeAt(i)
+            m.adopting(old)
         }
         val local = messages.filter { it.id < 0 }
         messages.removeAll { it.id < 0 }
-        messages.addAll(fresh)
+        messages.addAll(ordered)
         messages.addAll(local)
     }
 
@@ -508,7 +569,7 @@ fun ChatScreen(
         reloadMessages()
         restoreOutbox()
         pinIndex = (pins.size - 1).coerceAtLeast(0)
-        initialIds.addAll(messages.map { it.id })
+        initialIds.addAll(messages.map { it.key })
         loaded = true
     }
 
@@ -642,7 +703,8 @@ fun ChatScreen(
                     val ui = sent?.toUi()
                     when {
                         ui == null || messages.any { it.id == ui.id } -> if (idx >= 0) messages.removeAt(idx)
-                        idx >= 0 -> messages[idx] = ui
+                        // Та же строка ленты: меняются только часики на кружок, без перерисовки.
+                        idx >= 0 -> messages[idx] = ui.adopting(messages[idx])
                         else -> messages.add(ui)
                     }
                 }
@@ -657,7 +719,7 @@ fun ChatScreen(
     fun sendOptimistic(temp: ChatMessage, outbox: ChatOutbox.Entry? = null, request: suspend () -> MessageDto?) {
         // Текст и фото — в очередь на диске: не ушло — не потеряется при выходе из чата.
         outbox?.let { ChatOutbox.add(slug, it) }
-        messages.add(temp.copy(mine = true, author = Session.user?.name, uploading = true, failed = false))
+        messages.add(temp.copy(mine = true, author = Session.user?.name, uploading = true, failed = false).asOutgoing())
         runSend(temp.id, request)
     }
 
@@ -736,7 +798,7 @@ fun ChatScreen(
                 uploading = true,
                 uploadProgress = 0f,
                 clientId = clientId,
-            ),
+            ).asOutgoing(),
         )
         fun revert(error: String) {
             messages.removeAll { it.id == tempId }
@@ -956,31 +1018,35 @@ fun ChatScreen(
 
     fun closeMenu() { menuFor = null; deleteMenu = false }
 
-    fun replaceMessage(dto: MessageDto) {
-        val i = messages.indexOfFirst { it.id == dto.id }
-        if (i >= 0) messages[i] = dto.toUi()
-    }
+    // Реакции: номер последнего нажатия по сообщению — ответ сервера на старое нажатие
+    // не перетирает то, что уже показано после нового.
+    val reactSeq = remember { HashMap<Long, Int>() }
 
-    /** Реакция: повторный выбор своей снимает её (сразу на экране, затем ответ сервера). */
+    /**
+     * Реакция — сразу на экране, как в Telegram; сервер подтверждает в фоне.
+     * Не удалось — нажатие откатывается (повторное переключение той же реакции) и тост.
+     */
     fun react(id: Long, emoji: String) {
         closeMenu()
         val i = messages.indexOfFirst { it.id == id }
-        if (i >= 0) {
-            val m = messages[i]
-            val existing = m.reactions.firstOrNull { it.emoji == emoji }
-            val updated = when {
-                existing == null -> m.reactions + Reaction(emoji, 1, true)
-                existing.mine -> m.reactions.mapNotNull {
-                    if (it.emoji != emoji) it else if (it.count > 1) it.copy(count = it.count - 1, mine = false) else null
-                }
-                else -> m.reactions.map { if (it.emoji == emoji) it.copy(count = it.count + 1, mine = true) else it }
-            }
-            messages[i] = m.copy(reactions = updated)
-        }
+        if (i < 0) return
+        messages[i] = messages[i].copy(reactions = messages[i].reactions.toggled(emoji))
+        val seq = (reactSeq[id] ?: 0) + 1
+        reactSeq[id] = seq
         scope.launch {
             runCatching { Repository.reactMessage(slug, id, emoji) }
-                .onSuccess { dto -> dto?.let { replaceMessage(it) } }
-                .onFailure { reloadMessages() }
+                .onSuccess { dto ->
+                    if (dto == null || reactSeq[id] != seq) return@onSuccess
+                    val j = messages.indexOfFirst { it.id == id }
+                    val fresh = dto.toUi().reactions
+                    if (j >= 0 && fresh != messages[j].reactions) messages[j] = messages[j].copy(reactions = fresh)
+                }
+                .onFailure { e ->
+                    if (e is CancellationException) return@onFailure
+                    val j = messages.indexOfFirst { it.id == id }
+                    if (j >= 0) messages[j] = messages[j].copy(reactions = messages[j].reactions.toggled(emoji))
+                    showToast("Не удалось поставить реакцию")
+                }
         }
     }
 
@@ -1265,7 +1331,7 @@ fun ChatScreen(
                         if (!loaded) {
                             items(7) { i -> MessageSkeleton(mine = i % 3 == 0, wide = i % 2 == 0) }
                         } else {
-                            itemsIndexed(visible, key = { _, m -> m.id }) { idx, m ->
+                            itemsIndexed(visible, key = { _, m -> m.key }) { idx, m ->
                                 val prev = visible.getOrNull(idx - 1)
                                 val next = visible.getOrNull(idx + 1)
                                 // Разделитель по дням над первым сообщением каждого дня.
@@ -1279,7 +1345,7 @@ fun ChatScreen(
                                     sameAuthor(prev, m) -> 4.dp
                                     else -> 12.dp
                                 }
-                                Column(Modifier.fillMaxWidth().animateItem(placementSpec = figmaTween())) {
+                                Column(Modifier.fillMaxWidth().animateItem(fadeInSpec = null, placementSpec = chatSpring())) {
                                 if (newDay) {
                                     Box(
                                         Modifier.fillMaxWidth().padding(top = if (prev == null) 0.dp else 12.dp, bottom = 12.dp),
@@ -1299,10 +1365,11 @@ fun ChatScreen(
                                 } else {
                                 val showAvatarColumn = !m.mine && !isDirect
                                 // Появление: новое сообщение проявляется на месте, остальные сдвигаются
-                                // вверх (прототип: Чат 495:16591 → 495:17748 → 495:19021, SMART_ANIMATE
-                                // 800 мс, ease-in-out-back).
-                                val appear = remember(m.id) { Animatable(if (m.id in initialIds) 1f else 0f) }
-                                LaunchedEffect(m.id) { appear.animateTo(1f, figmaTween()) }
+                                // вверх (прототип: Чат 495:16591 → 495:17748 → 495:19021) — быстрой
+                                // пружиной, как в Telegram. Ключ строки постоянный: ответ сервера
+                                // не запускает появление второй раз.
+                                val appear = remember(m.key) { Animatable(if (m.key in initialIds) 1f else 0f) }
+                                LaunchedEffect(m.key) { appear.animateTo(1f, tween(220)) }
                                 val flash by animateFloatAsState(if (flashId == m.id) 1f else 0f, tween(if (flashId == m.id) 200 else 450), label = "flash")
                                 Row(
                                     modifier = Modifier
@@ -1678,7 +1745,9 @@ fun ChatScreen(
             val current = menuFor?.let { id -> messages.firstOrNull { it.id == id } }
             if (current != null) menuMsg.value = current
             AnimatedVisibility(visible = current != null, enter = fadeIn(tween(200)), exit = fadeOut(tween(180))) {
-                val m = menuMsg.value
+                // Пока меню растворяется, в нём та же версия сообщения, что и в ленте:
+                // выбранная реакция видна сразу, а не после закрытия меню.
+                val m = menuMsg.value?.let { old -> messages.firstOrNull { it.id == old.id } ?: old }
                 if (m != null) {
                     MessageMenuOverlay(
                         message = m,

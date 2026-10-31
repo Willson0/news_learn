@@ -37,6 +37,8 @@ struct ChatView: View {
     @State private var selectDeleteMenu = false
     /// Переход к сообщению (закреп, поиск): прокрутка и короткая подсветка.
     @State private var scrollRequest = ScrollRequest()
+    /// Номер последнего нажатия реакции по сообщению (старый ответ сервера не перетирает новое).
+    @State private var reactionSeq: [Int: Int] = [:]
     @State private var flashId: Int? = nil
     // Поиск по сообщениям.
     @State private var searchMode = false
@@ -542,7 +544,8 @@ struct ChatView: View {
                             }
                         } else {
                             let list = visibleMessages
-                            ForEach(Array(list.enumerated()), id: \.element.id) { idx, m in
+                            // Ключ строки постоянный: ответ сервера не пересоздаёт пузырь.
+                            ForEach(Array(list.enumerated()), id: \.element.uiKey) { idx, m in
                                 // Разделитель по дням над первым сообщением каждого дня.
                                 let day = ChatDates.day(m.createdAt)
                                 let newDay = idx == 0 || ChatDates.day(list[idx - 1].createdAt) != day
@@ -568,7 +571,7 @@ struct ChatView: View {
                                     }
                                     .padding(.top, idx == 0 || newDay ? 0 : (sameAuthor(list[idx - 1], m) ? 4 : 12))
                                 }
-                                .id(m.id)
+                                .id(m.uiKey)
                             }
                         }
                         Color.clear.frame(height: 12).id("bottom")
@@ -580,8 +583,9 @@ struct ChatView: View {
                     .padding(.top, contentTop)
                     .frame(minHeight: geo.size.height, alignment: .bottom)
                     // Новое сообщение проявляется на месте, остальные сдвигаются вверх
-                    // (прототип: Чат 495:16591 → 495:17748 → 495:19021, 800 мс, ease-in-out-back).
-                    .animation(Motion.standard, value: visibleMessages.count)
+                    // (прототип: Чат 495:16591 → 495:17748 → 495:19021) — быстрой пружиной,
+                    // как в Telegram: у back-кривой первые ~200 мс почти нет движения.
+                    .animation(Motion.chatInsert, value: visibleMessages.count)
                 }
                 .scrollDismissesKeyboard(.interactively)
                 .coordinateSpace(name: "chatScroll")
@@ -597,7 +601,8 @@ struct ChatView: View {
                     // Своё сообщение или лента и так внизу — едем к последнему. Читаете
                     // старые — позиция не меняется, снизу плашка «Новые сообщения».
                     if nearBottom || visibleMessages.last?.mine == true || added <= 0 {
-                        withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("bottom", anchor: .bottom) }
+                        // Та же пружина, что у появления строки: лента и пузырь едут вместе.
+                        withAnimation(Motion.chatInsert) { proxy.scrollTo("bottom", anchor: .bottom) }
                     } else {
                         newBelow += added
                     }
@@ -635,7 +640,8 @@ struct ChatView: View {
                     withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("bottom", anchor: .bottom) }
                 }
                 .onChange(of: scrollRequest) { req in
-                    withAnimation(.easeInOut(duration: 0.35)) { proxy.scrollTo(req.id, anchor: .center) }
+                    guard let key = messages.first(where: { $0.id == req.id })?.uiKey else { return }
+                    withAnimation(.easeInOut(duration: 0.35)) { proxy.scrollTo(key, anchor: .center) }
                 }
             }
         }
@@ -693,7 +699,7 @@ struct ChatView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { if selectMode { toggleSelect(m.id) } }
-        .transition(.opacity)
+        .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 8)), removal: .opacity))
     }
 
     /// Служебное сообщение по центру: «Имя зашел в чат» / «Имя вышел из чата»;
@@ -1443,7 +1449,8 @@ struct ChatView: View {
                     return
                 }
                 if let dto, !messages.contains(where: { $0.id == dto.id }) {
-                    messages[index] = ChatMessage(dto)
+                    // Та же строка ленты: меняются только часики на кружок, без перерисовки.
+                    messages[index] = ChatMessage(dto).adopting(messages[index])
                 } else {
                     messages.remove(at: index)
                 }
@@ -1585,48 +1592,53 @@ struct ChatView: View {
         }
     }
 
-    /// Реакция: поставить или снять свою (сервер переключает). Сразу меняем локально.
+    /// Реакция: поставить или снять свою (сервер переключает). Сразу меняем локально,
+    /// как в Telegram; не удалось — нажатие откатывается и показывается тост.
     /// Пружина смены реакций — та же, что у размера пузыря (MessageBubble).
     private static let reactionSpring = Animation.spring(response: 0.38, dampingFraction: 0.86)
 
-    /// - Parameter afterSystemMenu: реакция выбрана в системном меню. Пузырь меняется только
-    ///   после того, как меню закроется и пузырь вернётся на место: иначе система
-    ///   возвращает старый снимок пузыря, а он рывком подменяется новым.
+    /// - Parameter afterSystemMenu: реакция выбрана в системном меню. Пузырь меняется,
+    ///   когда меню почти закрылось: иначе система возвращает старый снимок пузыря,
+    ///   а он рывком подменяется новым.
     private func react(_ id: Int, _ emoji: String, closing: Bool = false, afterSystemMenu: Bool = false) {
         if closing { closeMenu() }
         Haptics.light()
-        let delay: Double = afterSystemMenu ? 0.5 : 0
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+        let seq = (reactionSeq[id] ?? 0) + 1
+        reactionSeq[id] = seq
+        let delay: Double = afterSystemMenu ? Self.systemMenuDismiss : 0
+        if delay > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { applyReaction(id, emoji) }
+        } else {
             applyReaction(id, emoji)
         }
         Task { @MainActor in
-            guard let dto = try? await Api.reactMessage(chatId, id, emoji: emoji) else { return }
-            if afterSystemMenu { try? await Task.sleep(nanoseconds: 600_000_000) }
-            // Ответ сервера меняет только реакции и только если они другие — без второго рывка.
-            if let i = messages.firstIndex(where: { $0.id == id }) {
-                let fresh = ChatMessage(dto).reactions
-                if fresh.map(\.key) != messages[i].reactions.map(\.key) {
-                    withAnimation(Self.reactionSpring) { messages[i].reactions = fresh }
+            do {
+                let dto = try await Api.reactMessage(chatId, id, emoji: emoji)
+                // Ответ на старое нажатие не перетирает новое; совпадает — ничего не трогаем.
+                guard let dto, reactionSeq[id] == seq else { return }
+                if delay > 0 { try? await Task.sleep(nanoseconds: UInt64((delay + 0.1) * 1_000_000_000)) }
+                if let i = messages.firstIndex(where: { $0.id == id }) {
+                    let fresh = ChatMessage(dto).reactions
+                    if fresh.map(\.key) != messages[i].reactions.map(\.key) {
+                        withAnimation(Self.reactionSpring) { messages[i].reactions = fresh }
+                    }
                 }
+            } catch {
+                if error is CancellationError { return }
+                if delay > 0 { try? await Task.sleep(nanoseconds: UInt64((delay + 0.1) * 1_000_000_000)) }
+                applyReaction(id, emoji)
+                showToast("Не удалось поставить реакцию")
             }
         }
     }
 
+    /// Сколько закрывается системное контекстное меню.
+    private static let systemMenuDismiss: Double = 0.35
+
     private func applyReaction(_ id: Int, _ emoji: String) {
-        if let i = messages.firstIndex(where: { $0.id == id }) {
-            var list = messages[i].reactions
-            if let j = list.firstIndex(where: { $0.emoji == emoji }) {
-                let r = list[j]
-                if r.mine {
-                    if r.count <= 1 { list.remove(at: j) } else { list[j] = .init(emoji: emoji, count: r.count - 1, mine: false) }
-                } else {
-                    list[j] = .init(emoji: emoji, count: r.count + 1, mine: true)
-                }
-            } else {
-                list.append(.init(emoji: emoji, count: 1, mine: true))
-            }
-            withAnimation(Self.reactionSpring) { messages[i].reactions = list }
-        }
+        guard let i = messages.firstIndex(where: { $0.id == id }) else { return }
+        let list = messages[i].toggledReactions(emoji)
+        withAnimation(Self.reactionSpring) { messages[i].reactions = list }
     }
 
     private func togglePin(_ id: Int) {
@@ -1937,15 +1949,17 @@ struct ChatView: View {
         let fresh = resp.data.filter { $0.id > lastId && !known.contains($0.id) }.map(ChatMessage.init)
         guard !fresh.isEmpty else { return }
         var list = messages
-        for m in fresh {
-            if let cid = m.clientId, let i = list.firstIndex(where: { $0.id < 0 && $0.clientId == cid }) {
-                retryRequests[list[i].id] = nil
-                ChatOutbox.remove(list[i].id, chat: chatId)
-                list.remove(at: i)
-            }
+        // Своё сообщение, пришедшее раньше ответа на отправку, занимает строку своих
+        // часиков (тот же ключ ленты) — без исчезновения и повторного появления.
+        let ordered = fresh.map { m -> ChatMessage in
+            guard let cid = m.clientId, let i = list.firstIndex(where: { $0.id < 0 && $0.clientId == cid }) else { return m }
+            let old = list.remove(at: i)
+            retryRequests[old.id] = nil
+            ChatOutbox.remove(old.id, chat: chatId)
+            return m.adopting(old)
         }
         let local = list.filter { $0.id < 0 }
-        messages = list.filter { $0.id >= 0 } + fresh + local
+        messages = list.filter { $0.id >= 0 } + ordered + local
     }
 
     /// Превью выбранных фото над полем ввода; крестик убирает фото до отправки.
@@ -2002,9 +2016,25 @@ struct ChatView: View {
             serverChat = resp.chat
             pins = resp.pins
             clampPinIndex()
-            // Сообщения, которые ещё отправляются или не отправились, не пропадают при обновлении ленты.
-            let pending = messages.filter { $0.pending || $0.failed }
-            messages = resp.data.map(ChatMessage.init) + pending
+            // Строки ленты сохраняют ключи: сообщение, уже стоящее на экране, обновляется
+            // на месте. Отправляемые и неотправленные не пропадают; то, что сервер уже
+            // принял (потерялся только ответ), сменяется серверным без дубля.
+            let byId = Dictionary(messages.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            let outgoing = messages.filter { $0.pending || $0.failed }
+            let outgoingByCid = Dictionary(outgoing.compactMap { m in m.clientId.map { ($0, m) } }, uniquingKeysWith: { a, _ in a })
+            let server = resp.data.map { dto -> ChatMessage in
+                let m = ChatMessage(dto)
+                guard let old = byId[m.id] ?? m.clientId.flatMap({ outgoingByCid[$0] }) else { return m }
+                return m.adopting(old)
+            }
+            let serverCids = Set(server.compactMap(\.clientId))
+            let pending = outgoing.filter { m in
+                guard let cid = m.clientId, serverCids.contains(cid) else { return true }
+                retryRequests[m.id] = nil
+                ChatOutbox.remove(m.id, chat: chatId)
+                return false
+            }
+            messages = server + pending
         } catch {}
     }
 
