@@ -17,6 +17,13 @@ enum TokenStore {
             lock.lock(); defer { lock.unlock() }
             if !loaded {
                 cached = read() ?? migrateFromDefaults()
+                #if DEBUG
+                // Проверка в симуляторе: `-kl_debug_token <токен>` входит без ввода с клавиатуры.
+                if let debug = UserDefaults.standard.string(forKey: "kl_debug_token"), !debug.isEmpty {
+                    cached = debug
+                    write(debug)
+                }
+                #endif
                 loaded = true
             }
             return cached
