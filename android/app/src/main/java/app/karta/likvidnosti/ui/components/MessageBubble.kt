@@ -2,6 +2,19 @@ package app.karta.likvidnosti.ui.components
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.Animatable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.graphicsLayer
+import kotlinx.coroutines.launch
 import androidx.compose.animation.core.spring
 import androidx.compose.runtime.key
 import androidx.compose.ui.layout.Layout
@@ -518,27 +531,14 @@ private fun VoiceRow(
  */
 @Composable
 private fun Footer(message: ChatMessage, onToggleReaction: ((String) -> Unit)?) {
+    // Реакции, уже стоявшие, когда пузырь появился на экране, не анимируются.
+    val shownAtStart = remember { message.reactions.map { it.emoji }.toHashSet() }
     Layout(
         modifier = Modifier.fillMaxWidth(),
         content = {
             message.reactions.forEach { r ->
                 key(r.emoji) {
-                    Row(
-                        modifier = Modifier
-                            .heightIn(min = 26.dp)
-                            .background(if (r.mine) T.Green.copy(alpha = 0.55f) else hex("#404040"), CapsuleShape)
-                            .then(
-                                if (r.mine) Modifier.border(1.dp, Color.White.copy(alpha = 0.6f), CapsuleShape) else Modifier,
-                            )
-                            // Своя реакция выделена; тап по ней снимает её, по чужой — ставит такую же.
-                            .then(if (onToggleReaction != null) Modifier.pressable { onToggleReaction(r.emoji) } else Modifier)
-                            .padding(horizontal = 8.dp, vertical = 3.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Text(r.emoji, fontSize = 14.sp, maxLines = 1, softWrap = false)
-                        Text(r.count.toString(), style = AppFont.sans(T.FsSm), maxLines = 1, softWrap = false)
-                    }
+                    ReactionChip(r, isNew = r.emoji !in shownAtStart, onToggleReaction = onToggleReaction)
                 }
             }
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -617,6 +617,61 @@ private fun Footer(message: ChatMessage, onToggleReaction: ((String) -> Unit)?) 
                 if (n == lines.size - 1) meta.placeRelative(width - meta.width, y + h - meta.height)
                 y += h + gap
             }
+        }
+    }
+}
+
+/**
+ * Плашка реакции (вид прежний: эмодзи + число, своя — зелёная с обводкой). Как в
+ * Telegram: новая «выпрыгивает» с лёгким перелётом, число прокручивается, при смене
+ * числа или своей отметки плашка коротко подпрыгивает.
+ */
+@Composable
+private fun ReactionChip(r: Reaction, isNew: Boolean, onToggleReaction: ((String) -> Unit)?) {
+    val scale = remember { Animatable(if (isNew) 0.2f else 1f) }
+    val alpha = remember { Animatable(if (isNew) 0f else 1f) }
+    LaunchedEffect(Unit) {
+        if (isNew) {
+            launch { alpha.animateTo(1f, tween(140)) }
+            scale.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = 520f))
+        }
+    }
+    var first by remember { mutableStateOf(true) }
+    LaunchedEffect(r.count, r.mine) {
+        if (first) { first = false; return@LaunchedEffect }
+        scale.animateTo(1.18f, spring(dampingRatio = 0.6f, stiffness = 1400f))
+        scale.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = 520f))
+    }
+    Row(
+        modifier = Modifier
+            .graphicsLayer {
+                scaleX = scale.value
+                scaleY = scale.value
+                this.alpha = alpha.value
+            }
+            .heightIn(min = 26.dp)
+            .background(if (r.mine) T.Green.copy(alpha = 0.55f) else hex("#404040"), CapsuleShape)
+            .then(
+                if (r.mine) Modifier.border(1.dp, Color.White.copy(alpha = 0.6f), CapsuleShape) else Modifier,
+            )
+            // Своя реакция выделена; тап по ней снимает её, по чужой — ставит такую же.
+            .then(if (onToggleReaction != null) Modifier.pressable { onToggleReaction(r.emoji) } else Modifier)
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(r.emoji, fontSize = 14.sp, maxLines = 1, softWrap = false)
+        AnimatedContent(
+            targetState = r.count,
+            transitionSpec = {
+                val up = targetState > initialState
+                (slideInVertically { h -> if (up) h else -h } + fadeIn(tween(160))) togetherWith
+                    (slideOutVertically { h -> if (up) -h else h } + fadeOut(tween(120))) using
+                    SizeTransform(clip = false)
+            },
+            label = "reaction-count",
+        ) { n ->
+            Text(n.toString(), style = AppFont.sans(T.FsSm), maxLines = 1, softWrap = false)
         }
     }
 }

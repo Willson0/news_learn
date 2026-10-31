@@ -391,22 +391,14 @@ struct MessageBubble: View {
     private var footer: some View {
         BubbleFooterLayout(spacing: 4, lineSpacing: 4) {
             ForEach(message.reactions) { r in
-                // Своя реакция выделена; тап по ней снимает её, по чужой — ставит такую же.
-                Button { onToggleReaction?(r.emoji) } label: {
-                    HStack(spacing: 4) {
-                        Text(r.emoji).font(.system(size: 14))
-                        Text("\(r.count)").font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.text)
-                            .contentTransition(.numericText())
-                    }
-                    .fixedSize()
-                    .padding(.horizontal, 8)
-                    .frame(minHeight: 26)
-                    .background(r.mine ? Theme.green.opacity(0.55) : Color(hex: "#404040"), in: Capsule())
-                    .overlay(Capsule().stroke(r.mine ? Color.white.opacity(0.6) : .clear, lineWidth: 1))
-                }
-                .buttonStyle(PressableStyle())
-                .disabled(onToggleReaction == nil)
-                .transition(.scale(scale: 0.5).combined(with: .opacity))
+                ReactionChip(reaction: r, onTap: onToggleReaction)
+                    // Как в Telegram: новая реакция «выпрыгивает» с лёгким перелётом,
+                    // снятая сжимается и растворяется.
+                    .transition(.asymmetric(
+                        insertion: AnyTransition.scale(scale: 0.2).combined(with: .opacity)
+                            .animation(Motion.reduced ? .easeOut(duration: 0.2) : .spring(response: 0.42, dampingFraction: 0.58)),
+                        removal: AnyTransition.scale(scale: 0.4).combined(with: .opacity)
+                            .animation(.easeOut(duration: 0.18))))
             }
             HStack(alignment: .bottom, spacing: 4) {
                 if message.pinned {
@@ -455,6 +447,42 @@ struct MessageBubble: View {
         func body(content: Content) -> some View {
             if mine { content.liquidGlass(shape, fill: ActiveFill()) }
             else { content.liquidGlass(shape) }
+        }
+    }
+}
+
+/// Плашка реакции под сообщением (вид прежний: эмодзи + число, своя — зелёная с обводкой).
+/// Тап по своей снимает её, по чужой — ставит такую же. Число меняется прокруткой
+/// цифр, а при смене числа или своей отметки плашка коротко «подпрыгивает».
+struct ReactionChip: View {
+    let reaction: ChatMessage.Reaction
+    let onTap: ((String) -> Void)?
+    @State private var bump = false
+
+    var body: some View {
+        Button { onTap?(reaction.emoji) } label: {
+            HStack(spacing: 4) {
+                Text(reaction.emoji).font(.system(size: 14))
+                Text("\(reaction.count)").font(Theme.sans(Theme.fontSm)).foregroundStyle(Theme.text)
+                    .contentTransition(.numericText())
+            }
+            .fixedSize()
+            .padding(.horizontal, 8)
+            .frame(minHeight: 26)
+            .background(reaction.mine ? Theme.green.opacity(0.55) : Color(hex: "#404040"), in: Capsule())
+            .overlay(Capsule().stroke(reaction.mine ? Color.white.opacity(0.6) : .clear, lineWidth: 1))
+            .scaleEffect(bump ? 1.18 : 1)
+        }
+        .buttonStyle(PressableStyle())
+        .disabled(onTap == nil)
+        .onChange(of: reaction.key) { _ in pop() }
+    }
+
+    private func pop() {
+        guard !Motion.reduced else { return }
+        withAnimation(.spring(response: 0.18, dampingFraction: 0.6)) { bump = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.55)) { bump = false }
         }
     }
 }
