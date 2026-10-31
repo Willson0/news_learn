@@ -47,6 +47,7 @@ fun RegisterConfirmScreen(
     var code by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var submitting by remember { mutableStateOf(false) }
+    var resending by remember { mutableStateOf(false) }
     var resendIn by remember { mutableStateOf(60) }
     val scope = rememberCoroutineScope()
 
@@ -82,7 +83,9 @@ fun RegisterConfirmScreen(
     }
 
     fun resend() {
-        if (resendIn > 0 || submitting) return
+        // Один запрос — одно письмо: пока код отправляется, повторные нажатия ничего не делают.
+        if (resendIn > 0 || submitting || resending) return
+        resending = true
         scope.launch {
             try {
                 Repository.resendRegistration(email)
@@ -93,6 +96,8 @@ fun RegisterConfirmScreen(
                 error = ex.firstError()
             } catch (ex: Exception) {
                 error = "Не удалось отправить код"
+            } finally {
+                resending = false
             }
         }
     }
@@ -107,6 +112,7 @@ fun RegisterConfirmScreen(
                 if (resendIn > 0) resendCountdown(resendIn) else "Отправить код повторно",
                 variant = ButtonVariant.Secondary,
                 enabled = resendIn <= 0,
+                loading = resending,
             ) { resend() }
             AppButton("Далее", variant = ButtonVariant.Accent, loading = submitting) { confirm() }
         },

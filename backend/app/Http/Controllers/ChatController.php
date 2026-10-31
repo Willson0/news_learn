@@ -108,9 +108,13 @@ class ChatController extends Controller
         $this->context($chat, $user);
         $this->ensureJoined($chat, $user);
 
+        // ?after=<id> — только новые сообщения (приложение тихо догружает их, пока чат открыт).
+        $after = max(0, (int) $request->query('after', 0));
+
         $messages = $chat->messages()
             ->visibleTo($user, $this->staff)
             ->with(['user', 'privateOwner', 'replyTo.user', 'replyTo.attachments', 'attachments', 'reactions'])
+            ->when($after > 0, fn ($q) => $q->where('id', '>', $after))
             ->oldest('id')
             ->get();
 
@@ -179,7 +183,22 @@ class ChatController extends Controller
             'attachments.*' => ['file', 'max:102400'],
             'kind' => ['nullable', 'in:image,file,voice', 'required_with:attachment,attachments'],
             'duration' => ['nullable', 'integer', 'min:0', 'max:36000'],
+            // Ключ отправки из приложения: повтор того же сообщения (ответ потерялся
+            // на слабой сети) возвращает уже созданное, а не дубль.
+            'client_id' => ['nullable', 'string', 'max:64'],
         ]);
+
+        if (! empty($data['client_id'])) {
+            $existing = $chat->messages()
+                ->where('user_id', $user->id)
+                ->where('client_id', $data['client_id'])
+                ->first();
+            if ($existing) {
+                $existing->load(['user', 'privateOwner', 'replyTo.user', 'replyTo.attachments', 'attachments', 'reactions']);
+
+                return response()->json(['data' => $this->toArray($existing, $user)]);
+            }
+        }
 
         // Тип файла проверяем по содержимому: «фото» должно быть картинкой, «голосовое» — аудио.
         $kindRules = [
@@ -241,6 +260,7 @@ class ChatController extends Controller
                 'author_name' => $user->name,
                 'author_role' => $user->isAdmin() ? 'Админ' : 'Участник',
                 'body' => $body,
+                'client_id' => $data['client_id'] ?? null,
             ]);
 
             foreach ($files as $file) {
@@ -921,6 +941,8 @@ class ChatController extends Controller
             'private' => $m->isPrivate(),
             'private_label' => $m->isPrivate() ? $this->privateLabel($m, $viewer, $mine) : null,
             'can_delete' => $this->canDeleteForAll($m, $viewer),
+            // Ключ отправки — только автору: приложение по нему заменяет «часики» на сообщение.
+            'client_id' => $mine ? $m->client_id : null,
         ];
     }
 

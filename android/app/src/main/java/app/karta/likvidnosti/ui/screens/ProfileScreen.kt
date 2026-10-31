@@ -408,12 +408,12 @@ private fun Header(
                     modifier = Modifier.padding(top = 12.dp),
                 )
                 Text(
-                    tag, style = AppFont.sans(T.FsBase), maxLines = 1,
+                    tag, style = AppFont.sans(T.FsBase), maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 4.dp),
                 )
             } else {
                 Text(
-                    tag, style = AppFont.sans(T.FsBase), maxLines = 1,
+                    tag, style = AppFont.sans(T.FsBase), maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 40.dp),
                 )
             }

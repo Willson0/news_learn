@@ -70,6 +70,7 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.sin
+import androidx.compose.ui.graphics.graphicsLayer
 
 // Стеклянные элементы и заливки из UI-кита макета — порт iOS `Components/Glass.swift`.
 
@@ -332,6 +333,27 @@ fun Modifier.pressable(
     this
         .alpha(if (pressed && enabled) pressAlpha else 1f)
         .clickable(interactionSource = source, indication = null, enabled = enabled, onClick = onClick)
+}
+
+/**
+ * Нажатие на карточку: лёгкое утапливание (scale 0.98) и затемнение сразу под
+ * пальцем, ещё до перехода и ответа сервера.
+ */
+fun Modifier.cardPressable(onClick: () -> Unit): Modifier = composed {
+    val source = remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val scale by androidx.compose.animation.core.animateFloatAsState(
+        if (pressed) 0.98f else 1f,
+        androidx.compose.animation.core.tween(120),
+        label = "card-press",
+    )
+    this
+        .graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+            alpha = if (pressed) 0.9f else 1f
+        }
+        .clickable(interactionSource = source, indication = null, onClick = onClick)
 }
 
 /** Подпись для TalkBack у кнопки без текста: «Назад», «Фильтры», «Настройки». */

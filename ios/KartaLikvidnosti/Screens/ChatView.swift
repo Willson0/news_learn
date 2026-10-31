@@ -56,6 +56,12 @@ struct ChatView: View {
     @State private var fileImporterOpen = false
     @State private var photoViewerURL: URL? = nil
     @State private var loaded = false
+    /// Лента внизу (видно последнее сообщение). Если пользователь читает старые,
+    /// новые сообщения не утаскивают его вниз — появляется плашка «Новые сообщения».
+    @State private var nearBottom = true
+    @State private var newBelow = 0
+    @State private var lastCount = 0
+    @Environment(\.scenePhase) private var scenePhase
     @State private var keyboardShown = false
     @State private var toast: String? = nil
     @State private var shareText: String? = nil
@@ -237,6 +243,17 @@ struct ChatView: View {
             if router.chatSearchRequest == chatId { router.chatSearchRequest = nil; openSearch() }
         }
         .task { await load() }
+        // Пока чат на экране и приложение активно — тихо догружаем новые сообщения.
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
+            if loaded { await pollNew() }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 8_000_000_000)
+                if Task.isCancelled { break }
+                await pollNew()
+            }
+        }
+        .slowNetworkHint(active: !loaded, bottom: 120)
     }
 
     // MARK: - Шапка
@@ -555,6 +572,9 @@ struct ChatView: View {
                             }
                         }
                         Color.clear.frame(height: 12).id("bottom")
+                            .background(GeometryReader { g in
+                                Color.clear.preference(key: ChatBottomKey.self, value: g.frame(in: .named("chatScroll")).maxY)
+                            })
                     }
                     .padding(.horizontal, Theme.screenX)
                     .padding(.top, contentTop)
@@ -564,11 +584,48 @@ struct ChatView: View {
                     .animation(Motion.standard, value: visibleMessages.count)
                 }
                 .scrollDismissesKeyboard(.interactively)
-                .onChange(of: visibleMessages.count) { _ in
-                    guard !searchMode else { return }
-                    withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("bottom", anchor: .bottom) }
+                .coordinateSpace(name: "chatScroll")
+                .onPreferenceChange(ChatBottomKey.self) { y in
+                    let near = y <= geo.size.height + 120
+                    if near != nearBottom { nearBottom = near }
+                    if near && newBelow > 0 { newBelow = 0 }
                 }
+                .onChange(of: visibleMessages.count) { count in
+                    let added = count - lastCount
+                    lastCount = count
+                    guard !searchMode else { return }
+                    // Своё сообщение или лента и так внизу — едем к последнему. Читаете
+                    // старые — позиция не меняется, снизу плашка «Новые сообщения».
+                    if nearBottom || visibleMessages.last?.mine == true || added <= 0 {
+                        withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("bottom", anchor: .bottom) }
+                    } else {
+                        newBelow += added
+                    }
+                }
+                .overlay(alignment: .bottom) {
+                    if newBelow > 0 && !searchMode && !selectMode {
+                        Button {
+                            newBelow = 0
+                            withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo("bottom", anchor: .bottom) }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text(newBelow == 1 ? "Новое сообщение" : "Новые сообщения · \(newBelow)")
+                                    .font(Theme.sans(Theme.fontBase))
+                                Text("↓").font(Theme.sans(Theme.fontBase, .semibold))
+                            }
+                            .foregroundStyle(Theme.text)
+                            .padding(.horizontal, 16)
+                            .frame(height: 36)
+                            .liquidGlass(Capsule())
+                        }
+                        .buttonStyle(PressableStyle())
+                        .padding(.bottom, 8)
+                        .transition(.opacity)
+                    }
+                }
+                .animation(.easeOut(duration: 0.2), value: newBelow > 0)
                 .onChange(of: loaded) { _ in
+                    lastCount = visibleMessages.count
                     DispatchQueue.main.async { proxy.scrollTo("bottom", anchor: .bottom) }
                 }
                 .onChange(of: keyboardShown) { shown in
@@ -683,7 +740,7 @@ struct ChatView: View {
                       voiceProgress: audio.playingId == m.id ? audio.progress : 0,
                       onPlayVoice: { audio.togglePlay(id: m.id, url: m.voice?.url) },
                       onOpenFile: { openURL(m.file?.url) },
-                      onOpenImage: { if !selectMode { openPhoto(m.image?.url) } },
+                      onOpenImage: { if m.failed { failedMenuFor = m.id } else if !selectMode { openPhoto(m.image?.url) } },
                       onToggleReaction: m.pending || selectMode ? nil : { emoji in react(m.id, emoji) },
                       highlight: searchMode ? searchQuery : nil)
     }
@@ -1380,6 +1437,7 @@ struct ChatView: View {
             do {
                 let dto = try await request()
                 retryRequests[localId] = nil
+                ChatOutbox.remove(localId, chat: chatId)
                 guard let index = messages.firstIndex(where: { $0.id == localId }) else {
                     if let dto, !messages.contains(where: { $0.id == dto.id }) { messages.append(ChatMessage(dto)) }
                     return
@@ -1393,6 +1451,7 @@ struct ChatView: View {
                 if let index = messages.firstIndex(where: { $0.id == localId }) {
                     messages[index].pending = false
                     messages[index].failed = true
+                    messages[index].uploadProgress = nil
                 }
                 let message = (error as? ApiError)?.message ?? ""
                 showToast(!message.isEmpty && message.count < 120 ? message : "Сообщение не отправлено")
@@ -1400,7 +1459,10 @@ struct ChatView: View {
         }
     }
 
-    private func sendOptimistic(_ temp: ChatMessage, _ request: @escaping () async throws -> MessageDto?) {
+    private func sendOptimistic(_ temp: ChatMessage, outbox: ChatOutbox.Entry? = nil,
+                                _ request: @escaping () async throws -> MessageDto?) {
+        // Текст и фото — в очередь на диске: не ушло — не потеряется при выходе из чата.
+        if let outbox { ChatOutbox.add(outbox, chat: chatId) }
         var m = temp
         m.mine = true
         m.author = session.user?.name
@@ -1415,12 +1477,14 @@ struct ChatView: View {
         guard let request = retryRequests[id], let index = messages.firstIndex(where: { $0.id == id }) else { return }
         messages[index].failed = false
         messages[index].pending = true
+        messages[index].uploadProgress = messages[index].localImages.isEmpty ? nil : 0
         runSend(id, request)
     }
 
     private func discardFailed(_ id: Int) {
         failedMenuFor = nil
         retryRequests[id] = nil
+        ChatOutbox.remove(id, chat: chatId)
         messages.removeAll { $0.id == id }
     }
 
@@ -1434,10 +1498,15 @@ struct ChatView: View {
         let reply = replyTo
         replyTo = nil
         let chat = chatId
+        let clientId = UUID().uuidString
         var temp = ChatMessage(pendingId: Self.localMessageId(), localImages: [], text: body)
+        temp.clientId = clientId
         if let reply { temp.reply = ChatMessage.Reply(author: reply.mine ? "Вы" : (reply.author ?? ""), text: reply.text ?? "") }
         temp.isPrivate = reply?.isPrivate == true
-        sendOptimistic(temp) { try await Api.sendMessage(chat, body: body, replyTo: reply?.id) }
+        let entry = ChatOutbox.Entry(localId: temp.id, clientId: clientId, text: body, replyTo: reply?.id,
+                                     replyAuthor: temp.reply?.author, replyText: temp.reply?.text,
+                                     isPrivate: temp.isPrivate, photos: [])
+        sendOptimistic(temp, outbox: entry) { try await Api.sendMessage(chat, body: body, replyTo: reply?.id, clientId: clientId) }
     }
 
     private func sendAttachment(data: Data, filename: String, mime: String, kind: String, duration: Int? = nil) {
@@ -1455,17 +1524,16 @@ struct ChatView: View {
         replyTo = nil
         if !caption.isEmpty { draft = "" }
         attachOpen = false
-        Task { @MainActor in
-            do {
-                let dto = try await Api.sendMessage(chatId, body: caption.isEmpty ? nil : caption, replyTo: reply,
-                                                    attachment: (data, filename, mime), kind: kind, duration: duration)
-                if let dto { messages.append(ChatMessage(dto)) }
-            } catch {
-                if !caption.isEmpty { draft = caption }
-                let message = (error as? ApiError)?.message ?? ""
-                let tooBig = message.lowercased().contains("upload") || message.lowercased().contains("maximum")
-                showAttachError(tooBig ? "Файл не загрузился: максимум 100 МБ" : "Не удалось отправить вложение")
-            }
+        // Файл сразу в ленте с часиками; не ушёл — «!» и «Повторить» (тем же ключом, без дубля).
+        let chat = chatId
+        let clientId = UUID().uuidString
+        var temp = ChatMessage(pendingId: Self.localMessageId(), localImages: [], text: caption.isEmpty ? nil : caption)
+        temp.clientId = clientId
+        temp.file = ChatMessage.FileAtt(url: nil, name: filename, ext: (filename as NSString).pathExtension,
+                                        size: ByteCountFormatter.string(fromByteCount: Int64(data.count), countStyle: .file))
+        sendOptimistic(temp) {
+            try await Api.sendMessage(chat, body: caption.isEmpty ? nil : caption, replyTo: reply,
+                                      attachment: (data, filename, mime), kind: kind, duration: duration, clientId: clientId)
         }
     }
 
@@ -1503,13 +1571,16 @@ struct ChatView: View {
             let chat = chatId
             let data = result.data
             let duration = result.duration
+            let clientId = UUID().uuidString
             var temp = ChatMessage(pendingId: Self.localMessageId(), localImages: [], text: nil)
+            temp.clientId = clientId
             temp.voice = ChatMessage.VoiceAtt(url: nil, duration: String(format: "%d:%02d", duration / 60, duration % 60))
             if let reply { temp.reply = ChatMessage.Reply(author: reply.mine ? "Вы" : (reply.author ?? ""), text: reply.text ?? "") }
             temp.isPrivate = reply?.isPrivate == true
             sendOptimistic(temp) {
                 try await Api.sendMessage(chat, body: nil, replyTo: reply?.id,
-                                          attachment: (data, "voice.m4a", "audio/m4a"), kind: "voice", duration: duration)
+                                          attachment: (data, "voice.m4a", "audio/m4a"), kind: "voice", duration: duration,
+                                          clientId: clientId)
             }
         }
     }
@@ -1795,23 +1866,86 @@ struct ChatView: View {
             draft = caption
             return
         }
-        let localId = -Int(Date().timeIntervalSince1970 * 1000)
-        messages.append(ChatMessage(pendingId: localId, localImages: photos.map(\.image),
-                                    text: caption.isEmpty ? nil : caption))
-        Task { @MainActor in
-            do {
-                let dto = try await Api.sendMessage(chatId, body: caption.isEmpty ? nil : caption, replyTo: reply,
-                                                    attachments: photos.map { (data: $0.jpeg, filename: "photo.jpg", mime: "image/jpeg") },
-                                                    kind: "image")
-                if let index = messages.firstIndex(where: { $0.id == localId }) {
-                    if let dto { messages[index] = ChatMessage(dto) } else { messages.remove(at: index) }
-                }
-            } catch {
-                messages.removeAll { $0.id == localId }
-                if !caption.isEmpty { draft = caption }
-                showAttachError("Не удалось отправить фото")
+        // Альбом сразу в ленте: на превью кольцо загрузки. Не ушёл — остаётся с «!»
+        // (и на диске: не пропадёт при выходе из чата), «Повторить» шлёт его один раз.
+        let localId = Self.localMessageId()
+        let clientId = UUID().uuidString
+        let jpegs = photos.map(\.jpeg)
+        var temp = ChatMessage(pendingId: localId, localImages: photos.map(\.image), text: caption.isEmpty ? nil : caption)
+        temp.clientId = clientId
+        temp.uploadProgress = 0
+        let entry = ChatOutbox.Entry(localId: localId, clientId: clientId, text: caption.isEmpty ? nil : caption,
+                                     replyTo: reply, replyAuthor: nil, replyText: nil, isPrivate: false,
+                                     photos: ChatOutbox.storePhotos(jpegs, localId: localId))
+        sendOptimistic(temp, outbox: entry,
+                       photoRequest(localId: localId, clientId: clientId, caption: caption, reply: reply, jpegs: jpegs))
+    }
+
+    /// Запрос отправки альбома с прогрессом на превью.
+    private func photoRequest(localId: Int, clientId: String, caption: String, reply: Int?, jpegs: [Data]) -> () async throws -> MessageDto? {
+        let chat = chatId
+        let progress: @Sendable (Double) -> Void = { p in
+            Task { @MainActor in setUploadProgress(localId, p) }
+        }
+        return {
+            try await Api.sendMessage(chat, body: caption.isEmpty ? nil : caption, replyTo: reply,
+                                      attachments: jpegs.map { (data: $0, filename: "photo.jpg", mime: "image/jpeg") },
+                                      kind: "image", clientId: clientId, progress: progress)
+        }
+    }
+
+    private func setUploadProgress(_ localId: Int, _ p: Double) {
+        guard let index = messages.firstIndex(where: { $0.id == localId }), messages[index].pending else { return }
+        messages[index].uploadProgress = p
+    }
+
+    /// Неотправленное с прошлого раза (вышли из чата или закрыли приложение) —
+    /// снова в ленте со статусом «не отправлено» и «Повторить».
+    private func restoreOutbox() {
+        let serverKeys = Set(messages.compactMap { $0.id > 0 ? $0.clientId : nil })
+        for e in ChatOutbox.entries(chatId) where !messages.contains(where: { $0.id == e.localId }) {
+            // Сообщение на самом деле дошло (потерялся только ответ) — дубль не показываем.
+            if serverKeys.contains(e.clientId) { ChatOutbox.remove(e.localId, chat: chatId); continue }
+            let jpegs = e.photos.compactMap(ChatOutbox.photoData)
+            if !e.photos.isEmpty && jpegs.count != e.photos.count { ChatOutbox.remove(e.localId, chat: chatId); continue }
+            var m = ChatMessage(pendingId: e.localId, localImages: jpegs.compactMap { UIImage(data: $0) }, text: e.text)
+            m.pending = false
+            m.failed = true
+            m.clientId = e.clientId
+            m.author = session.user?.name
+            if let author = e.replyAuthor { m.reply = ChatMessage.Reply(author: author, text: e.replyText ?? "") }
+            m.isPrivate = e.isPrivate
+            messages.append(m)
+            if jpegs.isEmpty {
+                let chat = chatId
+                retryRequests[e.localId] = { try await Api.sendMessage(chat, body: e.text, replyTo: e.replyTo, clientId: e.clientId) }
+            } else {
+                retryRequests[e.localId] = photoRequest(localId: e.localId, clientId: e.clientId, caption: e.text ?? "",
+                                                        reply: e.replyTo, jpegs: jpegs)
             }
         }
+    }
+
+    /// Новые сообщения с сервера, пока чат открыт: добавляются снизу, свои
+    /// (ушедшие с этого или другого устройства) заменяют «часики».
+    private func pollNew() async {
+        guard loaded, !selectMode, let lastId = messages.last(where: { $0.id > 0 })?.id else { return }
+        guard let resp = try? await Api.fetchMessages(chatId, after: lastId) else { return }
+        serverChat = resp.chat ?? serverChat
+        if resp.pins.map(\.id) != pins.map(\.id) { pins = resp.pins; clampPinIndex() }
+        let known = Set(messages.map(\.id))
+        let fresh = resp.data.filter { $0.id > lastId && !known.contains($0.id) }.map(ChatMessage.init)
+        guard !fresh.isEmpty else { return }
+        var list = messages
+        for m in fresh {
+            if let cid = m.clientId, let i = list.firstIndex(where: { $0.id < 0 && $0.clientId == cid }) {
+                retryRequests[list[i].id] = nil
+                ChatOutbox.remove(list[i].id, chat: chatId)
+                list.remove(at: i)
+            }
+        }
+        let local = list.filter { $0.id < 0 }
+        messages = list.filter { $0.id >= 0 } + fresh + local
     }
 
     /// Превью выбранных фото над полем ввода; крестик убирает фото до отправки.
@@ -1854,6 +1988,7 @@ struct ChatView: View {
 
     private func load() async {
         await reloadMessages()
+        restoreOutbox()
         pinIndex = max(pins.count - 1, 0)
         loaded = true
         #if DEBUG
@@ -1944,6 +2079,12 @@ private struct ShareSheet: UIViewControllerRepresentable {
         UIActivityViewController(activityItems: items, applicationActivities: nil)
     }
     func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
+}
+
+/// Нижняя граница ленты в координатах экрана чата — чтобы понять, внизу ли пользователь.
+private struct ChatBottomKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
 private extension View {

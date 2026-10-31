@@ -48,6 +48,7 @@ enum Api {
         await Push.unregisterCurrent()
         _ = try? await ApiClient.post("auth/logout", as: EmptyResponse.self)
         TokenStore.token = nil
+        OfflineCache.clear()
     }
 
     // MARK: - Push и документы
@@ -193,34 +194,42 @@ enum Api {
         try await ApiClient.get("chats", as: DataWrapper<[ChatSectionDto]>.self).data ?? []
     }
 
-    static func fetchMessages(_ slug: String) async throws -> MessagesResponse {
-        try await ApiClient.get("chats/\(slug)/messages", as: MessagesResponse.self)
+    /// `after` — только сообщения новее этого id (тихая догрузка, пока чат открыт).
+    static func fetchMessages(_ slug: String, after: Int? = nil) async throws -> MessagesResponse {
+        let qs = after.map { "?after=\($0)" } ?? ""
+        return try await ApiClient.get("chats/\(slug)/messages\(qs)", as: MessagesResponse.self)
     }
 
     /// Отправка сообщения: текст и/или вложение (image|file|voice), опционально ответ.
     static func sendMessage(_ slug: String, body: String? = nil, replyTo: Int? = nil,
                             attachment: (data: Data, filename: String, mime: String)? = nil,
                             attachments: [(data: Data, filename: String, mime: String)]? = nil,
-                            kind: String? = nil, duration: Int? = nil) async throws -> MessageDto? {
+                            kind: String? = nil, duration: Int? = nil,
+                            clientId: String? = nil,
+                            progress: (@Sendable (Double) -> Void)? = nil) async throws -> MessageDto? {
         if let list = attachments, !list.isEmpty, let kind = kind {
             // Несколько фото одним сообщением-альбомом: поле attachments[] на каждый файл.
             var parts: [MultipartPart] = []
+            if let clientId { parts.append(.text("client_id", clientId)) }
             if let body = body, !body.isEmpty { parts.append(.text("body", body)) }
             if let replyTo = replyTo { parts.append(.text("reply_to", String(replyTo))) }
             parts.append(.text("kind", kind))
             for a in list { parts.append(.file("attachments[]", filename: a.filename, mime: a.mime, data: a.data)) }
-            return try await ApiClient.multipart("chats/\(slug)/messages", parts: parts, as: DataWrapper<MessageDto>.self).data
+            return try await ApiClient.multipart("chats/\(slug)/messages", parts: parts, as: DataWrapper<MessageDto>.self,
+                                                 progress: progress).data
         }
         if let a = attachment, let kind = kind {
             var parts: [MultipartPart] = []
+            if let clientId { parts.append(.text("client_id", clientId)) }
             if let body = body, !body.isEmpty { parts.append(.text("body", body)) }
             if let replyTo = replyTo { parts.append(.text("reply_to", String(replyTo))) }
             parts.append(.text("kind", kind))
             if let duration = duration { parts.append(.text("duration", String(duration))) }
             parts.append(.file("attachment", filename: a.filename, mime: a.mime, data: a.data))
-            return try await ApiClient.multipart("chats/\(slug)/messages", parts: parts, as: DataWrapper<MessageDto>.self).data
+            return try await ApiClient.multipart("chats/\(slug)/messages", parts: parts, as: DataWrapper<MessageDto>.self,
+                                                 progress: progress).data
         }
-        var payload: [String: Any?] = ["body": body]
+        var payload: [String: Any?] = ["body": body, "client_id": clientId]
         if let replyTo = replyTo { payload["reply_to"] = replyTo }
         return try await ApiClient.post("chats/\(slug)/messages", body: payload, as: DataWrapper<MessageDto>.self).data
     }

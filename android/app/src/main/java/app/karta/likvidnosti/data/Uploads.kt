@@ -11,6 +11,7 @@ import java.io.ByteArrayOutputStream
 import kotlin.math.roundToInt
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 
 /**
@@ -45,6 +46,14 @@ object Uploads {
      * поэтому картинку декодируем на устройстве и кодируем в JPEG (качество 85).
      */
     fun jpegPart(context: Context, field: String, uri: Uri): MultipartBody.Part? {
+        val bytes = jpegBytes(context, uri) ?: return null
+        val base = displayName(context, uri).substringBeforeLast('.', "photo")
+        val body = bytes.toRequestBody("image/jpeg".toMediaTypeOrNull())
+        return MultipartBody.Part.createFormData(field, "$base.jpg", body)
+    }
+
+    /** Фото, перекодированное в JPEG (до 2048 px), или null, если прочитать не удалось. */
+    fun jpegBytes(context: Context, uri: Uri): ByteArray? {
         val bitmap = runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri)) { decoder, _, _ ->
@@ -61,9 +70,33 @@ object Uploads {
         if (scaled !== bitmap) scaled.recycle()
         bitmap.recycle()
         if (!encoded) return null
-        val base = displayName(context, uri).substringBeforeLast('.', "photo")
-        val body = out.toByteArray().toRequestBody("image/jpeg".toMediaTypeOrNull())
-        return MultipartBody.Part.createFormData(field, "$base.jpg", body)
+        return out.toByteArray()
+    }
+
+    /**
+     * Тело запроса, которое сообщает, сколько байт уже ушло: кольцо загрузки на
+     * превью фото в чате. Общий счётчик на все файлы сообщения.
+     */
+    class ProgressBody(
+        private val delegate: RequestBody,
+        private val counter: java.util.concurrent.atomic.AtomicLong,
+        private val total: Long,
+        private val onProgress: (Float) -> Unit,
+    ) : RequestBody() {
+        override fun contentType() = delegate.contentType()
+        override fun contentLength() = delegate.contentLength()
+        override fun writeTo(sink: okio.BufferedSink) {
+            val counting = object : okio.ForwardingSink(sink) {
+                override fun write(source: okio.Buffer, byteCount: Long) {
+                    super.write(source, byteCount)
+                    val sent = counter.addAndGet(byteCount)
+                    if (total > 0) onProgress((sent.toFloat() / total).coerceIn(0f, 1f))
+                }
+            }
+            val buffered = okio.buffer(counting)
+            delegate.writeTo(buffered)
+            buffered.flush()
+        }
     }
 
     private fun downscale(src: Bitmap, maxSide: Int): Bitmap {

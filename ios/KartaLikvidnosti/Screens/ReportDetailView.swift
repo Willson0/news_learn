@@ -122,13 +122,16 @@ struct ReportDetailView: View {
                     .presentationDragIndicator(.visible)
             }
         }
+        .slowNetworkHint(active: !loaded, bottom: 45)
         .onAppear { seedFromFeed() }
         .task { await load() }
     }
 
     private func actionsGap(screenHeight: CGFloat) -> CGFloat {
         if graphOpen || reportOpen { return 24 }
-        let count: CGFloat = (chartSource != nil ? 3 : 2) - (showOpen ? 0 : 1)
+        // Подпись «Текст ещё не опубликован» занимает место кнопки (48 pt): когда
+        // приходит полный отчёт, «Обсудить» и «График» не сдвигаются под пальцем.
+        let count: CGFloat = chartSource != nil ? 3 : 2
         let actionsHeight = 48 * count + 12 * (count - 1)
         return max(24, screenHeight - 465 - actionsHeight - 45)
     }
@@ -142,8 +145,7 @@ struct ReportDetailView: View {
             } else {
                 Text("Текст отчёта ещё не опубликован")
                     .font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.bottom, 4)
+                    .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
             }
             ReportActionButton(label: "Обсудить", variant: .pink, icon: AppIcons.chat) {
                 discuss()
@@ -276,6 +278,7 @@ struct ReportDetailView: View {
                 failed = true
             }
         } catch {
+            if error.isCancellation { return }
             failed = true
         }
         loaded = true

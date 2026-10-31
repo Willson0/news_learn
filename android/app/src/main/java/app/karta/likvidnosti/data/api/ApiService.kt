@@ -122,7 +122,7 @@ interface ApiService {
     suspend fun chats(): DataWrapper<List<ChatSectionDto>>
 
     @GET("chats/{slug}/messages")
-    suspend fun messages(@Path("slug") slug: String): MessagesResponse
+    suspend fun messages(@Path("slug") slug: String, @Query("after") after: Long? = null): MessagesResponse
 
     @POST("chats/{slug}/messages")
     suspend fun sendMessage(@Path("slug") slug: String, @Body body: MessageBody): DataWrapper<MessageDto>

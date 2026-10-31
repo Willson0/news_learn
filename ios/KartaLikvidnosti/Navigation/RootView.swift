@@ -21,6 +21,13 @@ struct RootView: View {
             await session.load()
             await appData.preload()
         }
+        // Сервер не принял токен (истёк или отозван): на вход с пояснением, без вылета.
+        .onReceive(NotificationCenter.default.publisher(for: .sessionExpired)) { _ in
+            guard router.authed else { return }
+            session.clear()
+            router.logout()
+            AppToast.shared.show(ApiError.expiredText)
+        }
         .onChange(of: router.authed) { authed in
             Task {
                 if authed { await appData.preload() } else { appData.clear() }

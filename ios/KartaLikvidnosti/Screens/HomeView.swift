@@ -45,6 +45,7 @@ struct HomeView: View {
         .pullToRefresh { await load() }
         .ignoresSafeArea(.container, edges: .top)
         .screenBackground()
+        .slowNetworkHint(active: !loaded, bottom: Theme.navBarClearance)
         .withGlassNavBar()
         .onAppear(perform: seed)
         .task(id: filter) { await load() }
@@ -76,6 +77,8 @@ struct HomeView: View {
             savedAt = Date()
             if filter == "all" { appData.reports = fresh; appData.reportsAt = savedAt }
         } catch {
+            // Ушли с экрана или сменили фильтр — это не ошибка.
+            if error.isCancellation { return }
             failed = true
         }
         loaded = true

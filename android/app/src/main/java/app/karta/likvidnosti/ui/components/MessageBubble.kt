@@ -109,6 +109,10 @@ data class ChatMessage(
     val privateLabel: String? = null,
     /** Сервер разрешает удалить у всех. */
     val canDelete: Boolean = false,
+    /** Сколько фото уже ушло на сервер (0…1) — кольцо на превью. */
+    val uploadProgress: Float? = null,
+    /** Ключ отправки: повтор не создаёт дубль, догруженное с сервера сообщение заменяет часики. */
+    val clientId: String? = null,
 ) {
     val isSystem: Boolean get() = event != null
 
@@ -202,7 +206,7 @@ fun MessageBubble(
             ReplyQuote(message.replyAuthor ?: "", message.replyText ?: "")
         }
         val gallery: List<Any> = when {
-            message.uploading -> message.localImageUris
+            message.localImageUris.isNotEmpty() -> message.localImageUris
             message.imageUrls.size >= 2 -> message.imageUrls.mapNotNull { fileUrl(it) }
             else -> emptyList()
         }
@@ -210,6 +214,8 @@ fun MessageBubble(
             PhotoAlbum(
                 models = gallery,
                 uploading = message.uploading,
+                failed = message.failed,
+                progress = message.uploadProgress,
                 onOpen = { onOpenImage?.invoke() },
                 onLongPress = onLongPress,
             )
@@ -257,12 +263,21 @@ fun MessageBubble(
 
 /** Альбом фото: одно фото — во всю ширину пузыря, два и больше — сетка 2 колонки с квадратами. */
 @Composable
-private fun PhotoAlbum(models: List<Any>, uploading: Boolean, onOpen: () -> Unit, onLongPress: (() -> Unit)?) {
+private fun PhotoAlbum(
+    models: List<Any>,
+    uploading: Boolean,
+    failed: Boolean = false,
+    progress: Float? = null,
+    onOpen: () -> Unit,
+    onLongPress: (() -> Unit)?,
+) {
     val w = MessageBubbleMaxWidth - 24.dp
     if (models.size == 1) {
         PhotoTile(
             model = models[0],
             uploading = uploading,
+            failed = failed,
+            progress = progress,
             modifier = Modifier.size(w, 180.dp).clip(RoundedCornerShape(16.dp)),
             onOpen = onOpen,
             onLongPress = onLongPress,
@@ -278,6 +293,8 @@ private fun PhotoAlbum(models: List<Any>, uploading: Boolean, onOpen: () -> Unit
                     PhotoTile(
                         model = model,
                         uploading = uploading,
+                        failed = failed,
+                        progress = progress,
                         modifier = Modifier.size(cell).clip(RoundedCornerShape(12.dp)),
                         onOpen = onOpen,
                         onLongPress = onLongPress,
@@ -297,6 +314,8 @@ private fun PhotoTile(
     modifier: Modifier,
     onOpen: () -> Unit,
     onLongPress: (() -> Unit)?,
+    failed: Boolean = false,
+    progress: Float? = null,
 ) {
     Box(
         modifier = modifier
@@ -304,6 +323,7 @@ private fun PhotoTile(
             .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
+                // У неотправленного фото нажатие открывает «Повторить / Удалить» (решает экран чата).
                 onClick = { if (!uploading) onOpen() },
                 onLongClick = onLongPress,
             ),
@@ -319,12 +339,25 @@ private fun PhotoTile(
                 modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)),
                 contentAlignment = Alignment.Center,
             ) {
-                CircularProgressIndicator(
-                    color = Color.White,
-                    strokeWidth = 2.dp,
-                    modifier = Modifier.size(24.dp),
-                )
+                if (progress != null) {
+                    // Сколько уже ушло: кольцо заполняется по мере загрузки.
+                    CircularProgressIndicator(
+                        progress = { progress.coerceAtLeast(0.03f) },
+                        color = Color.White,
+                        trackColor = Color.White.copy(alpha = 0.3f),
+                        strokeWidth = 3.dp,
+                        modifier = Modifier.size(32.dp),
+                    )
+                } else {
+                    CircularProgressIndicator(
+                        color = Color.White,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
             }
+        } else if (failed) {
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f)))
         }
     }
 }

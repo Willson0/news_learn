@@ -9,6 +9,7 @@ struct RegisterConfirmView: View {
     @State private var code = ""
     @State private var error = ""
     @State private var submitting = false
+    @State private var resending = false
     @State private var resendIn = 60
     @State private var timer: Timer?
 
@@ -39,7 +40,7 @@ struct RegisterConfirmView: View {
         } buttons: {
             AppButton(title: resendIn > 0 ? String(format: "Повторное сообщение через %d:%02d", resendIn / 60, resendIn % 60)
                                           : "Отправить код повторно",
-                      variant: .secondary, disabled: resendIn > 0) { resend() }
+                      variant: .secondary, disabled: resendIn > 0, loading: resending) { resend() }
             AppButton(title: "Далее", variant: .accent, loading: submitting) { confirm() }
         }
         .onAppear { startCooldown() }
@@ -55,6 +56,7 @@ struct RegisterConfirmView: View {
     }
 
     private func confirm() {
+        guard !submitting else { return }
         if code.count < 6 { self.error = "Введите код из 6 цифр"; Haptics.rigid(); return }
         Haptics.medium()
         submitting = true
@@ -71,9 +73,12 @@ struct RegisterConfirmView: View {
     }
 
     private func resend() {
-        guard resendIn <= 0, !submitting else { return }
+        // Один запрос — одно письмо: пока код отправляется, повторные нажатия ничего не делают.
+        guard resendIn <= 0, !submitting, !resending else { return }
         Haptics.light()
+        resending = true
         Task {
+            defer { resending = false }
             do { try await Api.resendRegistrationCode(email: email); code = ""; error = ""; startCooldown() }
             catch let e as ApiError { self.error = e.firstError }
             catch { self.error = "Не удалось отправить код" }

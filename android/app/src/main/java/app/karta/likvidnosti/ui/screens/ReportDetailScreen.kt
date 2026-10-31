@@ -73,6 +73,8 @@ import app.karta.likvidnosti.ui.theme.T
 import app.karta.likvidnosti.ui.theme.designBottom
 import kotlinx.coroutines.launch
 import kotlin.math.max
+import app.karta.likvidnosti.data.api.onFailureNotCancelled
+import app.karta.likvidnosti.ui.components.SlowNetworkHint
 
 /** Прототип: «Аналитика отчет» 484:13666 ↔ 484:13689 — SMART_ANIMATE, пружина SLOW (≈1.25 с). */
 private val HeroSpring = figmaSlow<Dp>()
@@ -113,7 +115,7 @@ fun ReportDetailScreen(
                 detailLoaded = r != null
                 failed = r == null
             }
-            .onFailure { failed = true }
+            .onFailureNotCancelled { failed = true }
     }
 
     fun retry() {
@@ -147,7 +149,9 @@ fun ReportDetailScreen(
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val viewport = maxHeight
                 // Кнопки (3 × 48 + 2 × 12) прижаты к низу, пока обложка свёрнута не раскрыта.
-                val buttons = (if (chartSource != null) 3 else 2) - (if (showOpen) 0 else 1)
+                // Подпись «Текст ещё не опубликован» занимает место кнопки (48 dp): когда приходит
+                // полный отчёт, «Обсудить» и «График» не сдвигаются под пальцем.
+                val buttons = if (chartSource != null) 3 else 2
                 val actionsH = 48.dp * buttons + 12.dp * (buttons - 1)
                 // Отступ над кнопками анимируется той же пружиной, что и обложка: кнопки
                 // поднимаются одним блоком вместе с ней, без скачка.
@@ -175,11 +179,12 @@ fun ReportDetailScreen(
                                 if (fileUrl(report.htmlUrl) != null) htmlOpen = true else reportOpen = !reportOpen
                             }
                         } else {
-                            Text(
-                                "Текст отчёта ещё не опубликован",
-                                style = AppFont.sans(T.FsBase, color = T.TextSecondary),
-                                modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
-                            )
+                            Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.CenterStart) {
+                                Text(
+                                    "Текст отчёта ещё не опубликован",
+                                    style = AppFont.sans(T.FsBase, color = T.TextSecondary),
+                                )
+                            }
                         }
                         ReportActionButton("Обсудить", AppIcons.chat, variant = ReportActionVariant.Pink) {
                             onDiscuss(report.chat)
@@ -213,6 +218,7 @@ fun ReportDetailScreen(
             }
         },
         overlay = {
+            SlowNetworkHint(active = !loaded, bottom = bottomPad)
             if (htmlOpen) {
                 fileUrl(report.htmlUrl)?.let { url ->
                     ReportHtmlScreen(url = url, onClose = { htmlOpen = false })

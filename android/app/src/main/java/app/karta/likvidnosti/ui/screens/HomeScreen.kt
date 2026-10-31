@@ -32,6 +32,8 @@ import app.karta.likvidnosti.ui.components.PullToRefreshBox
 import app.karta.likvidnosti.ui.theme.T
 import app.karta.likvidnosti.ui.theme.designTop
 import app.karta.likvidnosti.ui.theme.navBarClearance
+import app.karta.likvidnosti.data.api.onFailureNotCancelled
+import app.karta.likvidnosti.ui.components.SlowNetworkHint
 
 /**
  * «Лента материалов» (iOS HomeView): заголовок Kreadon 24 на y = 94, чипы
@@ -63,7 +65,7 @@ fun HomeScreen(onOpenReport: (Long) -> Unit, navBar: @Composable () -> Unit) {
                     AppData.reportsAt = savedAt
                 }
             }
-            .onFailure { failed = true }
+            .onFailureNotCancelled { failed = true }
     }
 
     LaunchedEffect(filter) {
@@ -88,7 +90,7 @@ fun HomeScreen(onOpenReport: (Long) -> Unit, navBar: @Composable () -> Unit) {
         }
     }
 
-    TabScaffold(navBar = navBar) {
+    TabScaffold(navBar = navBar, overlay = { SlowNetworkHint(active = !loaded, bottom = navBarClearance()) }) {
         PullToRefreshBox(
             isRefreshing = refreshing,
             scrollState = scrollState,

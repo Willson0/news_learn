@@ -3,6 +3,8 @@ package app.karta.likvidnosti
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import app.karta.likvidnosti.data.ChatOutbox
+import app.karta.likvidnosti.data.OfflineCache
 import app.karta.likvidnosti.data.TokenStore
 import coil.ImageLoader
 import coil.ImageLoaderFactory
@@ -17,6 +19,8 @@ class KartaApp : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         TokenStore.init(this)
+        OfflineCache.init(this)
+        ChatOutbox.init(this)
         Push.init(this)
         createNotificationChannel()
     }
@@ -37,7 +41,9 @@ class KartaApp : Application(), ImageLoaderFactory {
         }
         .respectCacheHeaders(false)
         .components { add(StableKeyInterceptor) }
-        .crossfade(false)
+        // Картинка из сети или с диска проявляется (fade-in) внутри своей рамки;
+        // из памяти Coil ставит её сразу, без анимации.
+        .crossfade(180)
         .build()
 
     private object StableKeyInterceptor : Interceptor {

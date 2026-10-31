@@ -182,6 +182,8 @@ class MessageDto(
     @SerialName("private_label") val privateLabel: String? = null,
     /** Можно ли удалить сообщение у всех. */
     @SerialName("can_delete") val canDelete: Boolean = false,
+    /** Ключ отправки своего сообщения (сервер отдаёт только автору). */
+    @SerialName("client_id") val clientId: String? = null,
 )
 
 @Serializable
@@ -284,7 +286,12 @@ class ResetBody(val email: String, val password: String, val code: String)
 class RecoveryCheckBody(val email: String, val code: String)
 
 @Serializable
-class MessageBody(val body: String, @SerialName("reply_to") val replyTo: Long? = null)
+class MessageBody(
+    val body: String,
+    @SerialName("reply_to") val replyTo: Long? = null,
+    /** Ключ отправки: повтор после обрыва сети не создаёт дубль. */
+    @SerialName("client_id") val clientId: String? = null,
+)
 
 @Serializable
 class DeleteMessageBody(@SerialName("for") val forWhom: String)

@@ -44,6 +44,32 @@ class ChatProductTest extends TestCase
             ->assertJsonPath('data.reply.text', 'Первое');
     }
 
+    public function test_resend_with_same_client_id_returns_existing_message(): void
+    {
+        Sanctum::actingAs($this->demo());
+
+        $first = $this->postJson('/api/chats/oil/messages', ['body' => 'Один раз', 'client_id' => 'c-1'])
+            ->assertCreated()->json('data');
+        // Ответ потерялся на слабой сети — приложение повторяет отправку с тем же ключом.
+        $again = $this->postJson('/api/chats/oil/messages', ['body' => 'Один раз', 'client_id' => 'c-1'])
+            ->assertOk()->json('data');
+
+        $this->assertSame($first['id'], $again['id']);
+        $texts = collect($this->getJson('/api/chats/oil/messages')->json('data'))->pluck('text')->filter(fn ($t) => $t === 'Один раз');
+        $this->assertCount(1, $texts);
+    }
+
+    public function test_messages_after_returns_only_newer(): void
+    {
+        Sanctum::actingAs($this->demo());
+
+        $first = $this->postJson('/api/chats/oil/messages', ['body' => 'Старое'])->assertCreated()->json('data');
+        $this->postJson('/api/chats/oil/messages', ['body' => 'Новое'])->assertCreated();
+
+        $data = $this->getJson('/api/chats/oil/messages?after='.$first['id'])->assertOk()->json('data');
+        $this->assertSame(['Новое'], collect($data)->pluck('text')->all());
+    }
+
     public function test_send_image_attachment_and_listed_in_media(): void
     {
         Storage::fake('local');

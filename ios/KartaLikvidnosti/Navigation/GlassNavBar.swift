@@ -118,7 +118,8 @@ struct GlassNavBar: View {
         let isNewEntry = router.tabEntry != handledEntry
         handledEntry = router.tabEntry
         let from = router.previousTab ?? me
-        guard isNewEntry, router.entryAtRoot, router.tab == me, from != me else {
+        // «Уменьшение движения»: навбар сразу в итоговом виде, без выезда и линзы.
+        guard isNewEntry, router.entryAtRoot, router.tab == me, from != me, !UIAccessibility.isReduceMotionEnabled else {
             settle()
             return
         }

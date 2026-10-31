@@ -12,7 +12,7 @@ class Message extends Model
 {
     protected $fillable = [
         'chat_id', 'user_id', 'reply_to_id', 'private_to_id', 'private_owner_id', 'author_name', 'author_role', 'body',
-        'event', 'pinned', 'pinned_at',
+        'client_id', 'event', 'pinned', 'pinned_at',
     ];
 
     protected $casts = [

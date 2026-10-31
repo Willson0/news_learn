@@ -29,8 +29,13 @@ struct SubscriptionView: View {
     @State private var cardInfo: CardDto? = nil
     @State private var cardKnown = false
     @State private var cardBusy = false
-    @State private var cardError: String? = nil
     @State private var autoPay = false
+    /// Статус не удалось получить, а сохранённого нет: честно «Нет связи», а не «Неактивна».
+    @State private var statusUnknown = false
+    /// Платёж ушёл, но итог ещё неизвестен (сеть оборвалась, банк не ответил): пока
+    /// не прошло 15 минут, «Привязать» не начинает новую оплату, а проверяет эту.
+    @AppStorage("kl_payment_check_at") private var unsettledAt: Double = 0
+    private var paymentUnsettled: Bool { unsettledAt > 0 && Date().timeIntervalSince1970 - unsettledAt < 15 * 60 }
 
     private let card = RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
 
@@ -44,7 +49,15 @@ struct SubscriptionView: View {
                         Text("Подписка").font(Theme.sans(Theme.fontMd, .bold)).foregroundStyle(Theme.text)
                         Spacer(minLength: 8)
                         VStack(alignment: .trailing, spacing: 4) {
-                            if !known {
+                            if !known && statusUnknown {
+                                Button { statusUnknown = false; Task { await load() } } label: {
+                                    Text("Нет связи · Повторить")
+                                        .font(Theme.sans(Theme.fontBase, .semibold))
+                                        .foregroundStyle(Theme.textSecondary)
+                                        .frame(minHeight: 22)
+                                }
+                                .buttonStyle(PressableStyle())
+                            } else if !known {
                                 SkeletonBlock(width: 90, height: 18, radius: 6)
                             } else {
                             Text(active ? "Активна" : "Неактивна")
@@ -95,10 +108,6 @@ struct SubscriptionView: View {
                 .frame(height: 64)
                 .background(Theme.surface, in: self.card)
                 .padding(.top, 12)
-                if let cardError {
-                    Text(cardError).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.error)
-                        .padding(.top, 8)
-                }
 
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
@@ -125,6 +134,7 @@ struct SubscriptionView: View {
             .padding(.bottom, 40)
         }
         .screenBackground()
+        .slowNetworkHint(active: !known && !statusUnknown)
         .onAppear {
             withoutAnimation {
                 if !known, let s = appData.subscription { apply(s) }
@@ -144,6 +154,7 @@ struct SubscriptionView: View {
                 PaymentCheckView(check: paymentCheck,
                                  onToMaterials: { self.paymentCheck = nil; router.switchTab(.home) },
                                  onRetry: { self.paymentCheck = nil; bindCard() },
+                                 onRecheck: { Task { await checkPayment() } },
                                  onClose: { self.paymentCheck = nil })
                     .transition(.opacity)
             }
@@ -176,9 +187,13 @@ struct SubscriptionView: View {
                 withoutAnimation { apply(s) }
                 appData.subscription = s
                 session.setSubscription(s)
+                if s.active { unsettledAt = 0 }
             }
-        } catch {}
-        if !known { withoutAnimation { known = true } }
+            if !known { withoutAnimation { known = true } }
+        } catch {
+            if error.isCancellation { return }
+            if !known { statusUnknown = true }
+        }
     }
 
     private var isBound: Bool { cardInfo?.bound == true }
@@ -199,7 +214,11 @@ struct SubscriptionView: View {
 
     private func bindCard() {
         Haptics.light()
-        cardError = nil
+        // Итог прошлой оплаты ещё неизвестен — не предлагаем платить второй раз.
+        if paymentUnsettled {
+            Task { await checkPayment() }
+            return
+        }
         Task { @MainActor in
             cardBusy = true
             defer { cardBusy = false }
@@ -210,7 +229,9 @@ struct SubscriptionView: View {
                 paymentCheck = .failed("Платёж не прошёл: его отменили или банк отклонил карту. Деньги не списаны.")
                 await reloadCard()
             } catch {
-                cardError = (error as? ApiError)?.message ?? "Не удалось привязать карту"
+                if error.isCancellation { return }
+                // Ошибка — тостом поверх: блоки ниже не сдвигаются.
+                AppToast.shared.show((error as? ApiError)?.message ?? "Не удалось привязать карту")
             }
         }
     }
@@ -221,31 +242,41 @@ struct SubscriptionView: View {
         let wasActive = active
         paymentCheck = .checking
         var bound = false
+        var reached = false
         let deadline = Date().addingTimeInterval(30)
         while Date() < deadline {
             // Запрос карты сам дожидается результата привязки и списывает подписку.
             await reloadCard()
             bound = isBound
-            let sub = try? await Api.fetchSubscription()
+            let sub: SubscriptionDto?
+            do {
+                sub = try await Api.fetchSubscription()
+                reached = true
+            } catch {
+                sub = nil
+            }
             if let sub {
                 withoutAnimation { apply(sub) }
                 appData.subscription = sub
                 session.setSubscription(sub)
             }
             if let sub, sub.active, !wasActive || bound {
+                unsettledAt = 0
                 paymentCheck = wasActive ? nil : .active(until: sub.until ?? "")
                 return
             }
             try? await Task.sleep(nanoseconds: 2_500_000_000)
         }
-        paymentCheck = .pending(bound
+        unsettledAt = Date().timeIntervalSince1970
+        paymentCheck = .pending(!reached
+            ? "Нет связи с сервером, поэтому итог оплаты пока неизвестен. Повторно платить не нужно — проверьте ещё раз, когда появится интернет."
+            : bound
             ? "Карта привязана. Подписка включится, как только пройдёт списание или администратор назначит тариф — мы пришлём уведомление."
             : "Платёж ещё обрабатывается. Мы пришлём уведомление, как только он пройдёт.")
     }
 
     private func unbindCard() {
         Haptics.light()
-        cardError = nil
         Task { @MainActor in
             cardBusy = true
             defer { cardBusy = false }
@@ -253,7 +284,8 @@ struct SubscriptionView: View {
                 try await Api.unbindCard()
                 await reloadCard()
             } catch {
-                cardError = (error as? ApiError)?.message ?? "Не удалось отвязать карту"
+                if error.isCancellation { return }
+                AppToast.shared.show((error as? ApiError)?.message ?? "Не удалось отвязать карту")
             }
         }
     }
@@ -264,6 +296,7 @@ private struct PaymentCheckView: View {
     let check: SubscriptionView.PaymentCheck
     let onToMaterials: () -> Void
     let onRetry: () -> Void
+    let onRecheck: () -> Void
     let onClose: () -> Void
 
     var body: some View {
@@ -281,6 +314,7 @@ private struct PaymentCheckView: View {
                 title("Платёж обрабатывается")
                 note(text)
                 AppButton(title: "Понятно", variant: .accent) { onClose() }.padding(.top, 8)
+                AppButton(title: "Проверить снова", variant: .secondary) { onRecheck() }
             case .failed(let text):
                 title("Оплата не прошла")
                 note(text)

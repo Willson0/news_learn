@@ -408,10 +408,13 @@ struct MessageDto: Decodable, Identifiable {
     let privateLabel: String?
     /// Можно ли удалить у всех (своё; у админа и автора отчёта — любое).
     let canDelete: Bool?
+    /// Ключ отправки своего сообщения (сервер отдаёт только автору).
+    let clientId: String?
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = (try c.decodeIfPresent(Int.self, forKey: .id)) ?? 0
+        clientId = try c.decodeIfPresent(String.self, forKey: .clientId)
         event = try c.decodeIfPresent(String.self, forKey: .event)
         isPrivate = (try c.decodeIfPresent(Bool.self, forKey: .isPrivate)) ?? false
         privateLabel = try c.decodeIfPresent(String.self, forKey: .privateLabel)
@@ -438,6 +441,7 @@ struct MessageDto: Decodable, Identifiable {
         case isPrivate = "private"
         case privateLabel = "private_label"
         case canDelete = "can_delete"
+        case clientId = "client_id"
         case userId = "user_id"
         case avatarUrl = "avatar_url"
         case createdAt = "created_at"

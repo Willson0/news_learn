@@ -33,6 +33,18 @@ object Session {
      */
     val restricted: Boolean get() = user != null && !isAdmin && subscriptionActive == false
 
+    /**
+     * Холодный старт без сети: пользователь и подписка с прошлого раза — права
+     * (админ, режим без подписки) известны с первого кадра, разлогина нет.
+     * Возвращает true, если пользователь нашёлся в кэше.
+     */
+    fun seedFromDisk(): Boolean {
+        if (!TokenStore.isAuthenticated) return false
+        AppData.cachedUser()?.let { user = it }
+        AppData.subscription?.let { setSubscription(it) }
+        return user != null
+    }
+
     /** После входа подписку узнаём до показа приложения: без неё сразу откроется профиль. */
     suspend fun setCurrent(u: UserDto?) {
         subscriptionActive = null
@@ -56,6 +68,8 @@ object Session {
             subscriptionUntil = null
             return
         }
+        // Запуск прошёл без сети — пользователя дочитываем при первой возможности.
+        if (user == null) runCatching { apiCall { Network.api.me() }.user }.getOrNull()?.let { user = it }
         // Нет записи подписки (сервер отдаёт data: null) — это неактивная подписка.
         runCatching { Repository.subscription() }
             .onSuccess { setSubscription(it) }

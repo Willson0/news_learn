@@ -99,6 +99,7 @@ fun LoginScreen(
     var passwordConfirm by remember { mutableStateOf("") }
     var errors by remember { mutableStateOf(mapOf<String, String>()) }
     var submitting by remember { mutableStateOf(false) }
+    var yandexTapAt by remember { mutableStateOf(0L) }
     val context = LocalContext.current
     LaunchedEffect(Unit) {
         YandexSignIn.callbacks.collect { uri ->
@@ -291,7 +292,12 @@ fun LoginScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 AppButton("Войти с Yandex", variant = ButtonVariant.Secondary) {
-                    YandexSignIn.start(context)
+                    // Двойной тап не открывает браузер дважды.
+                    val now = System.currentTimeMillis()
+                    if (now - yandexTapAt > 1500 && !submitting) {
+                        yandexTapAt = now
+                        YandexSignIn.start(context)
+                    }
                 }
                 AppButton(
                     if (mode == AuthMode.Login) "Войти" else "Далее",

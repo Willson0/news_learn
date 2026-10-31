@@ -80,6 +80,9 @@ import app.karta.likvidnosti.ui.theme.T
 import app.karta.likvidnosti.ui.theme.designTop
 import app.karta.likvidnosti.ui.theme.hex
 import app.karta.likvidnosti.ui.theme.navBarClearance
+import app.karta.likvidnosti.data.api.onFailureNotCancelled
+import app.karta.likvidnosti.ui.components.SlowNetworkHint
+import app.karta.likvidnosti.ui.components.EmptyState
 
 private val Caption = Color.White.copy(alpha = 0.6f)
 
@@ -114,10 +117,11 @@ fun CommunityScreen(
         runCatching { Repository.chats() }
             .onSuccess { fetched ->
                 AppData.chats = fetched
+                AppData.chatsAt = System.currentTimeMillis()
                 sections = fetched
                 failed = false
             }
-            .onFailure { failed = true }
+            .onFailureNotCancelled { failed = true }
         loaded = true
     }
 
@@ -189,6 +193,7 @@ fun CommunityScreen(
     TabScaffold(
         navBar = navBar,
         overlay = {
+            SlowNetworkHint(active = !loaded, bottom = navBarClearance())
             ChatListMenu(
                 item = menuItem,
                 muted = menuItem?.let { chatMuted(context, it.id) } ?: false,
@@ -254,7 +259,7 @@ fun CommunityScreen(
                     LoadErrorState(onRetry = { retry() }, modifier = Modifier.padding(horizontal = T.ScreenX).padding(top = 24.dp))
                 } else {
                     if (failed) {
-                        StaleDataBanner(null, onRetry = { retry() }, modifier = Modifier.padding(horizontal = T.ScreenX).padding(top = 24.dp))
+                        StaleDataBanner(AppData.chatsAt, onRetry = { retry() }, modifier = Modifier.padding(horizontal = T.ScreenX).padding(top = 24.dp))
                     }
                     Column(
                         modifier = Modifier.padding(top = if (restricted) 0.dp else 24.dp),
@@ -283,12 +288,22 @@ fun CommunityScreen(
                         }
                     }
                     if (visible.isEmpty()) {
-                        Text(
-                            if (isAdmin && tab == "direct") "Личных сообщений пока нет" else "Ничего не найдено",
-                            style = AppFont.sans(T.FsBase, color = T.TextSecondary),
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
-                        )
+                        // Пустой поиск и пустой список — разные состояния: у поиска есть «Сбросить».
+                        if (query.isNotBlank()) {
+                            EmptyState(
+                                "По запросу «${query.trim()}» ничего не найдено",
+                                modifier = Modifier.padding(horizontal = T.ScreenX),
+                                actionLabel = "Сбросить поиск",
+                                onAction = { query = "" },
+                            )
+                        } else {
+                            Text(
+                                if (isAdmin && tab == "direct") "Личных сообщений пока нет" else "Чатов пока нет",
+                                style = AppFont.sans(T.FsBase, color = T.TextSecondary),
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
+                            )
+                        }
                     }
                 }
             }

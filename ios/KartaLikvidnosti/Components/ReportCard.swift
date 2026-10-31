@@ -10,6 +10,15 @@ struct ReportCard: View {
     let onOpen: () -> Void
 
     var body: some View {
+        // Вся карточка — кнопка: при нажатии сразу слегка утапливается (scale 0.98),
+        // ещё до перехода; кнопка «Перейти в отчет» внутри работает как раньше.
+        Button(action: onOpen) { content }
+            .buttonStyle(CardPressStyle())
+            // VoiceOver видит заголовок, описание и кнопку «Перейти в отчет» по отдельности.
+            .accessibilityElement(children: .contain)
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 16) {
             ZStack(alignment: .topTrailing) {
                 ZStack {
@@ -63,7 +72,6 @@ struct ReportCard: View {
         .padding(.bottom, 16)
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
-        .onTapGesture(perform: onOpen)
     }
 }
 

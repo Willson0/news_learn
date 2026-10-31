@@ -3,15 +3,30 @@ import Foundation
 /// Ошибка API: несёт http-статус и поля валидации (errors) от Laravel —
 /// аналог ApiError из frontend/src/api/client.js.
 struct ApiError: LocalizedError {
+    /// Что случилось — для понятного текста и экрана ошибки: нет сети, сервер не
+    /// ответил вовремя, сбой сервера, истёкшая сессия или обычная ошибка запроса.
+    enum Kind { case offline, timeout, server, unauthorized, other }
+
     let message: String
     let status: Int
     let errors: [String: [String]]
+    let kind: Kind
 
-    init(_ message: String, status: Int, errors: [String: [String]] = [:]) {
+    init(_ message: String, status: Int, errors: [String: [String]] = [:], kind: Kind = .other) {
         self.message = message
         self.status = status
         self.errors = errors
+        self.kind = kind
     }
+
+    /// Сетевой сбой (нет интернета или таймаут), а не ответ сервера.
+    var isNetwork: Bool { kind == .offline || kind == .timeout }
+
+    static let offlineText = "Нет подключения к интернету"
+    static let timeoutText = "Сервер долго не отвечает. Попробуйте ещё раз"
+    static let serverText = "Сервер временно недоступен. Попробуйте позже"
+    static let expiredText = "Сессия истекла. Войдите снова"
+    static let tooManyText = "Слишком много попыток. Подождите минуту и попробуйте снова"
 
     var errorDescription: String? { message }
 
@@ -40,9 +55,38 @@ struct MultipartPart {
     }
 }
 
+extension Notification.Name {
+    /// Сервер ответил 401 на запрос с токеном: сессия истекла, нужен повторный вход.
+    static let sessionExpired = Notification.Name("kl.sessionExpired")
+}
+
+/// Последний сетевой сбой — экраны ошибки показывают по нему свой текст
+/// («Нет подключения к интернету», «Сервер долго не отвечает» …).
+@MainActor
+final class NetStatus: ObservableObject {
+    static let shared = NetStatus()
+    @Published private(set) var lastFailure: ApiError.Kind? = nil
+
+    nonisolated static func record(_ kind: ApiError.Kind?) {
+        Task { @MainActor in
+            if shared.lastFailure != kind { shared.lastFailure = kind }
+        }
+    }
+}
+
 /// Низкоуровневый клиент REST API. Токен Sanctum берётся из TokenStore.
 enum ApiClient {
     private static let decoder = JSONDecoder()
+
+    /// Обычный запрос: без ответа дольше 20 с — ошибка «Сервер долго не отвечает»
+    /// с «Повторить», а не вечный скелетон.
+    static let requestTimeout: TimeInterval = 20
+    /// Загрузка файлов (фото, голосовые, обложки) может идти дольше.
+    static let uploadTimeout: TimeInterval = 120
+
+    /// Ответы, которые сохраняются на диск: при следующем запуске (в том числе без
+    /// сети) лента, чаты, профиль и подписка показываются сразу.
+    private static let cachedPaths: Set<String> = ["reports", "chats", "profile", "subscription", "user"]
 
     private static func makeRequest(_ method: String, _ path: String) throws -> URLRequest {
         // API_BASE_URL задаётся при сборке и может быть введён с ошибкой
@@ -53,6 +97,7 @@ enum ApiClient {
         }
         var req = URLRequest(url: url)
         req.httpMethod = method
+        req.timeoutInterval = requestTimeout
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         if let token = TokenStore.token, !token.isEmpty {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -60,21 +105,37 @@ enum ApiClient {
         return req
     }
 
-    private static func send<T: Decodable>(_ req: URLRequest, as type: T.Type) async throws -> T {
+    private static func send<T: Decodable>(_ req: URLRequest, as type: T.Type,
+                                           delegate: URLSessionTaskDelegate? = nil) async throws -> T {
         let data: Data
         let response: URLResponse
+        let sentToken = req.value(forHTTPHeaderField: "Authorization") != nil
         do {
-            (data, response) = try await URLSession.shared.data(for: req)
+            (data, response) = try await URLSession.shared.data(for: req, delegate: delegate)
         } catch {
-            throw ApiError("Нет связи с сервером", status: 0)
+            throw networkError(error)
         }
         guard let http = response as? HTTPURLResponse else {
-            throw ApiError("Нет связи с сервером", status: 0)
+            NetStatus.record(.offline)
+            throw ApiError(ApiError.offlineText, status: 0, kind: .offline)
         }
-        if http.statusCode == 401 { TokenStore.token = nil }
+        if http.statusCode == 401 && sentToken {
+            // Токен больше не действует: выходим на экран входа с пояснением.
+            TokenStore.token = nil
+            OfflineCache.clear()
+            NetStatus.record(nil)
+            DispatchQueue.main.async { NotificationCenter.default.post(name: .sessionExpired, object: nil) }
+            throw ApiError(ApiError.expiredText, status: 401, kind: .unauthorized)
+        }
 
         if !(200..<300).contains(http.statusCode) {
-            throw parseError(data: data, status: http.statusCode)
+            let err = parseError(data: data, status: http.statusCode)
+            NetStatus.record(err.kind == .server ? .server : nil)
+            throw err
+        }
+        NetStatus.record(nil)
+        if req.httpMethod == "GET", let path = req.url.flatMap(cachePath) {
+            OfflineCache.save(data, for: path)
         }
         if T.self == EmptyResponse.self {
             return EmptyResponse() as! T
@@ -86,9 +147,50 @@ enum ApiClient {
         }
     }
 
+    /// Сетевой сбой → понятная ошибка. Отмена (ушли с экрана) — CancellationError,
+    /// её экраны молча пропускают, а не показывают «нет связи».
+    private static func networkError(_ error: Error) -> Error {
+        if error is CancellationError || Task.isCancelled { return CancellationError() }
+        let code = (error as? URLError)?.code
+        switch code {
+        case .cancelled?:
+            return CancellationError()
+        case .timedOut?:
+            NetStatus.record(.timeout)
+            return ApiError(ApiError.timeoutText, status: 0, kind: .timeout)
+        case .notConnectedToInternet?, .networkConnectionLost?, .dataNotAllowed?, .internationalRoamingOff?,
+             .cannotFindHost?, .cannotConnectToHost?, .dnsLookupFailed?, .callIsActive?:
+            NetStatus.record(.offline)
+            return ApiError(ApiError.offlineText, status: 0, kind: .offline)
+        default:
+            NetStatus.record(.offline)
+            return ApiError("Нет связи с сервером", status: 0, kind: .offline)
+        }
+    }
+
+    /// Путь запроса относительно API без query — если ответ нужно сохранить на диск.
+    private static func cachePath(_ url: URL) -> String? {
+        guard url.query == nil || url.query?.isEmpty == true,
+              let base = URL(string: AppConfig.apiBaseURL) else { return nil }
+        var path = url.path
+        let basePath = base.path
+        if !basePath.isEmpty, basePath != "/", path.hasPrefix(basePath) { path = String(path.dropFirst(basePath.count)) }
+        path = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return cachedPaths.contains(path) ? path : nil
+    }
+
+    /// Сохранённый ответ из кэша на диске и время, когда он пришёл.
+    static func cached<T: Decodable>(_ path: String, as type: T.Type) -> (value: T, savedAt: Date)? {
+        guard let (data, date) = OfflineCache.load(path), let value = try? decoder.decode(T.self, from: data) else { return nil }
+        return (value, date)
+    }
+
     private static func parseError(data: Data, status: Int) -> ApiError {
         var message = "Ошибка запроса (\(status))"
         var errors: [String: [String]] = [:]
+        // Сбой сервера и лимит запросов — свой человеческий текст, без кодов и английских фраз.
+        if status >= 500 { return ApiError(ApiError.serverText, status: status, kind: .server) }
+        if status == 429 { return ApiError(ApiError.tooManyText, status: status) }
         if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             if let m = obj["message"] as? String, !m.isEmpty { message = m }
             if let errs = obj["errors"] as? [String: Any] {
@@ -142,8 +244,10 @@ enum ApiClient {
 
     // MARK: - Multipart (загрузка файлов)
 
-    static func multipart<T: Decodable>(_ path: String, parts: [MultipartPart], as type: T.Type) async throws -> T {
+    static func multipart<T: Decodable>(_ path: String, parts: [MultipartPart], as type: T.Type,
+                                        progress: (@Sendable (Double) -> Void)? = nil) async throws -> T {
         var req = try makeRequest("POST", path)
+        req.timeoutInterval = uploadTimeout
         let boundary = "Boundary-\(UUID().uuidString)"
         req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         var body = Data()
@@ -163,7 +267,19 @@ enum ApiClient {
         }
         append("--\(boundary)--\r\n")
         req.httpBody = body
-        return try await send(req, as: type)
+        return try await send(req, as: type, delegate: progress.map(UploadProgressDelegate.init))
+    }
+}
+
+/// Прогресс отправки тела запроса (фото в чате показывает, сколько ушло).
+private final class UploadProgressDelegate: NSObject, URLSessionTaskDelegate {
+    let onProgress: @Sendable (Double) -> Void
+    init(_ onProgress: @escaping @Sendable (Double) -> Void) { self.onProgress = onProgress }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64,
+                    totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
+        guard totalBytesExpectedToSend > 0 else { return }
+        onProgress(min(1, Double(totalBytesSent) / Double(totalBytesExpectedToSend)))
     }
 }
 

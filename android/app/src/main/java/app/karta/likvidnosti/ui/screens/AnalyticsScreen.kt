@@ -67,6 +67,8 @@ import app.karta.likvidnosti.ui.theme.AppFont
 import app.karta.likvidnosti.ui.theme.T
 import app.karta.likvidnosti.ui.theme.designTop
 import app.karta.likvidnosti.ui.theme.navBarClearance
+import app.karta.likvidnosti.data.api.onFailureNotCancelled
+import app.karta.likvidnosti.ui.components.SlowNetworkHint
 
 /**
  * «Список материалов» (iOS AnalyticsView): заголовок на y = 94, поиск-стекло и
@@ -140,7 +142,7 @@ fun AnalyticsScreen(onOpenReport: (Long) -> Unit, navBar: @Composable () -> Unit
                 hasData = true
                 savedAt = System.currentTimeMillis()
             }
-            .onFailure { failed = true }
+            .onFailureNotCancelled { failed = true }
     }
 
     LaunchedEffect(statusFilter, instrumentFilter, periodFilter, rangeFrom, rangeTo) {
@@ -163,6 +165,7 @@ fun AnalyticsScreen(onOpenReport: (Long) -> Unit, navBar: @Composable () -> Unit
     TabScaffold(
         navBar = navBar,
         overlay = {
+            SlowNetworkHint(active = !loaded, bottom = navBarClearance())
             FiltersOverlay(
                 open = filtersOpen,
                 applied = applied,
@@ -283,7 +286,7 @@ fun AnalyticsScreen(onOpenReport: (Long) -> Unit, navBar: @Composable () -> Unit
                         if (visible.isEmpty()) {
                             val narrowed = filterCount > 0 || query.isNotBlank()
                             EmptyState(
-                                if (narrowed) "Ничего не найдено" else "Материалов пока нет",
+                                if (narrowed) "По выбранным фильтрам ничего не найдено" else "Материалов пока нет",
                                 actionLabel = if (narrowed) "Сбросить фильтры" else null,
                                 onAction = { query = ""; applyFilters(FiltersResult()) },
                             )

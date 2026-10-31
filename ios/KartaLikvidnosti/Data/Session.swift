@@ -30,6 +30,18 @@ final class Session: ObservableObject {
         UserDefaults.standard.set(lastRestricted, forKey: Self.restrictedKey)
     }
 
+    init() {
+        // Холодный старт без сети: пользователь и подписка с прошлого раза — права
+        // (админ, режим без подписки) известны с первого кадра, разлогина нет.
+        guard TokenStore.isAuthenticated else { return }
+        user = ApiClient.cached("user", as: MeResponse.self)?.value.user
+            ?? ApiClient.cached("profile", as: ProfileResponse.self)?.value.user
+        if let sub = ApiClient.cached("subscription", as: DataWrapper<SubscriptionDto>.self)?.value.data {
+            subscriptionUntil = sub.until
+            subscriptionActive = sub.active
+        }
+    }
+
     var isAdmin: Bool { user?.isAdmin == true }
     var isAuthenticated: Bool { TokenStore.isAuthenticated }
 
@@ -55,6 +67,8 @@ final class Session: ObservableObject {
 
     func loadSubscription() async {
         guard TokenStore.isAuthenticated else { subscriptionActive = nil; return }
+        // Запуск прошёл без сети — пользователя дочитываем при первой возможности.
+        if user == nil, let me = try? await Api.fetchMe().user { user = me }
         // Нет записи подписки (сервер отдаёт data: null) — это неактивная подписка.
         do {
             setSubscription(try await Api.fetchSubscription())

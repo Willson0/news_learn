@@ -22,6 +22,10 @@ struct ChatMessage: Identifiable {
     var pending: Bool = false
     /// Не ушло на сервер: красный «!», по нажатию — «Повторить / Удалить».
     var failed: Bool = false
+    /// Сколько фото уже ушло на сервер (0…1) — кольцо на превью.
+    var uploadProgress: Double? = nil
+    /// Ключ отправки: повтор не создаёт дубль, догруженное с сервера сообщение заменяет часики.
+    var clientId: String? = nil
     var file: FileAtt? = nil
     var voice: VoiceAtt? = nil
     var reactions: [Reaction] = []
@@ -69,6 +73,7 @@ struct ChatMessage: Identifiable {
         isPrivate = dto.isPrivate
         privateLabel = dto.privateLabel
         canDelete = dto.canDelete
+        clientId = dto.clientId
     }
 
     var isSystem: Bool { event != nil }
@@ -256,7 +261,16 @@ struct MessageBubble: View {
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay {
             if message.pending {
-                ZStack { Color.black.opacity(0.35); ProgressView().tint(.white) }
+                ZStack {
+                    Color.black.opacity(0.35)
+                    if let p = message.uploadProgress {
+                        UploadRing(progress: p)
+                    } else {
+                        ProgressView().tint(.white)
+                    }
+                }
+            } else if message.failed {
+                Color.black.opacity(0.35)
             }
         }
         .contentShape(Rectangle())
@@ -516,5 +530,24 @@ struct BubbleFooterLayout: Layout {
             }
             y += line.height + lineSpacing
         }
+    }
+}
+
+
+/// Кольцо загрузки фото: сколько уже отправлено.
+struct UploadRing: View {
+    let progress: Double
+
+    var body: some View {
+        ZStack {
+            Circle().stroke(Color.white.opacity(0.3), lineWidth: 3)
+            Circle()
+                .trim(from: 0, to: max(0.03, progress))
+                .stroke(Color.white, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .animation(.linear(duration: 0.15), value: progress)
+        }
+        .frame(width: 32, height: 32)
+        .accessibilityLabel("Загрузка \(Int(progress * 100)) процентов")
     }
 }

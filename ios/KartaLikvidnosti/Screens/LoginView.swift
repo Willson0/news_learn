@@ -13,6 +13,7 @@ struct LoginView: View {
     @State private var passwordConfirm = ""
     @State private var errors: [String: String] = [:]
     @State private var submitting = false
+    @State private var yandexBusy = false
 
     private let emailRE = #"^[^\s@]+@[^\s@]+\.[^\s@]+$"#
     private let phoneRE = #"^\+?[0-9\s\-()]{7,}$"#
@@ -56,7 +57,7 @@ struct LoginView: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 12) {
-                AppButton(title: "Войти с Yandex", variant: .secondary) { signInWithYandex() }
+                AppButton(title: "Войти с Yandex", variant: .secondary, loading: yandexBusy) { signInWithYandex() }
                 AppButton(title: mode == .login ? "Войти" : "Далее", variant: .accent, loading: submitting) {
                     submit()
                 }
@@ -176,6 +177,7 @@ struct LoginView: View {
     }
 
     private func submit() {
+        guard !submitting else { return }
         let ok = mode == .login ? validateLogin() : validateRegister()
         if !ok { Haptics.rigid(); return }
         Haptics.medium()
@@ -204,7 +206,10 @@ struct LoginView: View {
     }
 
     private func signInWithYandex() {
+        guard !yandexBusy, !submitting else { return }
+        yandexBusy = true
         Task {
+            defer { yandexBusy = false }
             do {
                 TokenStore.token = try await YandexSignIn.token()
                 await session.load(force: true)

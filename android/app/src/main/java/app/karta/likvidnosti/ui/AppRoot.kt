@@ -65,6 +65,10 @@ import app.karta.likvidnosti.ui.screens.UserAgreementScreen
 import app.karta.likvidnosti.ui.screens.UserProfileScreen
 import app.karta.likvidnosti.ui.theme.T
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import app.karta.likvidnosti.data.api.ApiException
+import app.karta.likvidnosti.data.api.NetStatus
+import app.karta.likvidnosti.ui.components.AppToast
 
 /** Сессия загружена — системный сплэш с логотипом можно убирать. */
 object AppBoot {
@@ -79,9 +83,22 @@ fun AppRoot() {
 
     LaunchedEffect(Unit) {
         if (TokenStore.isAuthenticated) {
-            runCatching { Session.load() }
-            authed = Session.user != null
-            if (authed) scope.launch { AppData.preload() }
+            AppData.seedFromDisk()
+            if (Session.seedFromDisk()) {
+                // Пользователь с прошлого запуска: приложение открывается сразу (и без сети),
+                // свежие данные приходят в фоне.
+                authed = true
+                scope.launch {
+                    runCatching { Session.load(force = true) }
+                    AppData.preload()
+                }
+            } else {
+                // Первый запуск после обновления — ждём сервер, но не дольше 6 с.
+                runCatching { withTimeoutOrNull(6000) { Session.load() } }
+                // Токен есть — не разлогиниваем из-за сети: без связи откроется экран «Повторить».
+                authed = TokenStore.isAuthenticated
+                if (authed) scope.launch { AppData.preload() }
+            }
         }
         ready = true
         AppBoot.ready = true
@@ -111,6 +128,15 @@ fun AppRoot() {
         nav.navigate(Routes.LOGIN) { popUpTo(0) { inclusive = true } }
     }
     val actions = remember(nav) { NavActions(nav) }
+
+    // Сервер не принял токен (истёк или отозван): на вход с пояснением, без вылета.
+    val expired = NetStatus.sessionExpired
+    LaunchedEffect(expired) {
+        if (expired > 0 && Routes.base(nav.currentDestination?.route) != Routes.LOGIN) {
+            exitToLogin()
+            AppToast.show(ApiException.EXPIRED)
+        }
+    }
     // Без подписки приложение сразу открывается на профиле (без мелькания главной).
     val start = when {
         !authed -> Routes.LOGIN

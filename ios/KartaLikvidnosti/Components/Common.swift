@@ -1,4 +1,5 @@
 import SwiftUI
+import ImageIO
 
 /// Кэш картинок: в памяти (мгновенно при возврате на экран) и на диске
 /// (Caches/RemoteImages — переживает перезапуск приложения, картинка не
@@ -51,10 +52,37 @@ enum RemoteImageCache {
         let data: Data? = await withCheckedContinuation { cont in
             io.async { cont.resume(returning: try? Data(contentsOf: file)) }
         }
-        guard let data, let decoded = UIImage(data: data) else { return nil }
+        guard let data, let decoded = await downsampled(data) else { return nil }
         let ready = await decoded.byPreparingForDisplay() ?? decoded
         memory.setObject(ready, forKey: k as NSString, cost: cost(ready))
         return ready
+    }
+
+    /// Самая длинная сторона декодированной картинки: фото с телефона (4000+ px) не
+    /// держим в памяти целиком — экрану хватает 2048, лента листается без подёргиваний.
+    static let maxPixelSize: CGFloat = 2048
+
+    /// Декодирование сразу в уменьшенный размер (ImageIO), вне главного потока.
+    static func downsampled(_ data: Data) async -> UIImage? {
+        await withCheckedContinuation { cont in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let options: [CFString: Any] = [kCGImageSourceShouldCache: false]
+                guard let source = CGImageSourceCreateWithData(data as CFData, options as CFDictionary) else {
+                    cont.resume(returning: UIImage(data: data)); return
+                }
+                let thumb: [CFString: Any] = [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceShouldCacheImmediately: true,
+                    kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+                ]
+                if let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, thumb as CFDictionary) {
+                    cont.resume(returning: UIImage(cgImage: cg))
+                } else {
+                    cont.resume(returning: UIImage(data: data))
+                }
+            }
+        }
     }
 
     static func store(_ image: UIImage, data: Data, for url: URL) {
@@ -91,7 +119,7 @@ final class RemoteImageLoader: ObservableObject {
         task = Task { [weak self] in
             if let cached = await RemoteImageCache.cachedImage(for: url) {
                 guard let self, self.url == url else { return }
-                self.image = cached
+                self.reveal(cached)
                 self.task = nil
                 return
             }
@@ -100,18 +128,28 @@ final class RemoteImageLoader: ObservableObject {
                 if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
                     throw URLError(.badServerResponse)
                 }
-                guard let decoded = UIImage(data: data) else { throw URLError(.cannotDecodeContentData) }
+                guard let decoded = await RemoteImageCache.downsampled(data) else { throw URLError(.cannotDecodeContentData) }
                 // Декодируем заранее, чтобы первый кадр с картинкой не подтормаживал.
                 let ready = await decoded.byPreparingForDisplay() ?? decoded
                 RemoteImageCache.store(ready, data: data, for: url)
                 guard let self, self.url == url else { return }
-                self.image = ready
+                self.reveal(ready)
                 self.task = nil
             } catch {
                 guard let self, self.url == url, !Task.isCancelled else { return }
                 self.failed = true
                 self.task = nil
             }
+        }
+    }
+
+    /// Пришла с диска или из сети — проявляется (fade-in) внутри своей рамки.
+    /// Из памяти картинка ставится сразу в init, без анимации.
+    private func reveal(_ img: UIImage) {
+        if UIAccessibility.isReduceMotionEnabled {
+            image = img
+        } else {
+            withAnimation(.easeOut(duration: 0.2)) { image = img }
         }
     }
 }
@@ -153,6 +191,7 @@ struct RemoteImage<Fallback: View>: View {
         ZStack {
             if let image = loader.image {
                 Image(uiImage: image).resizable().aspectRatio(contentMode: contentMode)
+                    .transition(.opacity)
             } else if url == nil || loader.failed {
                 fallback()
             } else if showsLoading {
@@ -271,6 +310,19 @@ struct FileHtmlIcon: View {
 struct PressableStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label.opacity(configuration.isPressed ? 0.85 : 1)
+    }
+}
+
+/// Нажатие на карточку: лёгкое утапливание (scale 0.98) и затемнение сразу под
+/// пальцем; при «Уменьшении движения» — только затемнение.
+struct CardPressStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.98 : 1)
+            .opacity(configuration.isPressed ? 0.9 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 

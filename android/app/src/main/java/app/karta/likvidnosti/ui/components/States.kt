@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -30,6 +31,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import app.karta.likvidnosti.data.api.ApiException
+import app.karta.likvidnosti.data.api.NetStatus
 import app.karta.likvidnosti.ui.theme.AppFont
 import app.karta.likvidnosti.ui.theme.T
 import app.karta.likvidnosti.ui.theme.statusBarTop
@@ -46,9 +49,17 @@ import java.util.Locale
 fun LoadErrorState(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
-    title: String = "Нет соединения",
-    text: String = "Проверьте интернет и попробуйте ещё раз",
+    title: String? = null,
+    text: String? = null,
 ) {
+    // Текст по причине сбоя: нет интернета, сервер не ответил вовремя или упал.
+    val (reasonTitle, reasonText) = when (NetStatus.lastFailure) {
+        ApiException.Kind.Timeout -> "Сервер долго не отвечает" to "Соединение слишком медленное. Попробуйте ещё раз"
+        ApiException.Kind.Server -> "Сервер временно недоступен" to "Мы уже разбираемся. Попробуйте чуть позже"
+        else -> "Нет соединения" to "Проверьте интернет и попробуйте ещё раз"
+    }
+    val title = title ?: reasonTitle
+    val text = text ?: reasonText
     Column(
         modifier = modifier.fillMaxWidth().padding(vertical = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -115,6 +126,10 @@ object AppToast {
     var shownSerial by mutableStateOf(0)
         private set
 
+    /** Сколько тост на экране: 3,5 с — успеть прочитать. */
+    const val DURATION_MS = 3500L
+
+    /** Тот же текст ещё на экране — не мигает и не складывается стопкой, только продлевается. */
     fun show(text: String) {
         message = text
         serial += 1
@@ -129,7 +144,7 @@ fun BoxScope.AppToastHost() {
     val serial = AppToast.shownSerial
     LaunchedEffect(serial) {
         if (AppToast.message == null) return@LaunchedEffect
-        delay(2400)
+        delay(AppToast.DURATION_MS)
         if (AppToast.shownSerial == serial) AppToast.hide()
     }
     AnimatedVisibility(
@@ -148,5 +163,45 @@ fun BoxScope.AppToastHost() {
                 .semantics { liveRegion = LiveRegionMode.Polite },
             contentAlignment = Alignment.Center,
         ) { Text(last, style = AppFont.sans(T.FsBase), textAlign = TextAlign.Center) }
+    }
+}
+
+/**
+ * Подсказка «Соединение медленное…»: появляется, если загрузка идёт дольше 8 с.
+ * Рисуется поверх (в BoxScope) и ничего не сдвигает; по таймауту запроса её
+ * сменяет экран ошибки с «Повторить».
+ */
+@Composable
+fun BoxScope.SlowNetworkHint(active: Boolean, bottom: androidx.compose.ui.unit.Dp = 24.dp) {
+    var shown by remember { mutableStateOf(false) }
+    LaunchedEffect(active) {
+        shown = false
+        if (active) {
+            delay(8000)
+            shown = true
+        }
+    }
+    AnimatedVisibility(
+        visible = shown && active,
+        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = bottom),
+        enter = fadeIn(),
+        exit = fadeOut(),
+    ) {
+        Row(
+            modifier = Modifier
+                .heightIn(min = 40.dp)
+                .liquidGlass(RoundedCornerShape(24.dp))
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .semantics { liveRegion = LiveRegionMode.Polite },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            androidx.compose.material3.CircularProgressIndicator(
+                modifier = Modifier.size(14.dp),
+                color = T.Text,
+                strokeWidth = 2.dp,
+            )
+            Text("Соединение медленное…", style = AppFont.sans(T.FsBase))
+        }
     }
 }

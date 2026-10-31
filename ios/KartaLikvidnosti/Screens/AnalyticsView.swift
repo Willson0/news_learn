@@ -101,7 +101,7 @@ struct AnalyticsView: View {
                     }
                     if visible.isEmpty {
                         let narrowed = filterCount > 0 || !query.trimmed.isEmpty
-                        EmptyStateView(text: narrowed ? "Ничего не найдено" : "Материалов пока нет",
+                        EmptyStateView(text: narrowed ? "По выбранным фильтрам ничего не найдено" : "Материалов пока нет",
                                        actionTitle: narrowed ? "Сбросить фильтры" : nil) {
                             query = ""
                             apply(FiltersResult())
@@ -117,6 +117,7 @@ struct AnalyticsView: View {
         .pullToRefresh { await load() }
         .ignoresSafeArea(.container, edges: .top)
         .screenBackground()
+        .slowNetworkHint(active: !loaded, bottom: Theme.navBarClearance)
         .withGlassNavBar(extra: session.isAdmin
             ? .init(icon: AppIcons.plusBig, label: "Создать отчет") { router.push(.reportCreate) }
             : nil)
@@ -208,6 +209,7 @@ struct AnalyticsView: View {
             hasData = true
             savedAt = Date()
         } catch {
+            if error.isCancellation { return }
             failed = true
         }
         loaded = true

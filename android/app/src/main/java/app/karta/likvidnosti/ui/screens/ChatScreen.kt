@@ -182,6 +182,15 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
+import java.util.UUID
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.runtime.derivedStateOf
+import app.karta.likvidnosti.data.api.ApiException
+import app.karta.likvidnosti.data.ChatOutbox
 
 private val REACTIONS = listOf("👍", "❤️", "🔥", "😂", "😮", "😢", "🙏", "👏")
 private val Secondary = Color.White.copy(alpha = 0.6f)
@@ -216,6 +225,7 @@ private fun MessageDto.toUi() = ChatMessage(
     isPrivate = isPrivate,
     privateLabel = privateLabel,
     canDelete = canDelete,
+    clientId = clientId,
 )
 
 /** Запрос «открыть поиск» из инфо чата: экран чата открывает поиск, когда к нему возвращаются. */
@@ -405,11 +415,114 @@ fun ChatScreen(
         }
     }
 
+    // Неотправленные сообщения: id временного пузыря → запрос, которым его можно отправить ещё раз.
+    val retryRequests = remember { HashMap<Long, suspend () -> MessageDto?>() }
+
+    /** Запрос отправки альбома из jpeg-файлов очереди, с кольцом загрузки на превью. */
+    fun photoRequest(localId: Long, clientId: String, files: List<File>, caption: String, reply: Long?): suspend () -> MessageDto? = {
+        val total = files.sumOf { it.length() }
+        val counter = java.util.concurrent.atomic.AtomicLong(0)
+        val field = if (files.size == 1) "attachment" else "attachments[]"
+        val parts = files.map { f ->
+            val body = Uploads.ProgressBody(f.asRequestBody("image/jpeg".toMediaTypeOrNull()), counter, total) { p ->
+                scope.launch {
+                    val i = messages.indexOfFirst { it.id == localId }
+                    if (i >= 0 && messages[i].uploading) messages[i] = messages[i].copy(uploadProgress = p)
+                }
+            }
+            MultipartBody.Part.createFormData(field, f.name, body)
+        }.toMutableList()
+        parts.add(Uploads.textPart("kind", "image"))
+        parts.add(Uploads.textPart("client_id", clientId))
+        if (caption.isNotEmpty()) parts.add(Uploads.textPart("body", caption))
+        reply?.let { parts.add(Uploads.textPart("reply_to", it.toString())) }
+        Repository.sendMessageAttachment(slug, parts)
+    }
+
+    /**
+     * Неотправленное с прошлого раза (вышли из чата или закрыли приложение) —
+     * снова в ленте со статусом «не отправлено» и «Повторить».
+     */
+    fun restoreOutbox() {
+        val serverKeys = messages.mapNotNull { if (it.id > 0) it.clientId else null }.toSet()
+        ChatOutbox.entries(slug).forEach { e ->
+            if (messages.any { it.id == e.localId }) return@forEach
+            // Сообщение на самом деле дошло (потерялся только ответ) — дубль не показываем.
+            if (e.clientId in serverKeys) { ChatOutbox.remove(slug, e.localId); return@forEach }
+            val files = e.photos.map { File(it) }
+            if (files.any { !it.exists() }) { ChatOutbox.remove(slug, e.localId); return@forEach }
+            messages.add(
+                ChatMessage(
+                    id = e.localId,
+                    mine = true,
+                    author = Session.user?.name,
+                    text = e.text,
+                    localImageUris = files.map { Uri.fromFile(it) },
+                    failed = true,
+                    replyAuthor = e.replyAuthor,
+                    replyText = e.replyText,
+                    isPrivate = e.isPrivate,
+                    clientId = e.clientId,
+                ),
+            )
+            retryRequests[e.localId] = if (files.isEmpty()) {
+                { Repository.sendMessage(slug, e.text.orEmpty(), e.replyTo, e.clientId) }
+            } else {
+                photoRequest(e.localId, e.clientId, files, e.text.orEmpty(), e.replyTo)
+            }
+        }
+    }
+
+    /**
+     * Новые сообщения с сервера, пока чат открыт: добавляются снизу, свои
+     * (ушедшие с этого или другого устройства) заменяют «часики».
+     */
+    suspend fun pollNew() {
+        if (!loaded || selectMode) return
+        val lastId = messages.lastOrNull { it.id > 0 }?.id ?: return
+        val resp = runCatching { Repository.messages(slug, after = lastId) }.getOrNull() ?: return
+        val newPins = resp.pins ?: listOfNotNull(resp.pinned)
+        if (newPins.map { it.id } != pins.map { it.id }) {
+            pins.clear(); pins.addAll(newPins)
+            pinIndex = pinIndex.coerceIn(0, (pins.size - 1).coerceAtLeast(0))
+        }
+        val known = messages.map { it.id }.toHashSet()
+        val fresh = resp.data.filter { it.id > lastId && it.id !in known }.map { it.toUi() }
+        if (fresh.isEmpty()) return
+        fresh.forEach { m ->
+            val cid = m.clientId ?: return@forEach
+            val i = messages.indexOfFirst { it.id < 0 && it.clientId == cid }
+            if (i >= 0) {
+                retryRequests.remove(messages[i].id)
+                ChatOutbox.remove(slug, messages[i].id)
+                messages.removeAt(i)
+            }
+        }
+        val local = messages.filter { it.id < 0 }
+        messages.removeAll { it.id < 0 }
+        messages.addAll(fresh)
+        messages.addAll(local)
+    }
+
     LaunchedEffect(slug) {
         reloadMessages()
+        restoreOutbox()
         pinIndex = (pins.size - 1).coerceAtLeast(0)
         initialIds.addAll(messages.map { it.id })
         loaded = true
+    }
+
+    // Пока чат на экране и приложение активно — тихо догружаем новые сообщения.
+    val chatLifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(loaded) {
+        if (!loaded) return@LaunchedEffect
+        chatLifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            pollNew()
+            while (true) {
+                delay(8_000)
+                pollNew()
+            }
+        }
     }
 
     val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
@@ -435,11 +548,31 @@ fun ChatScreen(
     // Когда она убрана (долгое нажатие, выбор), лента остаётся на месте: иначе
     // зажатое сообщение уезжает, и после меню виден уже другой участок чата.
     var keyboardWas by remember { mutableStateOf(false) }
+    // Лента внизу (видно последнее сообщение). Если пользователь читает старые,
+    // новые сообщения не утаскивают его вниз — появляется плашка «Новые сообщения».
+    val nearBottom by remember {
+        derivedStateOf {
+            val info = listState.layoutInfo
+            val last = info.visibleItemsInfo.lastOrNull()
+            last == null || last.index >= info.totalItemsCount - 2
+        }
+    }
+    var lastSize by remember { mutableIntStateOf(0) }
+    var newBelow by remember { mutableIntStateOf(0) }
+    LaunchedEffect(nearBottom) { if (nearBottom) newBelow = 0 }
     LaunchedEffect(visible.size, loaded, keyboardShown) {
         val keyboardHidden = keyboardWas && !keyboardShown
         keyboardWas = keyboardShown
+        val added = visible.size - lastSize
+        val hadList = lastSize > 0
+        if (loaded) lastSize = visible.size
         if (loaded && visible.isNotEmpty() && !searchMode && !keyboardHidden) {
-            runCatching { listState.animateScrollToItem(visible.size - 1) }
+            val readingOld = hadList && added > 0 && !nearBottom && visible.lastOrNull()?.mine != true
+            if (readingOld) {
+                newBelow += added
+            } else {
+                runCatching { listState.animateScrollToItem(visible.size - 1) }
+            }
         }
     }
 
@@ -495,21 +628,60 @@ fun ChatScreen(
 
     // MARK: - Отправка
 
-    /** Отправляет одно вложение. Возвращает текст ошибки или null, если всё прошло. */
-    suspend fun uploadAttachment(uri: Uri, kind: String, caption: String, reply: Long?, asJpeg: Boolean): String? {
-        val part = (if (asJpeg) Uploads.jpegPart(context, "attachment", uri) else Uploads.filePart(context, "attachment", uri))
-            ?: return "Файл не прочитался, попробуйте ещё раз"
-        if (part.body.contentLength() > 100L * 1024 * 1024) return "Файл больше 100 МБ, выберите файл поменьше"
-        val parts = mutableListOf(part, Uploads.textPart("kind", kind))
-        if (caption.isNotEmpty()) parts.add(Uploads.textPart("body", caption))
-        reply?.let { parts.add(Uploads.textPart("reply_to", it.toString())) }
-        return runCatching { Repository.sendMessageAttachment(slug, parts) }
-            .fold(
-                onSuccess = { sent -> sent?.let { messages.add(it.toUi()) }; null },
-                onFailure = { "Не удалось отправить вложение" },
-            )
+    var failedMenuFor by remember { mutableStateOf<Long?>(null) }
+
+    /** Отправка с часиками: пузырь сразу в ленте, после ответа сервера — настоящий, при ошибке — «!». */
+    fun runSend(tempId: Long, request: suspend () -> MessageDto?) {
+        retryRequests[tempId] = request
+        scope.launch {
+            runCatching { request() }
+                .onSuccess { sent ->
+                    retryRequests.remove(tempId)
+                    ChatOutbox.remove(slug, tempId)
+                    val idx = messages.indexOfFirst { it.id == tempId }
+                    val ui = sent?.toUi()
+                    when {
+                        ui == null || messages.any { it.id == ui.id } -> if (idx >= 0) messages.removeAt(idx)
+                        idx >= 0 -> messages[idx] = ui
+                        else -> messages.add(ui)
+                    }
+                }
+                .onFailure { e ->
+                    val idx = messages.indexOfFirst { it.id == tempId }
+                    if (idx >= 0) messages[idx] = messages[idx].copy(uploading = false, failed = true, uploadProgress = null)
+                    showToast(e.message?.takeIf { it.isNotBlank() && it.length < 120 } ?: "Сообщение не отправлено")
+                }
+        }
     }
 
+    fun sendOptimistic(temp: ChatMessage, outbox: ChatOutbox.Entry? = null, request: suspend () -> MessageDto?) {
+        // Текст и фото — в очередь на диске: не ушло — не потеряется при выходе из чата.
+        outbox?.let { ChatOutbox.add(slug, it) }
+        messages.add(temp.copy(mine = true, author = Session.user?.name, uploading = true, failed = false))
+        runSend(temp.id, request)
+    }
+
+    fun retryFailed(id: Long) {
+        failedMenuFor = null
+        val request = retryRequests[id] ?: return
+        val idx = messages.indexOfFirst { it.id == id }
+        if (idx < 0) return
+        messages[idx] = messages[idx].copy(
+            uploading = true,
+            failed = false,
+            uploadProgress = if (messages[idx].localImageUris.isEmpty()) null else 0f,
+        )
+        runSend(id, request)
+    }
+
+    fun discardFailed(id: Long) {
+        failedMenuFor = null
+        retryRequests.remove(id)
+        ChatOutbox.remove(slug, id)
+        messages.removeAll { it.id == id }
+    }
+
+    /** Файл сразу в ленте с часиками; не ушёл — «!» и «Повторить» (тем же ключом, без дубля). */
     fun sendAttachment(uri: Uri, kind: String) {
         val reply = replyTo?.id
         // Текст из поля ввода становится подписью к файлу (голосовое без подписи).
@@ -517,47 +689,31 @@ fun ChatScreen(
         replyTo = null
         attachOpen = false
         if (caption.isNotEmpty()) draft = TextFieldValue("")
-        scope.launch {
-            val error = uploadAttachment(uri, kind, caption, reply, asJpeg = false)
-            if (error != null) {
-                if (caption.isNotEmpty()) draft = TextFieldValue(caption)
-                showToast(error)
-            }
-        }
-    }
-
-    /**
-     * Одно фото уходит как attachment, два и больше — одним запросом как альбом (attachments[]).
-     * Возвращает отправленное сообщение или текст ошибки.
-     */
-    suspend fun uploadPhotos(uris: List<Uri>, caption: String, reply: Long?): Pair<ChatMessage?, String?> {
-        val parts = mutableListOf<MultipartBody.Part>()
-        if (uris.size == 1) {
-            val part = Uploads.jpegPart(context, "attachment", uris[0])
-                ?: return null to "Файл не прочитался, попробуйте ещё раз"
-            parts.add(part)
-        } else {
-            uris.forEach { uri ->
-                val part = Uploads.jpegPart(context, "attachments[]", uri)
-                    ?: return null to "Одно из фото не прочиталось, попробуйте ещё раз"
-                parts.add(part)
-            }
-        }
-        if (parts.sumOf { it.body.contentLength() } > 100L * 1024 * 1024) {
-            return null to "Фото больше 100 МБ, выберите фото поменьше"
-        }
-        parts.add(Uploads.textPart("kind", "image"))
-        if (caption.isNotEmpty()) parts.add(Uploads.textPart("body", caption))
-        reply?.let { parts.add(Uploads.textPart("reply_to", it.toString())) }
-        return runCatching { Repository.sendMessageAttachment(slug, parts) }.fold(
-            onSuccess = { dto -> (dto?.toUi()) to null },
-            onFailure = { null to "Не удалось отправить фото" },
+        val clientId = UUID.randomUUID().toString()
+        val name = Uploads.displayName(context, uri)
+        val temp = ChatMessage(
+            id = -System.nanoTime(),
+            mine = true,
+            text = caption.ifEmpty { null },
+            fileName = name,
+            fileExt = name.substringAfterLast('.', ""),
+            clientId = clientId,
         )
+        sendOptimistic(temp) {
+            val part = Uploads.filePart(context, "attachment", uri)
+                ?: throw ApiException("Файл не прочитался, попробуйте ещё раз", 0)
+            if (part.body.contentLength() > 100L * 1024 * 1024) throw ApiException("Файл больше 100 МБ, выберите файл поменьше", 0)
+            val parts = mutableListOf(part, Uploads.textPart("kind", kind), Uploads.textPart("client_id", clientId))
+            if (caption.isNotEmpty()) parts.add(Uploads.textPart("body", caption))
+            reply?.let { parts.add(Uploads.textPart("reply_to", it.toString())) }
+            Repository.sendMessageAttachment(slug, parts)
+        }
     }
 
     /**
-     * Фото из поля ввода: сразу показываем сообщение с локальными превью и спиннером,
-     * после ответа сервера оно заменяется настоящим, при ошибке убирается.
+     * Фото из поля ввода: сообщение сразу в ленте с превью и кольцом загрузки. Фото
+     * перекодируются в JPEG и ложатся в очередь на диске: не ушло — остаётся с «!»
+     * (и не пропадёт при выходе из чата), «Повторить» шлёт его один раз.
      */
     fun sendPendingPhotos() {
         val uris = pendingImages.toList()
@@ -569,6 +725,7 @@ fun ChatScreen(
         replyTo = null
         attachOpen = false
         val tempId = -System.nanoTime()
+        val clientId = UUID.randomUUID().toString()
         messages.add(
             ChatMessage(
                 id = tempId,
@@ -577,67 +734,44 @@ fun ChatScreen(
                 text = caption.ifEmpty { null },
                 localImageUris = uris,
                 uploading = true,
+                uploadProgress = 0f,
+                clientId = clientId,
             ),
         )
-        scope.launch {
-            val (sent, error) = uploadPhotos(uris, caption, reply)
-            val idx = messages.indexOfFirst { it.id == tempId }
-            if (sent != null) {
-                if (idx >= 0) messages[idx] = sent else messages.add(sent)
-            } else {
-                if (idx >= 0) messages.removeAt(idx)
-                pendingImages.addAll(0, uris)
-                if (caption.isNotEmpty()) draft = TextFieldValue(caption)
-                showToast(error ?: "Не удалось отправить фото")
-            }
+        fun revert(error: String) {
+            messages.removeAll { it.id == tempId }
+            pendingImages.addAll(0, uris)
+            if (caption.isNotEmpty()) draft = TextFieldValue(caption)
+            showToast(error)
         }
-    }
-
-    // Неотправленные сообщения: id временного пузыря → запрос, которым его можно отправить ещё раз.
-    val retryRequests = remember { HashMap<Long, suspend () -> MessageDto?>() }
-    var failedMenuFor by remember { mutableStateOf<Long?>(null) }
-
-    /** Отправка с часиками: пузырь сразу в ленте, после ответа сервера — настоящий, при ошибке — «!». */
-    fun runSend(tempId: Long, request: suspend () -> MessageDto?) {
-        retryRequests[tempId] = request
         scope.launch {
-            runCatching { request() }
-                .onSuccess { sent ->
-                    retryRequests.remove(tempId)
-                    val idx = messages.indexOfFirst { it.id == tempId }
-                    val ui = sent?.toUi()
-                    when {
-                        ui == null || messages.any { it.id == ui.id } -> if (idx >= 0) messages.removeAt(idx)
-                        idx >= 0 -> messages[idx] = ui
-                        else -> messages.add(ui)
+            val dir = ChatOutbox.photoDir()
+            val files = withContext(Dispatchers.IO) {
+                if (dir == null) emptyList() else uris.mapIndexedNotNull { i, uri ->
+                    Uploads.jpegBytes(context, uri)?.let { bytes ->
+                        File(dir, "photo-${-tempId}-$i.jpg").apply { writeBytes(bytes) }
                     }
                 }
-                .onFailure { e ->
-                    val idx = messages.indexOfFirst { it.id == tempId }
-                    if (idx >= 0) messages[idx] = messages[idx].copy(uploading = false, failed = true)
-                    showToast(e.message?.takeIf { it.isNotBlank() && it.length < 120 } ?: "Сообщение не отправлено")
-                }
+            }
+            if (files.size != uris.size) {
+                files.forEach { it.delete() }
+                revert(if (uris.size == 1) "Файл не прочитался, попробуйте ещё раз" else "Одно из фото не прочиталось, попробуйте ещё раз")
+                return@launch
+            }
+            if (files.sumOf { it.length() } > 100L * 1024 * 1024) {
+                files.forEach { it.delete() }
+                revert("Фото больше 100 МБ, выберите фото поменьше")
+                return@launch
+            }
+            ChatOutbox.add(
+                slug,
+                ChatOutbox.Entry(
+                    localId = tempId, clientId = clientId, text = caption.ifEmpty { null }, replyTo = reply,
+                    photos = files.map { it.absolutePath },
+                ),
+            )
+            runSend(tempId, photoRequest(tempId, clientId, files, caption, reply))
         }
-    }
-
-    fun sendOptimistic(temp: ChatMessage, request: suspend () -> MessageDto?) {
-        messages.add(temp.copy(mine = true, author = Session.user?.name, uploading = true, failed = false))
-        runSend(temp.id, request)
-    }
-
-    fun retryFailed(id: Long) {
-        failedMenuFor = null
-        val request = retryRequests[id] ?: return
-        val idx = messages.indexOfFirst { it.id == id }
-        if (idx < 0) return
-        messages[idx] = messages[idx].copy(uploading = true, failed = false)
-        runSend(id, request)
-    }
-
-    fun discardFailed(id: Long) {
-        failedMenuFor = null
-        retryRequests.remove(id)
-        messages.removeAll { it.id == id }
     }
 
     fun send() {
@@ -650,17 +784,22 @@ fun ChatScreen(
         val reply = replyTo
         draft = TextFieldValue("")
         replyTo = null
-        sendOptimistic(
-            ChatMessage(
-                id = -System.nanoTime(),
-                mine = true,
-                text = body,
-                replyAuthor = reply?.let { if (it.mine) "Вы" else it.author },
-                replyText = reply?.let { it.text ?: replyPreview(it) },
-                // Ответ в личной ветке и «/текст/» уходят лично — пузырь не должен выглядеть общим.
-                isPrivate = reply?.isPrivate == true || draftIsAuthorMessage,
-            ),
-        ) { Repository.sendMessage(slug, body, reply?.id) }
+        val clientId = UUID.randomUUID().toString()
+        val temp = ChatMessage(
+            id = -System.nanoTime(),
+            mine = true,
+            text = body,
+            replyAuthor = reply?.let { if (it.mine) "Вы" else it.author },
+            replyText = reply?.let { it.text ?: replyPreview(it) },
+            // Ответ в личной ветке и «/текст/» уходят лично — пузырь не должен выглядеть общим.
+            isPrivate = reply?.isPrivate == true || draftIsAuthorMessage,
+            clientId = clientId,
+        )
+        val entry = ChatOutbox.Entry(
+            localId = temp.id, clientId = clientId, text = body, replyTo = reply?.id,
+            replyAuthor = temp.replyAuthor, replyText = temp.replyText, isPrivate = temp.isPrivate,
+        )
+        sendOptimistic(temp, entry) { Repository.sendMessage(slug, body, reply?.id, clientId) }
     }
 
     val imagePicker = rememberLauncherForActivityResult(
@@ -736,10 +875,12 @@ fun ChatScreen(
         if (!ok || file == null || !file.exists() || file.length() == 0L) { file?.delete(); return }
         view.voiceHaptic(VoiceHaptic.Send)
         val reply = replyTo; replyTo = null
+        val voiceClientId = UUID.randomUUID().toString()
         sendOptimistic(
             ChatMessage(
                 id = -System.nanoTime(),
                 mine = true,
+                clientId = voiceClientId,
                 voiceUrl = file.absolutePath,
                 voiceDuration = "%d:%02d".format(seconds / 60, seconds % 60),
                 replyAuthor = reply?.let { if (it.mine) "Вы" else it.author },
@@ -750,7 +891,12 @@ fun ChatScreen(
             // Запрос собирается заново при каждой попытке: тело файла читается один раз.
             val body = file.asRequestBody("audio/mp4".toMediaTypeOrNull())
             val part = MultipartBody.Part.createFormData("attachment", "voice.m4a", body)
-            val parts = mutableListOf(part, Uploads.textPart("kind", "voice"), Uploads.textPart("duration", seconds.toString()))
+            val parts = mutableListOf(
+                part,
+                Uploads.textPart("kind", "voice"),
+                Uploads.textPart("duration", seconds.toString()),
+                Uploads.textPart("client_id", voiceClientId),
+            )
             reply?.id?.let { parts.add(Uploads.textPart("reply_to", it.toString())) }
             Repository.sendMessageAttachment(slug, parts).also { file.delete() }
         }
@@ -1218,7 +1364,7 @@ fun ChatScreen(
                                             voiceProgress = if (playingId == m.id) voiceProgress else 0f,
                                             onPlayVoice = { if (selectMode) toggleSelect(m.id) else playVoice(m) },
                                             onOpenFile = { if (selectMode) toggleSelect(m.id) else openUrl(fileUrl(m.fileUrl)) },
-                                            onOpenImage = { if (selectMode) toggleSelect(m.id) else openPhoto(m) },
+                                            onOpenImage = { if (selectMode) toggleSelect(m.id) else if (m.failed) failedMenuFor = m.id else openPhoto(m) },
                                             onLongPress = { onLongPress(m) },
                                             onToggleReaction = if (selectMode || m.uploading) null else { e -> react(m.id, e) },
                                             highlight = if (searchMode) searchQuery else null,
@@ -1228,6 +1374,30 @@ fun ChatScreen(
                                 }
                                 }
                             }
+                        }
+                    }
+
+                    // Читаете старые, а пришли новые — плашка поверх ленты (ничего не сдвигает).
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = newBelow > 0 && !searchMode && !selectMode,
+                        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = composerH + bottomPad + 8.dp),
+                        enter = fadeIn(),
+                        exit = fadeOut(),
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .height(36.dp)
+                                .liquidGlass(CapsuleShape)
+                                .pressable {
+                                    newBelow = 0
+                                    scope.launch { runCatching { listState.animateScrollToItem(visible.size - 1) } }
+                                }
+                                .padding(horizontal = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Text(if (newBelow == 1) "Новое сообщение" else "Новые сообщения · $newBelow", style = AppFont.sans(T.FsBase))
+                            Text("↓", style = AppFont.sans(T.FsBase, FontWeight.SemiBold))
                         }
                     }
                 },

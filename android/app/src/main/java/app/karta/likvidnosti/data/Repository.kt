@@ -160,9 +160,10 @@ object Repository {
 
     // --- Сообщество ---
     suspend fun chats(): List<ChatSectionDto> = apiCall { api.chats().data ?: emptyList() }
-    suspend fun messages(slug: String): MessagesResponse = apiCall { api.messages(slug) }
-    suspend fun sendMessage(slug: String, body: String, replyTo: Long? = null): MessageDto? =
-        apiCall { api.sendMessage(slug, MessageBody(body, replyTo)).data }
+    /** `after` — только сообщения новее этого id (тихая догрузка, пока чат открыт). */
+    suspend fun messages(slug: String, after: Long? = null): MessagesResponse = apiCall { api.messages(slug, after) }
+    suspend fun sendMessage(slug: String, body: String, replyTo: Long? = null, clientId: String? = null): MessageDto? =
+        apiCall { api.sendMessage(slug, MessageBody(body, replyTo, clientId)).data }
     suspend fun sendMessageAttachment(slug: String, parts: List<MultipartBody.Part>): MessageDto? =
         apiCall { api.sendMessageMultipart(slug, parts).data }
     suspend fun reactMessage(slug: String, id: Long, emoji: String): MessageDto? =

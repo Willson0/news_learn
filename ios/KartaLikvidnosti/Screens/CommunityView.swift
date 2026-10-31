@@ -83,7 +83,7 @@ struct CommunityView: View {
                         .padding(.top, 24)
                 } else {
                     if failed {
-                        StaleDataBanner(savedAt: nil) { retry() }
+                        StaleDataBanner(savedAt: appData.chatsAt) { retry() }
                             .padding(.horizontal, Theme.screenX)
                             .padding(.top, 24)
                     }
@@ -109,10 +109,19 @@ struct CommunityView: View {
                     .padding(.top, session.restricted ? 0 : 24)
 
                     if visibleSections.isEmpty {
-                        Text(session.isAdmin && tab == "direct" ? "Личных сообщений пока нет" : "Ничего не найдено")
-                            .font(Theme.sans(Theme.fontBase))
-                            .foregroundStyle(Theme.textSecondary)
-                            .frame(maxWidth: .infinity).padding(.vertical, 40)
+                        // Пустой поиск и пустой список — разные состояния: у поиска есть «Сбросить».
+                        let searching = !query.trimmed.isEmpty
+                        Group {
+                            if searching {
+                                EmptyStateView(text: "По запросу «\(query.trimmed)» ничего не найдено", actionTitle: "Сбросить поиск") { query = "" }
+                            } else {
+                                Text(session.isAdmin && tab == "direct" ? "Личных сообщений пока нет" : "Чатов пока нет")
+                                    .font(Theme.sans(Theme.fontBase))
+                                    .foregroundStyle(Theme.textSecondary)
+                                    .frame(maxWidth: .infinity).padding(.vertical, 40)
+                            }
+                        }
+                        .padding(.horizontal, Theme.screenX)
                     }
                 }
             }
@@ -123,6 +132,7 @@ struct CommunityView: View {
         .pullToRefresh { await load() }
         .ignoresSafeArea(.container, edges: .top)
         .screenBackground()
+        .slowNetworkHint(active: !loaded, bottom: Theme.navBarClearance)
         .withGlassNavBar()
         .onAppear { seed(); refreshMuted(); loadPins() }
         .animation(.easeOut(duration: 0.25), value: pinnedChats)
@@ -343,8 +353,10 @@ struct CommunityView: View {
             let s = try await Api.fetchChats()
             sections = s
             appData.chats = s
+            appData.chatsAt = Date()
             failed = false
         } catch {
+            if error.isCancellation { return }
             failed = true
         }
         loaded = true

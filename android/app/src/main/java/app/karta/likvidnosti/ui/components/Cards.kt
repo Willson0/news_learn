@@ -41,9 +41,10 @@ fun ReportCard(
     Column(
         modifier = modifier
             .fillMaxWidth()
+            // Утапливается вся карточка вместе с фоном.
+            .cardPressable { onOpen(report) }
             .clip(T.ShapeCard)
             .background(T.Surface)
-            .pressable(pressAlpha = 1f) { onOpen(report) }
             .padding(bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {

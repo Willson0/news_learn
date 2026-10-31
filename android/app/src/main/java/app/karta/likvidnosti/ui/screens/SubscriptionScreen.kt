@@ -61,6 +61,8 @@ import app.karta.likvidnosti.ui.theme.AppFont
 import app.karta.likvidnosti.ui.theme.T
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import app.karta.likvidnosti.data.api.onFailureNotCancelled
+import app.karta.likvidnosti.ui.components.SlowNetworkHint
 
 /**
  * «Управление подпиской» (iOS SubscriptionView, Figma 337:26959, привязка
@@ -93,9 +95,22 @@ fun SubscriptionScreen(onBack: () -> Unit, onToMaterials: () -> Unit = {}) {
     var price by remember { mutableStateOf(cached?.price ?: "") }
     var autoPay by remember { mutableStateOf(cached?.autoPay ?: false) }
     var card by remember { mutableStateOf(AppData.card) }
-    var cardError by remember { mutableStateOf<String?>(null) }
     var paymentCheck by remember { mutableStateOf<PaymentCheck?>(null) }
+    // Запрос оплаты ушёл: повторные нажатия «Привязать» ничего не делают (одна оплата).
+    var cardBusy by remember { mutableStateOf(false) }
+    // Статус не удалось получить, а сохранённого нет: честно «Нет связи», а не «Неактивна».
+    var statusUnknown by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    // Платёж ушёл, но итог неизвестен (сеть оборвалась): 15 минут «Привязать» не начинает
+    // новую оплату, а проверяет эту.
+    val prefs = remember { context.getSharedPreferences("kl_billing", android.content.Context.MODE_PRIVATE) }
+    fun paymentUnsettled(): Boolean {
+        val at = prefs.getLong("payment_check_at", 0L)
+        return at > 0 && System.currentTimeMillis() - at < 15 * 60_000
+    }
+    fun markUnsettled(on: Boolean) {
+        prefs.edit().apply { if (on) putLong("payment_check_at", System.currentTimeMillis()) else remove("payment_check_at") }.apply()
+    }
 
     fun applySubscription(it: app.karta.likvidnosti.data.api.SubscriptionDto) {
         active = it.active
@@ -103,8 +118,10 @@ fun SubscriptionScreen(onBack: () -> Unit, onToMaterials: () -> Unit = {}) {
         price = it.price ?: ""
         autoPay = it.autoPay
         known = true
+        statusUnknown = false
         AppData.subscription = it
         Session.setSubscription(it)
+        if (it.active) markUnsettled(false)
     }
 
     suspend fun refreshCard() {
@@ -114,9 +131,14 @@ fun SubscriptionScreen(onBack: () -> Unit, onToMaterials: () -> Unit = {}) {
             .onFailure { if (card == null) card = BillingCardDto() }
     }
 
+    suspend fun loadStatus() {
+        runCatching { Repository.subscription() }
+            .onSuccess { sub -> if (sub != null) applySubscription(sub) else known = true }
+            .onFailureNotCancelled { if (!known) statusUnknown = true }
+    }
+
     LaunchedEffect(Unit) {
-        runCatching { Repository.subscription() }.getOrNull()?.let { applySubscription(it) }
-        known = true
+        loadStatus()
         refreshCard()
     }
 
@@ -142,21 +164,28 @@ fun SubscriptionScreen(onBack: () -> Unit, onToMaterials: () -> Unit = {}) {
         val wasActive = active
         paymentCheck = PaymentCheck.Checking
         var bound = false
+        var reached = false
         val deadline = System.currentTimeMillis() + 30_000
         while (System.currentTimeMillis() < deadline) {
             // Запрос карты сам дожидается результата привязки и списывает подписку.
             refreshCard()
             bound = card?.bound == true
-            val sub = runCatching { Repository.subscription() }.getOrNull()
+            val result = runCatching { Repository.subscription() }
+            if (result.isSuccess) reached = true
+            val sub = result.getOrNull()
             if (sub != null) applySubscription(sub)
             if (sub?.active == true && (!wasActive || bound)) {
+                markUnsettled(false)
                 paymentCheck = if (!wasActive) PaymentCheck.Active(sub.until ?: "") else null
                 return
             }
             delay(2_500)
         }
+        markUnsettled(true)
         paymentCheck = PaymentCheck.Pending(
-            if (bound) {
+            if (!reached) {
+                "Нет связи с сервером, поэтому итог оплаты пока неизвестен. Повторно платить не нужно — проверьте ещё раз, когда появится интернет."
+            } else if (bound) {
                 "Карта привязана. Подписка включится, как только пройдёт списание или администратор назначит тариф — мы пришлём уведомление."
             } else {
                 "Платёж ещё обрабатывается. Мы пришлём уведомление, как только он пройдёт."
@@ -165,22 +194,32 @@ fun SubscriptionScreen(onBack: () -> Unit, onToMaterials: () -> Unit = {}) {
     }
 
     fun startBind() {
-        cardError = null
+        if (cardBusy) return
+        // Итог прошлой оплаты ещё неизвестен — не предлагаем платить второй раз.
+        if (paymentUnsettled()) {
+            scope.launch { checkPayment() }
+            return
+        }
+        cardBusy = true
         scope.launch {
-            runCatching { Repository.bindCard() }
-                .onSuccess { url ->
-                    runCatching {
-                        CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(url))
-                    }.onFailure { cardError = "Не удалось открыть страницу оплаты" }
-                }
-                .onFailure { cardError = it.message ?: "Не удалось привязать карту" }
+            try {
+                runCatching { Repository.bindCard() }
+                    .onSuccess { url ->
+                        runCatching {
+                            CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(url))
+                        }.onFailure { AppToast.show("Не удалось открыть страницу оплаты") }
+                    }
+                    // Ошибка — тостом поверх: блоки ниже не сдвигаются.
+                    .onFailureNotCancelled { AppToast.show(it.message ?: "Не удалось привязать карту") }
+            } finally {
+                cardBusy = false
+            }
         }
     }
 
     // Возврат из Т-Кассы: karta://billing?status=…
     LaunchedEffect(Unit) {
         BillingReturn.results.collect { uri ->
-            cardError = null
             if (uri.getQueryParameter("status") == "error") {
                 paymentCheck = PaymentCheck.Failed("Платёж не прошёл: его отменили или банк отклонил карту. Деньги не списаны.")
                 refreshCard()
@@ -204,7 +243,13 @@ fun SubscriptionScreen(onBack: () -> Unit, onToMaterials: () -> Unit = {}) {
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                 Text("Подписка", style = AppFont.sans(T.FsMd, FontWeight.Bold))
                 Spacer(Modifier.weight(1f).width(8.dp))
-                if (!known) {
+                if (!known && statusUnknown) {
+                    Text(
+                        "Нет связи · Повторить",
+                        style = AppFont.sans(T.FsBase, FontWeight.SemiBold, T.TextSecondary),
+                        modifier = Modifier.heightIn(min = 22.dp).pressable { statusUnknown = false; scope.launch { loadStatus() } },
+                    )
+                } else if (!known) {
                     SkeletonBox(Modifier.width(90.dp).height(20.dp))
                 } else Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
@@ -254,26 +299,28 @@ fun SubscriptionScreen(onBack: () -> Unit, onToMaterials: () -> Unit = {}) {
                 Text(cardLabel ?: "Привязать карту", style = AppFont.sans(T.FsMd), modifier = Modifier.weight(1f))
                 // Пилюля 32 в области нажатия 48 (визуально без изменений).
                 Box(Modifier.heightIn(min = 48.dp), contentAlignment = Alignment.Center) {
-                    PurplePillButton(if (cardLabel == null) "Привязать" else "Отвязать") {
+                    if (cardBusy) {
+                        // Запрос идёт: индикатор на месте пилюли того же размера, повторный тап не шлёт второй запрос.
+                        Box(Modifier.size(96.dp, 36.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = T.Text, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+                        }
+                    } else PurplePillButton(if (cardLabel == null) "Привязать" else "Отвязать") {
                         if (cardLabel == null) {
                             startBind()
                         } else {
-                            cardError = null
+                            cardBusy = true
                             scope.launch {
-                                runCatching { Repository.unbindCard() }
-                                    .onFailure { cardError = it.message ?: "Не удалось отвязать карту" }
-                                refreshCard()
+                                try {
+                                    runCatching { Repository.unbindCard() }
+                                        .onFailureNotCancelled { AppToast.show(it.message ?: "Не удалось отвязать карту") }
+                                    refreshCard()
+                                } finally {
+                                    cardBusy = false
+                                }
                             }
                         }
                     }
                 }
-            }
-            cardError?.let {
-                Text(
-                    it,
-                    style = AppFont.sans(T.FsBase, color = T.Error),
-                    modifier = Modifier.padding(bottom = 12.dp),
-                )
             }
         }
 
@@ -314,10 +361,12 @@ fun SubscriptionScreen(onBack: () -> Unit, onToMaterials: () -> Unit = {}) {
         PaymentCheckView(
             check = check,
             onToMaterials = { paymentCheck = null; onToMaterials() },
-            onRetry = { paymentCheck = null; startBind() },
+            onRetry = { paymentCheck = null; markUnsettled(false); startBind() },
+            onRecheck = { scope.launch { checkPayment() } },
             onClose = { paymentCheck = null },
         )
     }
+    SlowNetworkHint(active = !known && !statusUnknown)
     }
 }
 
@@ -327,6 +376,7 @@ private fun PaymentCheckView(
     check: PaymentCheck,
     onToMaterials: () -> Unit,
     onRetry: () -> Unit,
+    onRecheck: () -> Unit,
     onClose: () -> Unit,
 ) {
     BackHandler(enabled = check !is PaymentCheck.Checking) { onClose() }
@@ -366,6 +416,7 @@ private fun PaymentCheckView(
                     Text("Платёж обрабатывается", style = AppFont.heading(T.FsTitle), textAlign = TextAlign.Center)
                     Text(check.text, style = AppFont.sans(T.FsBase, color = T.TextSecondary), textAlign = TextAlign.Center)
                     AppButton("Понятно", modifier = Modifier.padding(top = 8.dp)) { onClose() }
+                    AppButton("Проверить снова", variant = ButtonVariant.Secondary) { onRecheck() }
                 }
                 is PaymentCheck.Failed -> {
                     Text("Оплата не прошла", style = AppFont.heading(T.FsTitle), textAlign = TextAlign.Center)

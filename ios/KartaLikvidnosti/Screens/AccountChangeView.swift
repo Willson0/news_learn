@@ -7,6 +7,8 @@ struct AccountChangeView: View {
 
     @State private var values: [String: String] = ["old": "", "new": "", "confirm": ""]
     @State private var error = ""
+    /// Запрос ушёл: кнопка с индикатором, повторные нажатия не шлют второй запрос.
+    @State private var submitting = false
 
     private struct FieldDef { let key: String; let placeholder: String; let secure: Bool; let keyboard: UIKeyboardType }
     private struct Config { let title: String; let fields: [FieldDef]; let button: String }
@@ -55,7 +57,7 @@ struct AccountChangeView: View {
                 if !error.isEmpty { AuthFieldError(text: error) }
             }
         } buttons: {
-            AppButton(title: config.button, variant: .accent) { submit() }
+            AppButton(title: config.button, variant: .accent, loading: submitting) { submit() }
         }
         .animation(.easeOut(duration: 0.2), value: error)
     }
@@ -66,12 +68,15 @@ struct AccountChangeView: View {
     }
 
     private func submit() {
+        guard !submitting else { return }
         error = ""
         if field == "password" {
             if (values["new"] ?? "").count < 8 { error = "Пароль должен содержать от 8 символов"; Haptics.rigid(); return }
             if values["new"] != values["confirm"] { error = "Пароль не совпадает"; Haptics.rigid(); return }
         }
+        submitting = true
         Task {
+            defer { submitting = false }
             do {
                 switch field {
                 case "email": try await Api.changeEmail((values["new"] ?? "").trimmed)
