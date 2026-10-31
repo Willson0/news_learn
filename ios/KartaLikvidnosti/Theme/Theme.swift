@@ -300,14 +300,25 @@ struct LiquidGlass<S: Shape, F: View>: ViewModifier {
     let fill: F
     var interactive: Bool = false
     var isOn: Bool = true
+    /// Стекло отдельным слоем под содержимым, а не вокруг него: при анимации размера
+    /// (пузырь чата растёт под реакцию) системное стекло само содержимое не обрезает и
+    /// меняет размер вместе с ним, а не догоняет рывком в конце.
+    var detached: Bool = false
 
     @ViewBuilder
     func body(content: Content) -> some View {
         #if compiler(>=6.2)
         if #available(iOS 26.0, *) {
-            content
+            if detached {
+                content.background {
+                    fill.clipShape(shape).opacity(isOn ? 1 : 0)
+                        .background(Color.clear.glassEffect(isOn ? .regular : .identity, in: shape))
+                }
+            } else {
+                content
                 .background(fill.clipShape(shape).opacity(isOn ? 1 : 0))
                 .glassEffect(isOn ? (interactive ? .regular.interactive() : .regular) : .identity, in: shape)
+            }
         } else {
             legacy(content)
         }

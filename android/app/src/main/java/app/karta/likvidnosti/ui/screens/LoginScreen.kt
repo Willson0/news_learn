@@ -1,5 +1,7 @@
 package app.karta.likvidnosti.ui.screens
 
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -187,15 +189,22 @@ fun LoginScreen(
                 Box(Modifier.size(100.dp).clip(CircleShape).background(T.Surface))
 
                 Row(modifier = Modifier.padding(top = 40.dp)) {
+                    // «Вход / Регистрация»: строка одна и та же в обоих режимах, меняется
+                    // только цвет частей (плавно). Раньше косая черта переезжала из одной
+                    // надписи в другую — обе меняли ширину и строка дёргалась.
+                    // Косая черта всегда принадлежит активной части, поэтому всегда белая.
                     val login = mode == AuthMode.Login
+                    val loginColor by animateColorAsState(if (login) T.Text else T.TextMuted, tween(250), label = "login")
+                    val registerColor by animateColorAsState(if (!login) T.Text else T.TextMuted, tween(250), label = "register")
                     Text(
-                        if (login) "Вход / " else "Вход ",
-                        style = AppFont.heading(T.FsTitle, if (login) T.Text else T.TextMuted),
+                        "Вход ",
+                        style = AppFont.heading(T.FsTitle, loginColor),
                         modifier = Modifier.pressable(pressAlpha = 1f) { switchMode(AuthMode.Login) },
                     )
+                    Text("/", style = AppFont.heading(T.FsTitle, T.Text))
                     Text(
-                        if (!login) "/ Регистрация" else "Регистрация",
-                        style = AppFont.heading(T.FsTitle, if (!login) T.Text else T.TextMuted),
+                        " Регистрация",
+                        style = AppFont.heading(T.FsTitle, registerColor),
                         modifier = Modifier.pressable(pressAlpha = 1f) { switchMode(AuthMode.Register) },
                     )
                 }

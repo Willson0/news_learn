@@ -1618,7 +1618,9 @@ struct ChatView: View {
                 guard let dto, reactionSeq[id] == seq else { return }
                 if delay > 0 { try? await Task.sleep(nanoseconds: UInt64((delay + 0.1) * 1_000_000_000)) }
                 if let i = messages.firstIndex(where: { $0.id == id }) {
-                    let fresh = ChatMessage(dto).reactions
+                    // Порядок плашек — как уже на экране: сервер сортирует по-своему,
+                    // и плашки менялись местами вторым рывком.
+                    let fresh = Self.keepingOrder(ChatMessage(dto).reactions, of: messages[i].reactions)
                     if fresh.map(\.key) != messages[i].reactions.map(\.key) {
                         withAnimation(Self.reactionSpring) { messages[i].reactions = fresh }
                     }
@@ -1632,8 +1634,17 @@ struct ChatView: View {
         }
     }
 
-    /// Сколько закрывается системное контекстное меню.
-    private static let systemMenuDismiss: Double = 0.35
+    /// Кнопка системного меню срабатывает, когда меню уже закрылось и пузырь встал на
+    /// место (видно на записи экрана), поэтому ждать почти не нужно — один кадр запаса.
+    private static let systemMenuDismiss: Double = 0.05
+
+    /// Реакции сервера в порядке, который уже показан; новые — в конце.
+    static func keepingOrder(_ fresh: [ChatMessage.Reaction], of current: [ChatMessage.Reaction]) -> [ChatMessage.Reaction] {
+        let order = Dictionary(current.enumerated().map { ($1.emoji, $0) }, uniquingKeysWith: { a, _ in a })
+        return fresh.enumerated().sorted { a, b in
+            (order[a.element.emoji] ?? current.count + a.offset, a.offset) < (order[b.element.emoji] ?? current.count + b.offset, b.offset)
+        }.map(\.element)
+    }
 
     private func applyReaction(_ id: Int, _ emoji: String) {
         guard let i = messages.firstIndex(where: { $0.id == id }) else { return }

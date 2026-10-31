@@ -110,6 +110,7 @@ struct ChatMessage: Identifiable {
         var m = self
         m.localKey = old.localKey
         if !old.localImages.isEmpty && !images.isEmpty { m.localImages = old.localImages }
+        m.reactions = ChatView.keepingOrder(reactions, of: old.reactions)
         return m
     }
 
@@ -392,11 +393,11 @@ struct MessageBubble: View {
         BubbleFooterLayout(spacing: 4, lineSpacing: 4) {
             ForEach(message.reactions) { r in
                 ReactionChip(reaction: r, onTap: onToggleReaction)
-                    // Как в Telegram: новая реакция «выпрыгивает» с лёгким перелётом,
-                    // снятая сжимается и растворяется.
+                    // Новая реакция проявляется и дорастает вместе с пузырём (одна пружина,
+                    // без перелёта за край), снятая сжимается и растворяется.
                     .transition(.asymmetric(
-                        insertion: AnyTransition.scale(scale: 0.2).combined(with: .opacity)
-                            .animation(Motion.reduced ? .easeOut(duration: 0.2) : .spring(response: 0.42, dampingFraction: 0.58)),
+                        insertion: AnyTransition.scale(scale: 0.5).combined(with: .opacity)
+                            .animation(Motion.reduced ? .easeOut(duration: 0.2) : .spring(response: 0.38, dampingFraction: 0.78)),
                         removal: AnyTransition.scale(scale: 0.4).combined(with: .opacity)
                             .animation(.easeOut(duration: 0.18))))
             }
@@ -445,8 +446,11 @@ struct MessageBubble: View {
         let mine: Bool
         let shape: UnevenRoundedRectangle
         func body(content: Content) -> some View {
-            if mine { content.liquidGlass(shape, fill: ActiveFill()) }
-            else { content.liquidGlass(shape) }
+            // Стекло отдельным слоем: при появлении реакции пузырь растёт вместе с
+            // содержимым одной пружиной (обычное системное стекло обрезало текст и
+            // догоняло размер рывком).
+            if mine { content.modifier(LiquidGlass(shape: shape, fill: ActiveFill(), detached: true)) }
+            else { content.modifier(LiquidGlass(shape: shape, fill: Theme.glassFill, detached: true)) }
         }
     }
 }
@@ -471,7 +475,7 @@ struct ReactionChip: View {
             .frame(minHeight: 26)
             .background(reaction.mine ? Theme.green.opacity(0.55) : Color(hex: "#404040"), in: Capsule())
             .overlay(Capsule().stroke(reaction.mine ? Color.white.opacity(0.6) : .clear, lineWidth: 1))
-            .scaleEffect(bump ? 1.18 : 1)
+            .scaleEffect(bump ? 1.1 : 1)
         }
         .buttonStyle(PressableStyle())
         .disabled(onTap == nil)

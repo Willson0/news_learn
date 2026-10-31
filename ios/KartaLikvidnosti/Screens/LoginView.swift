@@ -85,21 +85,25 @@ struct LoginView: View {
         #endif
     }
 
-    /// «Вход / Регистрация»: косая черта принадлежит активной части.
+    /// «Вход / Регистрация»: косая черта принадлежит активной части, поэтому всегда белая.
+    /// Строка одна и та же в обоих режимах, меняется только цвет частей: раньше черта
+    /// переезжала из одной надписи в другую, обе меняли ширину и строка дёргалась.
     private var title: some View {
         HStack(spacing: 0) {
             Button { switchMode(.login) } label: {
-                Text(mode == .login ? "Вход / " : "Вход ")
+                Text("Вход ")
                     .foregroundStyle(mode == .login ? Theme.text : Theme.textMuted)
             }
             .buttonStyle(.plain)
+            Text("/").foregroundStyle(Theme.text)
             Button { switchMode(.register) } label: {
-                Text(mode == .register ? "/ Регистрация" : "Регистрация")
+                Text(" Регистрация")
                     .foregroundStyle(mode == .register ? Theme.text : Theme.textMuted)
             }
             .buttonStyle(.plain)
         }
         .font(Theme.heading(Theme.fontTitle))
+        .animation(.easeInOut(duration: 0.25), value: mode)
     }
 
     private func switchMode(_ m: Mode) {

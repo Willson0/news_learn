@@ -622,24 +622,24 @@ private fun Footer(message: ChatMessage, onToggleReaction: ((String) -> Unit)?) 
 }
 
 /**
- * Плашка реакции (вид прежний: эмодзи + число, своя — зелёная с обводкой). Как в
- * Telegram: новая «выпрыгивает» с лёгким перелётом, число прокручивается, при смене
+ * Плашка реакции (вид прежний: эмодзи + число, своя — зелёная с обводкой). Новая
+ * проявляется и дорастает вместе с пузырём (без перелёта за край), число прокручивается, при смене
  * числа или своей отметки плашка коротко подпрыгивает.
  */
 @Composable
 private fun ReactionChip(r: Reaction, isNew: Boolean, onToggleReaction: ((String) -> Unit)?) {
-    val scale = remember { Animatable(if (isNew) 0.2f else 1f) }
+    val scale = remember { Animatable(if (isNew) 0.5f else 1f) }
     val alpha = remember { Animatable(if (isNew) 0f else 1f) }
     LaunchedEffect(Unit) {
         if (isNew) {
             launch { alpha.animateTo(1f, tween(140)) }
-            scale.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = 520f))
+            scale.animateTo(1f, spring(dampingRatio = 0.78f, stiffness = 420f))
         }
     }
     var first by remember { mutableStateOf(true) }
     LaunchedEffect(r.count, r.mine) {
         if (first) { first = false; return@LaunchedEffect }
-        scale.animateTo(1.18f, spring(dampingRatio = 0.6f, stiffness = 1400f))
+        scale.animateTo(1.1f, spring(dampingRatio = 0.6f, stiffness = 1400f))
         scale.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = 520f))
     }
     Row(

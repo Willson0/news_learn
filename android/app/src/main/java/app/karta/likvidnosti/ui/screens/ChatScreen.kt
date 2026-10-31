@@ -249,12 +249,22 @@ private fun ChatMessage.asOutgoing(): ChatMessage {
  */
 private fun ChatMessage.adopting(old: ChatMessage): ChatMessage = copy(
     localKey = old.localKey,
+    reactions = reactions.keepingOrder(old.reactions),
     localImageUris = if (old.localImageUris.isNotEmpty() && (imageUrl != null || imageUrls.isNotEmpty())) {
         old.localImageUris
     } else {
         emptyList()
     },
 )
+
+/**
+ * Реакции сервера в порядке, который уже показан; новые — в конце. Сервер сортирует
+ * по-своему, и без этого плашки менялись местами вторым рывком.
+ */
+private fun List<Reaction>.keepingOrder(current: List<Reaction>): List<Reaction> {
+    val order = current.mapIndexed { i, r -> r.emoji to i }.toMap()
+    return withIndex().sortedWith(compareBy({ order[it.value.emoji] ?: (current.size + it.index) }, { it.index })).map { it.value }
+}
 
 /** Своя реакция: поставить или снять (сервер делает так же). */
 private fun List<Reaction>.toggled(emoji: String): List<Reaction> {
@@ -1038,8 +1048,9 @@ fun ChatScreen(
                 .onSuccess { dto ->
                     if (dto == null || reactSeq[id] != seq) return@onSuccess
                     val j = messages.indexOfFirst { it.id == id }
-                    val fresh = dto.toUi().reactions
-                    if (j >= 0 && fresh != messages[j].reactions) messages[j] = messages[j].copy(reactions = fresh)
+                    if (j < 0) return@onSuccess
+                    val fresh = dto.toUi().reactions.keepingOrder(messages[j].reactions)
+                    if (fresh != messages[j].reactions) messages[j] = messages[j].copy(reactions = fresh)
                 }
                 .onFailure { e ->
                     if (e is CancellationException) return@onFailure
