@@ -459,14 +459,22 @@ struct ReactionChip: View {
     let reaction: ChatMessage.Reaction
     let onTap: ((String) -> Void)?
     @State private var bump = false
-    /// Проявление новой плашки: только масштаб и прозрачность, размер пузыря не трогает.
+    /// Новая плашка в два шага: сначала под неё плавно растёт место (и пузырь вместе
+    /// с ним), потом в готовом месте проявляется сама плашка — она никогда не торчит
+    /// за краем пузыря. Место растёт покадрово (`GrowFrame`), а не неявной анимацией
+    /// размера: её системная обёртка меню показывала сжатием и рывком.
+    @State private var grow: CGFloat
     @State private var shown: Bool
+    @State private var natural: CGSize = .zero
 
     init(reaction: ChatMessage.Reaction, isNew: Bool = false, onTap: ((String) -> Void)?) {
         self.reaction = reaction
         self.onTap = onTap
+        _grow = State(initialValue: isNew ? 0 : 1)
         _shown = State(initialValue: !isNew)
     }
+
+    private static let growDuration = 0.26
 
     var body: some View {
         Button { onTap?(reaction.emoji) } label: {
@@ -486,15 +494,41 @@ struct ReactionChip: View {
         .disabled(onTap == nil)
         .scaleEffect(shown ? 1 : 0.4)
         .opacity(shown ? 1 : 0)
+        .background(GeometryReader { g in
+            Color.clear
+                .onAppear { natural = g.size }
+                .onChange(of: g.size) { natural = $0 }
+        })
+        .modifier(GrowFrame(progress: grow, natural: natural))
         .onAppear {
             guard !shown else { return }
-            withAnimation(Motion.reduced ? .easeOut(duration: 0.2) : .spring(response: 0.34, dampingFraction: 0.62)) { shown = true }
+            withAnimation(.easeInOut(duration: Self.growDuration)) { grow = 1 }
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.growDuration) {
+                withAnimation(Motion.reduced ? .easeOut(duration: 0.2) : .spring(response: 0.32, dampingFraction: 0.66)) { shown = true }
+            }
         }
         .onChange(of: reaction.key) { _ in pop() }
     }
 
+    /// Место под плашку: доля её размера, пересчитывается каждый кадр анимации
+    /// (настоящая раскладка, пузырь и стекло растут вместе). При 1 — без ограничений.
+    private struct GrowFrame: ViewModifier, Animatable {
+        var progress: CGFloat
+        let natural: CGSize
+        var animatableData: CGFloat {
+            get { progress }
+            set { progress = newValue }
+        }
+        func body(content: Content) -> some View {
+            let growing = progress < 0.999
+            content.frame(width: growing ? natural.width * progress : nil,
+                          height: growing ? natural.height * progress : nil,
+                          alignment: .leading)
+        }
+    }
+
     private func pop() {
-        guard !Motion.reduced else { return }
+        guard !Motion.reduced, shown else { return }
         withAnimation(.spring(response: 0.18, dampingFraction: 0.6)) { bump = true }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
             withAnimation(.spring(response: 0.34, dampingFraction: 0.55)) { bump = false }

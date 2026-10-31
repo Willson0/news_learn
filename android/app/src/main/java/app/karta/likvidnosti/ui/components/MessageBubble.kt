@@ -14,6 +14,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.graphicsLayer
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.animation.core.spring
 import androidx.compose.runtime.key
@@ -632,6 +633,9 @@ private fun ReactionChip(r: Reaction, isNew: Boolean, onToggleReaction: ((String
     val alpha = remember { Animatable(if (isNew) 0f else 1f) }
     LaunchedEffect(Unit) {
         if (isNew) {
+            // Сначала пузырь дорастает до нового размера (animateContentSize), и только
+            // потом в готовом месте проявляется плашка — она не торчит за краем.
+            delay(260)
             launch { alpha.animateTo(1f, tween(140)) }
             scale.animateTo(1f, spring(dampingRatio = 0.78f, stiffness = 420f))
         }
