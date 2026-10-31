@@ -13,6 +13,7 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import okio.buffer
 
 /**
  * Сборка multipart-частей для загрузки отчётов и фото чатов.
@@ -93,7 +94,7 @@ object Uploads {
                     if (total > 0) onProgress((sent.toFloat() / total).coerceIn(0f, 1f))
                 }
             }
-            val buffered = okio.buffer(counting)
+            val buffered = counting.buffer()
             delegate.writeTo(buffered)
             buffered.flush()
         }
