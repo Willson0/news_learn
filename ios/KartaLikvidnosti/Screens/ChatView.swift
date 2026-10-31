@@ -41,9 +41,6 @@ struct ChatView: View {
     @State private var reactionSeq: [Int: Int] = [:]
     /// Только что поставленная реакция — её плашка проявляется на месте.
     @State private var popReaction: PopReaction?
-    /// Пузырь, по которому открыто меню: его место на экране и высота панели действий.
-    @State private var menuFrame: CGRect?
-    @State private var menuPanelHeight: CGFloat = 0
     struct PopReaction: Equatable { let id: Int; let emoji: String }
     @State private var flashId: Int? = nil
     // Поиск по сообщениям.
@@ -178,9 +175,6 @@ struct ChatView: View {
         .toolbar(.hidden, for: .navigationBar)
         .overlay { if searchMode && searchListOpen { searchListOverlay.transition(.opacity) } }
         .overlay { if menuFor != nil { contextMenuOverlay.transition(.opacity) } }
-        .onPreferenceChange(MenuBubbleFrameKey.self) { frame in
-            if let frame { menuFrame = frame }
-        }
         .overlay { if photoViewerURL != nil { photoViewerOverlay.transition(.opacity) } }
         .overlay(alignment: .top) {
             if let toast {
@@ -699,21 +693,10 @@ struct ChatView: View {
                         }
                     }
                     .opacity(menuFor == m.id ? 0 : 1)
-                    // Где пузырь на экране — меню открывается ровно на его месте.
-                    .background {
-                        if menuFor == m.id {
-                            GeometryReader { g in
-                                Color.clear.preference(key: MenuBubbleFrameKey.self, value: g.frame(in: .global))
-                            }
-                        }
-                    }
                     .onTapGesture { onTap(m) }
-                    // Своё меню вместо системного: пузырь не увеличивается, а остаётся
-                    // на месте, фон затемняется (системное меню поднимало и увеличивало
-                    // пузырь, а реакция после него появлялась рывком).
-                    .onLongPressGesture(minimumDuration: 0.35) {
-                        if !selectMode && !searchMode && !m.isSystem { onLongPress(m) }
-                    }
+                    .modifier(MessageContextMenu(enabled: !selectMode && !searchMode && !m.pending && !m.failed && !m.isSystem) {
+                        systemMenuItems(m)
+                    })
                 if !m.mine { Spacer(minLength: 0) }
             }
         }
@@ -785,7 +768,6 @@ struct ChatView: View {
         inputFocused = false
         Haptics.medium()
         deleteMenu = false
-        menuFrame = nil
         menuFor = m.id
     }
 
@@ -1245,72 +1227,48 @@ struct ChatView: View {
 
     /// «Чат зажатие сообщения» (Figma 337:36256 / 337:36316): размытие 12.9 и
     /// затемнение #070707 70 %, сверху плашка реакций, затем сообщение и
-    /// стеклянное меню 193 pt. Сообщение не увеличивается и стоит на своём месте в
-    /// ленте (как в Telegram); если снизу не хватает места под меню, вся группа
-    /// плавно поднимается.
+    /// стеклянное меню 193 pt.
     private var contextMenuOverlay: some View {
         let m = messages.first { $0.id == menuFor }
-        return GeometryReader { geo in
-            let origin = geo.frame(in: .global).origin
-            ZStack(alignment: .topLeading) {
-                ZStack {
-                    BackdropBlur(radius: 12.9)
-                    Color(hex: "#070707").opacity(0.7)
-                }
-                .ignoresSafeArea()
-                .onTapGesture { closeMenu() }
+        return ZStack {
+            ZStack {
+                BackdropBlur(radius: 12.9)
+                Color(hex: "#070707").opacity(0.7)
+            }
+            .ignoresSafeArea()
+            .onTapGesture { closeMenu() }
 
-                if let m, let frame = menuFrame {
-                    let bubble = frame.offsetBy(dx: -origin.x, dy: -origin.y)
-                    let barHeight: CGFloat = 40, gap: CGFloat = 4
-                    let top = bubble.minY - barHeight - gap
-                    let bottom = bubble.maxY + gap + menuPanelHeight
-                    // Оверлей во весь экран (без отступов): поля под «островок» и индикатор «домой».
-                    let minTop: CGFloat = 62
-                    let maxBottom = geo.size.height - 42
-                    // Ширина плашки реакций: 8 × 30 + 7 × 4 + 2 × 9.
-                    let groupWidth = max(bubble.width, 286)
-                    let x = m.mine ? max(bubble.maxX - groupWidth, 8) : min(bubble.minX, geo.size.width - groupWidth - 8)
-                    let shift: CGFloat = bottom > maxBottom ? max(maxBottom - bottom, minTop - top) : (top < minTop ? minTop - top : 0)
-                    VStack(alignment: m.mine ? .trailing : .leading, spacing: gap) {
-                        HStack(spacing: 4) {
-                            // Уже поставленная реакция подсвечена: повторный тап её снимает.
-                            let mine = Set(m.reactions.filter(\.mine).map(\.emoji))
-                            ForEach(reactions, id: \.self) { r in
-                                Button { react(m.id, r, closing: true) } label: {
-                                    Text(r).font(.system(size: 20)).frame(width: 30, height: 30)
-                                        .background(mine.contains(r) ? Color.white.opacity(0.22) : .clear, in: Circle())
-                                }
-                                .buttonStyle(PressableStyle())
+            if let m {
+                VStack(alignment: m.mine ? .trailing : .leading, spacing: 4) {
+                    HStack(spacing: 4) {
+                        // Уже поставленная реакция подсвечена: повторный тап её снимает.
+                        let mine = Set(m.reactions.filter(\.mine).map(\.emoji))
+                        ForEach(reactions, id: \.self) { r in
+                            Button { react(m.id, r, closing: true) } label: {
+                                Text(r).font(.system(size: 20)).frame(width: 30, height: 30)
+                                    .background(mine.contains(r) ? Color.white.opacity(0.22) : .clear, in: Circle())
                             }
+                            .buttonStyle(PressableStyle())
                         }
-                        .padding(.horizontal, 9)
-                        .frame(height: barHeight)
-                        .background(Theme.surface, in: Capsule())
-                        .fixedSize()
-
-                        MessageBubble(message: m, isTail: true, showHeader: !isDirect)
-                            .frame(width: bubble.width, height: bubble.height)
-                            .allowsHitTesting(false)
-
-                        Group {
-                            if deleteMenu { deleteMenuPanel(m) } else { actionsMenuPanel(m) }
-                        }
-                        .background(GeometryReader { g in
-                            Color.clear.preference(key: MenuPanelHeightKey.self, value: g.size.height)
-                        })
-                        .transition(.scale(scale: 0.95, anchor: m.mine ? .topTrailing : .topLeading).combined(with: .opacity))
                     }
-                    .frame(width: groupWidth, alignment: m.mine ? .trailing : .leading)
-                    .offset(x: x, y: top + shift)
-                    .opacity(menuPanelHeight > 0 ? 1 : 0)
-                    .onPreferenceChange(MenuPanelHeightKey.self) { h in
-                        if abs(h - menuPanelHeight) > 0.5 { menuPanelHeight = h }
+                    .padding(.horizontal, 9)
+                    .frame(height: 40)
+                    .background(Theme.surface, in: Capsule())
+
+                    MessageBubble(message: m, isTail: true, showHeader: !isDirect)
+                        .allowsHitTesting(false)
+
+                    Group {
+                        if deleteMenu { deleteMenuPanel(m) } else { actionsMenuPanel(m) }
                     }
+                    .transition(.scale(scale: 0.95, anchor: m.mine ? .topTrailing : .topLeading).combined(with: .opacity))
                 }
+                .frame(maxWidth: .infinity, alignment: m.mine ? .trailing : .leading)
+                .padding(.leading, m.mine || isDirect ? Theme.screenX : Theme.screenX + 34)
+                .padding(.trailing, Theme.screenX)
+                .transition(.scale(scale: 0.96).combined(with: .opacity))
             }
         }
-        .ignoresSafeArea()
     }
 
     private func actionsMenuPanel(_ m: ChatMessage) -> some View {
@@ -1640,7 +1598,6 @@ struct ChatView: View {
 
     /// Реакция: поставить или снять свою (сервер переключает). Сразу меняем локально,
     /// как в Telegram; не удалось — нажатие откатывается и показывается тост.
-    /// Пружина смены реакций — та же, что у размера пузыря (MessageBubble).
 
     /// - Parameter afterSystemMenu: реакция выбрана в системном меню. Пузырь меняется,
     ///   когда меню почти закрылось: иначе система возвращает старый снимок пузыря,
@@ -1683,9 +1640,11 @@ struct ChatView: View {
         }
     }
 
-    /// Кнопка системного меню срабатывает, когда меню уже закрылось и пузырь встал на
-    /// место (видно на записи экрана), поэтому ждать почти не нужно — один кадр запаса.
-    private static let systemMenuDismiss: Double = 0.05
+    /// Кнопка системного меню срабатывает, когда меню закрылось и пузырь встаёт на место;
+    /// реакция появляется уже после этой анимации системы, чтобы они не наложились.
+    /// Размер пузыря при этом меняется сразу (анимацию размера системная обёртка меню
+    /// показывает сжатием и рывком), а плавность даёт проявление самой плашки.
+    private static let systemMenuDismiss: Double = 0.2
 
     /// Реакции сервера в порядке, который уже показан; новые — в конце.
     static func keepingOrder(_ fresh: [ChatMessage.Reaction], of current: [ChatMessage.Reaction]) -> [ChatMessage.Reaction] {
@@ -2180,18 +2139,6 @@ private struct ShareSheet: UIViewControllerRepresentable {
 }
 
 /// Нижняя граница ленты в координатах экрана чата — чтобы понять, внизу ли пользователь.
-/// Место пузыря, по которому открыто меню (в координатах экрана).
-private struct MenuBubbleFrameKey: PreferenceKey {
-    static var defaultValue: CGRect? = nil
-    static func reduce(value: inout CGRect?, nextValue: () -> CGRect?) { value = value ?? nextValue() }
-}
-
-/// Высота панели действий меню сообщения.
-private struct MenuPanelHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
-}
-
 private struct ChatBottomKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }

@@ -109,11 +109,6 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.layout.positionInWindow
-import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -1036,8 +1031,6 @@ fun ChatScreen(
     // Реакции: номер последнего нажатия по сообщению — ответ сервера на старое нажатие
     // не перетирает то, что уже показано после нового.
     val reactSeq = remember { HashMap<Long, Int>() }
-    // Место каждого пузыря на экране (без перерисовки): меню сообщения встаёт на его место.
-    val bubbleBounds = remember { HashMap<Long, Rect>() }
 
     /**
      * Реакция — сразу на экране, как в Telegram; сервер подтверждает в фоне.
@@ -1431,8 +1424,6 @@ fun ChatScreen(
                                             message = m,
                                             modifier = Modifier
                                                 .weight(1f, fill = false)
-                                                // Где пузырь на экране — меню открывается ровно на его месте.
-                                                .onGloballyPositioned { bubbleBounds[m.id] = it.boundsInWindow() }
                                                 .graphicsLayer {
                                                     alpha = if (menuFor == m.id) 0f else appear.value.coerceIn(0f, 1f)
                                                 }
@@ -1769,10 +1760,8 @@ fun ChatScreen(
                 // выбранная реакция видна сразу, а не после закрытия меню.
                 val m = menuMsg.value?.let { old -> messages.firstOrNull { it.id == old.id } ?: old }
                 if (m != null) {
-                    val anchor = remember(m.id) { bubbleBounds[m.id] }
                     MessageMenuOverlay(
                         message = m,
-                        anchor = anchor,
                         isDirect = isDirect,
                         deleteMenu = deleteMenu,
                         canDelete = canDeleteAll(m),
@@ -2603,7 +2592,6 @@ private fun PausedRecordingBar(clock: String, onCancel: () -> Unit, onSend: () -
 @Composable
 private fun MessageMenuOverlay(
     message: ChatMessage,
-    anchor: Rect?,
     isDirect: Boolean,
     deleteMenu: Boolean,
     canDelete: Boolean,
@@ -2621,10 +2609,10 @@ private fun MessageMenuOverlay(
     onDeleteMine: () -> Unit,
     onSelect: () -> Unit,
 ) {
-    // Сообщение не увеличивается и стоит на своём месте в ленте (как в Telegram), фон
-    // затемняется; не хватает места под меню снизу — вся группа поднимается.
-    var rootTop by remember { mutableFloatStateOf(0f) }
-    Box(modifier = Modifier.fillMaxSize().onGloballyPositioned { rootTop = it.positionInWindow().y }) {
+    val anim = remember { Animatable(0f) }
+    LaunchedEffect(Unit) { anim.animateTo(1f, tween(durationMillis = 240, easing = FastOutSlowInEasing)) }
+    val mine = message.mine
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -2632,53 +2620,19 @@ private fun MessageMenuOverlay(
                 .background(hex("#070707").copy(alpha = 0.7f))
                 .pressable(pressAlpha = 1f) { onClose() },
         )
-        Layout(
-            content = { MenuColumn(message, isDirect, deleteMenu, canDelete, canPin, canComplain, onReact, onReply,
-                onCopy, onPin, onCopyLink, onComplain, onDeleteMenu, onDeleteAll, onDeleteMine, onSelect) },
-        ) { measurables, constraints ->
-            val p = measurables.first().measure(constraints.copy(minWidth = 0, minHeight = 0))
-            val h = constraints.maxHeight
-            // Над пузырём — плашка реакций 40 и зазор 4.
-            val above = (40.dp + 4.dp).toPx()
-            val wanted = anchor?.let { it.top - rootTop - above } ?: ((h - p.height) / 2f)
-            val minTop = 56.dp.toPx()
-            val maxBottom = h - 40.dp.toPx()
-            var y = wanted
-            if (y + p.height > maxBottom) y = maxBottom - p.height
-            if (y < minTop) y = minTop
-            layout(constraints.maxWidth, h) { p.placeRelative(0, y.roundToInt()) }
-        }
-    }
-}
-
-@Composable
-private fun MenuColumn(
-    message: ChatMessage,
-    isDirect: Boolean,
-    deleteMenu: Boolean,
-    canDelete: Boolean,
-    canPin: Boolean,
-    canComplain: Boolean,
-    onReact: (String) -> Unit,
-    onReply: () -> Unit,
-    onCopy: () -> Unit,
-    onPin: () -> Unit,
-    onCopyLink: () -> Unit,
-    onComplain: () -> Unit,
-    onDeleteMenu: () -> Unit,
-    onDeleteAll: () -> Unit,
-    onDeleteMine: () -> Unit,
-    onSelect: () -> Unit,
-) {
-    val mine = message.mine
-    run {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(
                     start = if (mine || isDirect) T.ScreenX else T.ScreenX + 34.dp,
                     end = T.ScreenX,
-                ),
+                )
+                .graphicsLayer {
+                    val s = 0.96f + 0.04f * anim.value
+                    scaleX = s
+                    scaleY = s
+                    transformOrigin = TransformOrigin(if (mine) 1f else 0f, 0.5f)
+                },
             horizontalAlignment = if (mine) Alignment.End else Alignment.Start,
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
