@@ -52,7 +52,7 @@
                 <input v-model="account.login" class="input" required autocomplete="username">
             </label>
             <div class="row">
-                <label class="field"><span>Новый пароль (от 8 символов)</span>
+                <label class="field"><span>Новый пароль (от 10 символов, буквы и цифры)</span>
                     <input v-model="account.password" class="input" type="password" autocomplete="new-password">
                 </label>
                 <label class="field"><span>Повторите пароль</span>

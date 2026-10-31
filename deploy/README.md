@@ -114,7 +114,7 @@ curl http://127.0.0.1:8095/api/ping
 docker compose -f deploy/docker-compose.yml exec -w /app/backend app php artisan panel:create ЛОГИН ПАРОЛЬ
 ```
 
-Пароль не короче 8 символов. Логин и пароль потом меняются в разделе «Настройки».
+Пароль не короче 10 символов. Логин и пароль потом меняются в разделе «Настройки».
 
 Для push-уведомлений и аналитики в `deploy/.env` нужны:
 
