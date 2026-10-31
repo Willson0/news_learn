@@ -153,6 +153,8 @@ struct MessageBubble: View {
     var onToggleReaction: ((String) -> Void)? = nil
     /// Поиск по чату: совпадения в тексте подсвечиваются.
     var highlight: String? = nil
+    /// Реакция, которую только что поставили: её плашка проявляется на месте.
+    var popReaction: String? = nil
 
     static let maxWidth: CGFloat = 302
     private let secondary = Color.white.opacity(0.6)
@@ -215,8 +217,10 @@ struct MessageBubble: View {
         .frame(maxWidth: Self.maxWidth, alignment: .leading)
         .fixedSize(horizontal: true, vertical: false)
         .modifier(BubbleGlass(mine: message.mine, shape: bubbleShape))
-        // Пузырь плавно меняет размер и форму, когда появляются или пропадают реакции.
-        .animation(.spring(response: 0.38, dampingFraction: 0.86), value: reactionsKey)
+        // Размер пузыря под реакцию меняется сразу, без анимации: системное контекстное
+        // меню держит пузырь в своей обёртке, и анимация размера в ней сначала сжимала
+        // содержимое, а потом рывком растягивала пузырь (видно на записи экрана).
+        // Плавность даёт сама новая плашка — она проявляется на месте.
     }
 
     /// Текст с выделенными упоминаниями «@тег» и найденным в поиске фрагментом.
@@ -392,14 +396,7 @@ struct MessageBubble: View {
     private var footer: some View {
         BubbleFooterLayout(spacing: 4, lineSpacing: 4) {
             ForEach(message.reactions) { r in
-                ReactionChip(reaction: r, onTap: onToggleReaction)
-                    // Новая реакция проявляется и дорастает вместе с пузырём (одна пружина,
-                    // без перелёта за край), снятая сжимается и растворяется.
-                    .transition(.asymmetric(
-                        insertion: AnyTransition.scale(scale: 0.5).combined(with: .opacity)
-                            .animation(Motion.reduced ? .easeOut(duration: 0.2) : .spring(response: 0.38, dampingFraction: 0.78)),
-                        removal: AnyTransition.scale(scale: 0.4).combined(with: .opacity)
-                            .animation(.easeOut(duration: 0.18))))
+                ReactionChip(reaction: r, isNew: r.emoji == popReaction, onTap: onToggleReaction)
             }
             HStack(alignment: .bottom, spacing: 4) {
                 if message.pinned {
@@ -462,6 +459,14 @@ struct ReactionChip: View {
     let reaction: ChatMessage.Reaction
     let onTap: ((String) -> Void)?
     @State private var bump = false
+    /// Проявление новой плашки: только масштаб и прозрачность, размер пузыря не трогает.
+    @State private var shown: Bool
+
+    init(reaction: ChatMessage.Reaction, isNew: Bool = false, onTap: ((String) -> Void)?) {
+        self.reaction = reaction
+        self.onTap = onTap
+        _shown = State(initialValue: !isNew)
+    }
 
     var body: some View {
         Button { onTap?(reaction.emoji) } label: {
@@ -479,6 +484,12 @@ struct ReactionChip: View {
         }
         .buttonStyle(PressableStyle())
         .disabled(onTap == nil)
+        .scaleEffect(shown ? 1 : 0.4)
+        .opacity(shown ? 1 : 0)
+        .onAppear {
+            guard !shown else { return }
+            withAnimation(Motion.reduced ? .easeOut(duration: 0.2) : .spring(response: 0.34, dampingFraction: 0.62)) { shown = true }
+        }
         .onChange(of: reaction.key) { _ in pop() }
     }
 
