@@ -4,13 +4,23 @@
 
         <template v-if="!result">
             <div class="block">
-                <div class="muted small">Цена подписки, ₽</div>
+                <div class="muted small">Срок подписки</div>
+                <div class="chips">
+                    <button v-for="m in monthOptions" :key="m" class="btn" :class="months === m ? 'btn-primary' : 'btn-secondary'" @click="months = m">
+                        {{ monthLabel(m) }}
+                    </button>
+                </div>
+            </div>
+
+            <div class="block">
+                <div class="muted small">Стоимость за {{ monthLabel(months) }}, ₽</div>
                 <input v-model.number="price" class="input" type="number" min="1" placeholder="Например, 1490" @keyup.enter="issue">
             </div>
 
             <p class="muted small">
-                После этого у пользователя в приложении появится кнопка оплаты и придёт уведомление.
-                Подписка продлевается автоматически по этой цене.
+                Пользователь оплачивает {{ valid ? money(Number(price)) : 'эту сумму' }} за {{ monthLabel(months) }},
+                а по окончании срока подписка автоматически продлевается ещё на {{ monthLabel(months) }} за ту же сумму.
+                В приложении появится кнопка оплаты и придёт уведомление.
             </p>
             <ErrorText :message="error" />
             <div class="dialog-actions">
@@ -37,7 +47,7 @@ import Modal from './Modal.vue';
 import ErrorText from './ErrorText.vue';
 
 /**
- * «Выставить счёт»: админ вписывает цену подписки пользователя. Без неё оплатить подписку
+ * «Выставить счёт»: админ выбирает срок подписки и вписывает её цену за этот срок. Без неё оплатить подписку
  * в приложении нельзя (кнопки нет); после — кнопка появляется, пользователь платит сам.
  */
 export default {
@@ -50,6 +60,8 @@ export default {
     data() {
         return {
             price: null,
+            months: 1,
+            monthOptions: [1, 3, 6, 12],
             result: null,
             error: '',
             busy: false,
@@ -73,7 +85,7 @@ export default {
             this.busy = true;
             this.error = '';
             try {
-                this.result = (await api('POST', `/users/${this.user.id}/invoices`, { amount: Number(this.price) })).data;
+                this.result = (await api('POST', `/users/${this.user.id}/invoices`, { amount: Number(this.price), months: this.months })).data;
             } catch (e) {
                 this.error = e.message;
             } finally {

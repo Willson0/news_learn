@@ -161,9 +161,15 @@ class PanelTest extends TestCase
         $this->assertDatabaseHas('invoices', ['user_id' => $user->id, 'amount' => 1700, 'months' => 1, 'status' => 'pending', 'created_by' => 'boss']);
         $this->assertDatabaseHas('subscriptions', ['user_id' => $user->id, 'amount' => 1700, 'months' => 1]);
 
+        // Админ выбирает и срок: цена — за этот срок, на него же идёт автопродление.
+        $this->asPanel()->postJson("/admin/api/users/{$user->id}/invoices", ['amount' => 4500, 'months' => 3])
+            ->assertCreated()->assertJsonPath('data.months', 3);
+        $this->assertDatabaseHas('subscriptions', ['user_id' => $user->id, 'amount' => 4500, 'months' => 3]);
+        $this->assertSame(1, Invoice::where('user_id', $user->id)->where('status', 'pending')->count());
+
         Sanctum::actingAs($user);
         $this->getJson('/api/subscription')->assertOk()
-            ->assertJsonPath('data.price', '1 700 ₽ / 1 мес.')
+            ->assertJsonPath('data.price', '4 500 ₽ / 3 мес.')
             ->assertJsonPath('data.can_pay', true);
     }
 
