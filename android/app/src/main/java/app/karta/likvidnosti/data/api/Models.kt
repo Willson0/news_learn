@@ -94,8 +94,13 @@ class SubscriptionDto(
     val until: String? = null,
     @SerialName("auto_pay") val autoPay: Boolean = false,
     @SerialName("payment_method") val paymentMethod: String? = null,
-    /** Стоимость для отображения, например «990 ₽ / 1 мес.». */
+    /** Стоимость для отображения, например «990 ₽ / 1 мес.»; null — тариф не определён. */
     val price: String? = null,
+    /**
+     * Оплатить сейчас можно: админ выставил счёт или назначил тариф. Новый аккаунт — нет
+     * (макет «Тарифный план: Не определен»). Старый сервер поля не присылает — считаем, что можно.
+     */
+    @SerialName("can_pay") val canPay: Boolean = true,
 ) {
     /**
      * Подписка активна: флаг и дата окончания не раньше сегодняшней по Москве — то же правило,

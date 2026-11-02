@@ -94,6 +94,8 @@ fun SubscriptionScreen(onBack: () -> Unit, onToMaterials: () -> Unit = {}) {
     var until by remember { mutableStateOf(cached?.until ?: "") }
     var price by remember { mutableStateOf(cached?.price ?: "") }
     var autoPay by remember { mutableStateOf(cached?.autoPay ?: false) }
+    // Оплатить можно (есть счёт или тариф); у нового аккаунта — нет.
+    var canPay by remember { mutableStateOf(cached?.canPay ?: true) }
     var card by remember { mutableStateOf(AppData.card) }
     var paymentCheck by remember { mutableStateOf<PaymentCheck?>(null) }
     // Запрос оплаты ушёл: повторные нажатия «Привязать» ничего не делают (одна оплата).
@@ -117,6 +119,7 @@ fun SubscriptionScreen(onBack: () -> Unit, onToMaterials: () -> Unit = {}) {
         until = it.until ?: ""
         price = it.price ?: ""
         autoPay = it.autoPay
+        canPay = it.canPay
         known = true
         statusUnknown = false
         AppData.subscription = it
@@ -195,6 +198,11 @@ fun SubscriptionScreen(onBack: () -> Unit, onToMaterials: () -> Unit = {}) {
 
     fun startBind() {
         if (cardBusy) return
+        // Тариф не назначен — оплатить нечего: подписка открывается по счёту администратора.
+        if (known && !canPay && !active) {
+            AppToast.show("Тариф ещё не определён. Когда администратор выставит счёт, придёт уведомление со стоимостью")
+            return
+        }
         // Итог прошлой оплаты ещё неизвестен — не предлагаем платить второй раз.
         if (paymentUnsettled()) {
             scope.launch { checkPayment() }
@@ -268,7 +276,7 @@ fun SubscriptionScreen(onBack: () -> Unit, onToMaterials: () -> Unit = {}) {
                 if (!known) {
                     SkeletonBox(Modifier.width(110.dp).height(16.dp))
                 } else {
-                    Text(price.ifEmpty { "—" }, style = AppFont.sans(T.FsBase, color = T.TextSecondary))
+                    Text(price.ifEmpty { "Не определен" }, style = AppFont.sans(T.FsBase, color = T.TextSecondary))
                 }
             }
         }

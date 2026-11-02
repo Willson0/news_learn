@@ -30,6 +30,8 @@ struct SubscriptionView: View {
     @State private var cardKnown = false
     @State private var cardBusy = false
     @State private var autoPay = false
+    /// Оплатить можно (есть счёт или тариф); у нового аккаунта — нет.
+    @State private var canPay = true
     /// Статус не удалось получить, а сохранённого нет: честно «Нет связи», а не «Неактивна».
     @State private var statusUnknown = false
     /// Платёж ушёл, но итог ещё неизвестен (сеть оборвалась, банк не ответил): пока
@@ -74,7 +76,7 @@ struct SubscriptionView: View {
                         Text("Тарифный план").font(Theme.sans(Theme.fontMd, .bold)).foregroundStyle(Theme.text)
                         Spacer(minLength: 8)
                         if known {
-                            Text(price.isEmpty ? "—" : price).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
+                            Text(price.isEmpty ? "Не определен" : price).font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
                         } else {
                             SkeletonBlock(width: 110, height: 16, radius: 6)
                         }
@@ -165,6 +167,7 @@ struct SubscriptionView: View {
     private func apply(_ s: SubscriptionDto) {
         active = s.active; until = s.until ?? ""; price = s.price ?? ""
         autoPay = s.autoPay
+        canPay = s.canPay
         known = true
     }
 
@@ -214,6 +217,11 @@ struct SubscriptionView: View {
 
     private func bindCard() {
         Haptics.light()
+        // Тариф не назначен — оплатить нечего: подписка открывается по счёту администратора.
+        if known, !canPay, !active {
+            AppToast.shared.show("Тариф ещё не определён. Когда администратор выставит счёт, придёт уведомление со стоимостью")
+            return
+        }
         // Итог прошлой оплаты ещё неизвестен — не предлагаем платить второй раз.
         if paymentUnsettled {
             Task { await checkPayment() }

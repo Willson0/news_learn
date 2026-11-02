@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\AppSetting;
 use App\Models\Subscription;
+use App\Support\SubscriptionPayload;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -11,18 +11,7 @@ class SubscriptionController extends Controller
 {
     public function show(Request $request): JsonResponse
     {
-        $sub = $request->user()->subscription;
-
-        return response()->json([
-            'data' => [
-                'active' => (bool) $sub?->grantsAccessNow(),
-                'plan' => $sub?->plan,
-                'until' => $sub?->until?->format('d.m.Y'),
-                'auto_pay' => (bool) $sub?->auto_pay,
-                'payment_method' => $sub?->payment_method,
-                'price' => AppSetting::subscriptionPriceLabel($sub),
-            ],
-        ]);
+        return response()->json(['data' => SubscriptionPayload::for($request->user())]);
     }
 
     /**

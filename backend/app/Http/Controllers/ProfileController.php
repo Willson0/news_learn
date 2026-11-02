@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\AppSetting;
 use App\Models\Instrument;
+use App\Support\SubscriptionPayload;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -163,17 +163,6 @@ class ProfileController extends Controller
      */
     private function subscriptionPayload($user): array
     {
-        $sub = $user->subscription;
-
-        return [
-            // Как в /subscription и в проверке доступа к отчётам: флаг active без учёта
-            // даты окончания давал приложению «подписка есть», а отчёты приходили пустыми.
-            'active' => (bool) $sub?->grantsAccessNow(),
-            'plan' => $sub?->plan,
-            'until' => $sub?->until?->format('d.m.Y'),
-            'auto_pay' => (bool) $sub?->auto_pay,
-            'payment_method' => $sub?->payment_method,
-            'price' => AppSetting::subscriptionPriceLabel($sub),
-        ];
+        return SubscriptionPayload::for($user);
     }
 }

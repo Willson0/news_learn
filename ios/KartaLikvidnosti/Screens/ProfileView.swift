@@ -15,6 +15,8 @@ struct ProfileView: View {
     @State private var subActive = false
     @State private var subUntil = ""
     @State private var subPrice = ""
+    /// Можно ли оплатить: без выставленного счёта или назначенного тарифа — нет.
+    @State private var subCanPay = true
     @State private var instruments: [InstrumentDto] = []
     @State private var history: [ReportDto] = []
     @State private var sortOpen = false
@@ -112,7 +114,7 @@ struct ProfileView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                AppButton(title: "Привязать счет и оплатить", variant: .accent) { router.push(.subscription) }
+                AppButton(title: "Привязать счет и оплатить", variant: .accent) { payTapped() }
             }
             .padding(.top, 16)
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
@@ -466,6 +468,18 @@ struct ProfileView: View {
 
     private func applySubscription(_ s: SubscriptionDto) {
         subActive = s.active; subUntil = s.until ?? ""; subPrice = s.price ?? ""
+        subCanPay = s.canPay
+    }
+
+    /// Новый аккаунт оплатить подписку не может, пока админ не выставит счёт
+    /// (макет 484:13055 «Тарифный план: Не определен»): объясняем, а не ведём на оплату.
+    private func payTapped() {
+        guard subCanPay else {
+            Haptics.light()
+            AppToast.shared.show("Тариф ещё не определён. Когда администратор выставит счёт, придёт уведомление со стоимостью")
+            return
+        }
+        router.push(.subscription)
     }
 
     private func load() async {

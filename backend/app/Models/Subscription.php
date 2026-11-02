@@ -39,6 +39,16 @@ class Subscription extends Model
             && $this->until->toDateString() >= self::today();
     }
 
+    /**
+     * Тариф пользователю определён: админ задал сумму (счёт оплачен или условия изменены),
+     * либо подписка уже оплачивалась картой. Новый аккаунт тарифа не имеет: оплатить подписку
+     * он может только по счёту, который выставит администратор (макет «Тарифный план: Не определен»).
+     */
+    public function tariffDefined(): bool
+    {
+        return $this->amount !== null || $this->last_payment_id !== null;
+    }
+
     /** То же правило, что grantsAccessNow(), для выборок (админка, рассылки, аналитика). */
     public function scopeGrantingAccess(Builder $query): Builder
     {

@@ -53,6 +53,22 @@ class BillingController extends Controller
             return response()->json(['message' => 'Привязка карты временно недоступна'], 503);
         }
 
+        // Без действующей подписки оплатить можно только по условиям, которые задал админ.
+        $subscription = $user->subscription;
+        if (! $subscription?->grantsAccessNow()) {
+            // Выставлен счёт — оплачиваем его: та же страница Т-Кассы сохраняет карту для автопродления.
+            $invoice = Invoice::pendingFor($user);
+            if ($invoice) {
+                return response()->json(['confirmation_url' => $invoice->confirmation_url, 'invoice' => $invoice->id]);
+            }
+            if (! $subscription?->tariffDefined()) {
+                return response()->json([
+                    'message' => 'Тариф ещё не определён. Когда администратор его назначит, придёт уведомление со стоимостью.',
+                    'code' => 'tariff_not_defined',
+                ], 409);
+            }
+        }
+
         try {
             $payment = $this->tbank->init(
                 amount: (int) config('services.tbank.bind_amount'),
@@ -275,8 +291,10 @@ class BillingController extends Controller
             Log::warning('Т-Касса: не удалось вернуть сумму привязки', ['payment_id' => $paymentId, 'error' => $e->getMessage()]);
         }
 
+        // Сразу списываем подписку, только если доступа нет, а тариф уже назначен:
+        // без тарифа подписка оплачивается по счёту администратора.
         $subscription = $user->subscription;
-        if (! $subscription?->grantsAccessNow()) {
+        if (! $subscription?->grantsAccessNow() && $subscription?->tariffDefined()) {
             try {
                 $this->billing->apply($user, $this->billing->charge($user, 'renew-'.$user->id.'-bind-'.Str::random(6)));
             } catch (RuntimeException $e) {

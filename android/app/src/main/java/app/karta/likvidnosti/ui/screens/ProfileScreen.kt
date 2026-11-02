@@ -167,6 +167,8 @@ fun ProfileScreen(
     var subActive by remember { mutableStateOf(cachedSub?.active ?: (Session.subscriptionActive == true)) }
     var subUntil by remember { mutableStateOf(cachedSub?.until ?: "") }
     var subPrice by remember { mutableStateOf(cachedSub?.price ?: "") }
+    // Можно ли оплатить: без выставленного счёта или назначенного тарифа — нет.
+    var subCanPay by remember { mutableStateOf(cachedSub?.canPay ?: true) }
     val instruments = remember {
         mutableStateListOf<ProfInstrument>().apply {
             AppData.profile?.instruments?.let { list -> addAll(list.map { ProfInstrument(it.key, it.label, it.on) }) }
@@ -191,6 +193,7 @@ fun ProfileScreen(
             p.subscription?.let {
                 AppData.subscription = it
                 subActive = it.active; subUntil = it.until ?: ""; subPrice = it.price ?: ""
+                subCanPay = it.canPay
                 Session.setSubscription(it)
             }
             val fresh = p.instruments.map { ProfInstrument(it.key, it.label, it.on) }
@@ -271,7 +274,11 @@ fun ProfileScreen(
                 )
 
                 if (restricted) {
-                    ConditionsBlock(subPrice, subUntil, onSubscription)
+                    // Новый аккаунт оплатить не может, пока админ не выставит счёт (макет 484:13055):
+                    // объясняем тостом, а не ведём на оплату.
+                    ConditionsBlock(subPrice, subUntil) {
+                        if (subCanPay) onSubscription() else AppToast.show("Тариф ещё не определён. Когда администратор выставит счёт, придёт уведомление со стоимостью")
+                    }
                     // Без подписки доступа к настройкам аккаунта нет: выход остаётся здесь.
                     Column(modifier = Modifier.padding(horizontal = T.ScreenX).padding(top = 24.dp)) {
                         var loggingOut by remember { mutableStateOf(false) }

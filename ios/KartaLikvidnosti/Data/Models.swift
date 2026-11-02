@@ -172,6 +172,9 @@ struct SubscriptionDto: Decodable {
     let until: String?
     let autoPay: Bool
     let paymentMethod: String?
+    /// Оплатить сейчас можно: админ выставил счёт или назначил тариф. Новый аккаунт —
+    /// нет (макет «Тарифный план: Не определен»). Старый сервер поля не присылает — считаем, что можно.
+    let canPay: Bool
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -181,9 +184,11 @@ struct SubscriptionDto: Decodable {
         until = try c.decodeIfPresent(String.self, forKey: .until)
         autoPay = (try c.decodeIfPresent(Bool.self, forKey: .autoPay)) ?? false
         paymentMethod = try c.decodeIfPresent(String.self, forKey: .paymentMethod)
+        canPay = (try c.decodeIfPresent(Bool.self, forKey: .canPay)) ?? true
     }
     enum CodingKeys: String, CodingKey {
         case active, plan, price, until
+        case canPay = "can_pay"
         case autoPay = "auto_pay"
         case paymentMethod = "payment_method"
     }

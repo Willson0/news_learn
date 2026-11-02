@@ -124,7 +124,8 @@ class BillingCardTest extends TestCase
     public function test_webhook_takes_rebill_id_from_notification_when_get_state_has_none(): void
     {
         $user = $this->demo();
-        $user->subscription()->update(['active' => false]);
+        // Подписка уже оплачивалась (тариф известен), но отключена.
+        $user->subscription()->update(['active' => false, 'amount' => 1300, 'months' => 1]);
         $payload = $this->signed([
             'TerminalKey' => 'test-terminal', 'OrderId' => 'bind-'.$user->id.'-n', 'Success' => true,
             'Status' => 'CONFIRMED', 'PaymentId' => 777, 'ErrorCode' => '0', 'Amount' => 100,

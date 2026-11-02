@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\SubscriptionPayload;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -49,7 +50,7 @@ class AppSetting extends Model
         $amount = $sub?->amount ?? self::defaultPrice();
         $months = $sub?->months ?? self::defaultMonths();
 
-        return number_format($amount, 0, ',', ' ').' ₽ / '.$months.' мес.';
+        return SubscriptionPayload::label($amount, $months);
     }
 
     /** Срок периода по умолчанию, месяцы. */
