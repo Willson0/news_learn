@@ -295,6 +295,9 @@ fun Modifier.liquidGlass(shape: Shape = CapsuleShape, fill: GlassFill = Fills.Gl
             val hairline = Stroke(width = 1.dp.toPx())
             onDrawWithContent {
                 clipPath(path) {
+                    // Лёгкая «матовость» под заливкой: стекло на Android чуть плотнее
+                    // и меньше просвечивает (по просьбе заказчика — совсем немного).
+                    drawRect(GlassBody)
                     fill.layers.forEach { drawRect(it) }
                 }
                 drawContent()
@@ -305,6 +308,9 @@ fun Modifier.liquidGlass(shape: Shape = CapsuleShape, fill: GlassFill = Fills.Gl
                 drawPath(path, rim, style = hairline)
             }
         }
+
+/** Тёмная подложка стекла (цвет фона экрана, 12 %) — уменьшает прозрачность. */
+private val GlassBody = hex("#1e1f21").copy(alpha = 0.12f)
 
 /** Стекло с одноцветной заливкой. */
 fun Modifier.liquidGlass(shape: Shape, fill: Color): Modifier = liquidGlass(shape, GlassFill(fill))

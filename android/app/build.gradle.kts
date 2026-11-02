@@ -19,8 +19,8 @@ android {
         applicationId = "app.karta.likvidnosti"
         minSdk = 24
         targetSdk = 35
-        versionCode = 7
-        versionName = "1.4.1"
+        versionCode = 8
+        versionName = "1.4.2"
         vectorDrawables { useSupportLibrary = true }
 
         // Адрес бэкенда (Laravel). Переопределяется на CI / при сборке релиза.
