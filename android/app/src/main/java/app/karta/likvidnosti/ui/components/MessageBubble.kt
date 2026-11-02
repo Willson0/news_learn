@@ -25,7 +25,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -623,7 +622,7 @@ private fun Footer(message: ChatMessage, onToggleReaction: ((String) -> Unit)?) 
 }
 
 /**
- * Плашка реакции (вид прежний: эмодзи + число, своя — зелёная с обводкой). Новая
+ * Плашка реакции (макет 337:36360: эмодзи + число на капсуле #404040). Новая
  * проявляется и дорастает вместе с пузырём (без перелёта за край), число прокручивается, при смене
  * числа или своей отметки плашка коротко подпрыгивает.
  */
@@ -653,14 +652,13 @@ private fun ReactionChip(r: Reaction, isNew: Boolean, onToggleReaction: ((String
                 scaleY = scale.value
                 this.alpha = alpha.value
             }
-            .heightIn(min = 26.dp)
-            .background(if (r.mine) T.Green.copy(alpha = 0.55f) else hex("#404040"), CapsuleShape)
-            .then(
-                if (r.mine) Modifier.border(1.dp, Color.White.copy(alpha = 0.6f), CapsuleShape) else Modifier,
-            )
-            // Своя реакция выделена; тап по ней снимает её, по чужой — ставит такую же.
+            // Макет (337:36360): капсула 24 dp, заливка #404040 — одинаковая для своей
+            // и чужой реакции, без зелёного выделения и обводки.
+            .heightIn(min = 24.dp)
+            .background(hex("#404040"), CapsuleShape)
+            // Тап по своей реакции снимает её, по чужой — ставит такую же.
             .then(if (onToggleReaction != null) Modifier.pressable { onToggleReaction(r.emoji) } else Modifier)
-            .padding(horizontal = 8.dp, vertical = 3.dp),
+            .padding(horizontal = 8.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {

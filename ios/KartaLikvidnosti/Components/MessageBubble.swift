@@ -452,7 +452,7 @@ struct MessageBubble: View {
     }
 }
 
-/// Плашка реакции под сообщением (вид прежний: эмодзи + число, своя — зелёная с обводкой).
+/// Плашка реакции под сообщением (макет 337:36360: эмодзи + число на капсуле #404040).
 /// Тап по своей снимает её, по чужой — ставит такую же. Число меняется прокруткой
 /// цифр, а при смене числа или своей отметки плашка коротко «подпрыгивает».
 struct ReactionChip: View {
@@ -485,9 +485,10 @@ struct ReactionChip: View {
             }
             .fixedSize()
             .padding(.horizontal, 8)
-            .frame(minHeight: 26)
-            .background(reaction.mine ? Theme.green.opacity(0.55) : Color(hex: "#404040"), in: Capsule())
-            .overlay(Capsule().stroke(reaction.mine ? Color.white.opacity(0.6) : .clear, lineWidth: 1))
+            // Макет (337:36360): капсула 24 pt, заливка #404040 — одинаковая для своей
+            // и чужой реакции, без зелёного выделения и обводки.
+            .frame(minHeight: 24)
+            .background(Color(hex: "#404040"), in: Capsule())
             .scaleEffect(bump ? 1.1 : 1)
         }
         .buttonStyle(PressableStyle())
