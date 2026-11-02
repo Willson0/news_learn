@@ -15,7 +15,7 @@ struct ProfileView: View {
     @State private var subActive = false
     @State private var subUntil = ""
     @State private var subPrice = ""
-    /// Можно ли оплатить: без выставленного счёта или назначенного тарифа — нет.
+    /// Можно ли оплатить: пока админ не назначил цену («Выставить счёт») — нет, кнопки оплаты нет.
     @State private var subCanPay = true
     @State private var instruments: [InstrumentDto] = []
     @State private var history: [ReportDto] = []
@@ -114,9 +114,13 @@ struct ProfileView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                AppButton(title: "Привязать счет и оплатить", variant: .accent) { payTapped() }
+                // Кнопка оплаты появляется, только когда админ назначил цену («Выставить счёт»).
+                if subCanPay {
+                    AppButton(title: "Привязать счет и оплатить", variant: .accent) { router.push(.subscription) }
+                }
             }
             .padding(.top, 16)
+            .padding(.bottom, subCanPay ? 0 : 16)
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
             .padding(.top, 24)
             if !subUntil.isEmpty {
@@ -471,16 +475,6 @@ struct ProfileView: View {
         subCanPay = s.canPay
     }
 
-    /// Новый аккаунт оплатить подписку не может, пока админ не выставит счёт
-    /// (макет 484:13055 «Тарифный план: Не определен»): объясняем, а не ведём на оплату.
-    private func payTapped() {
-        guard subCanPay else {
-            Haptics.light()
-            AppToast.shared.show("Тариф ещё не определён. Когда администратор выставит счёт, придёт уведомление со стоимостью")
-            return
-        }
-        router.push(.subscription)
-    }
 
     private func load() async {
         tag = session.user?.username ?? tag

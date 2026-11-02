@@ -134,37 +134,37 @@ class PanelTest extends TestCase
             ->assertOk()->assertJsonCount(1, 'data');
     }
 
-    public function test_invoice_uses_default_price_and_pushes_to_user(): void
+    public function test_invoice_sets_user_price_and_pushes_without_payment(): void
     {
         $this->fakeFcm();
-        AppSetting::put('default_price', 1700);
         $user = $this->user();
         DeviceToken::create(['user_id' => $user->id, 'token' => 'dev-1', 'platform' => 'android']);
-
         Http::fake([
-            'api.tbank.test/v2/Init' => Http::response([
-                'Success' => true, 'Status' => 'NEW', 'PaymentId' => 'pay-inv-1', 'PaymentURL' => 'https://tbank.test/inv-1',
-            ]),
             'oauth2.googleapis.com/token' => Http::response(['access_token' => 'tok']),
             'fcm.googleapis.com/*' => Http::response(['name' => 'message']),
         ]);
 
-        $this->asPanel()->postJson("/admin/api/users/{$user->id}/invoices", ['months' => 3])
+        // Цена обязательна: «Выставить счёт» теперь — просто вписать цену подписки.
+        $this->asPanel()->postJson("/admin/api/users/{$user->id}/invoices", [])->assertStatus(422);
+
+        $this->asPanel()->postJson("/admin/api/users/{$user->id}/invoices", ['amount' => 1700])
             ->assertCreated()
             ->assertJsonPath('data.amount', 1700)
-            ->assertJsonPath('data.confirmation_url', 'https://tbank.test/inv-1');
+            ->assertJsonPath('data.months', 1);
 
-        Http::assertSent(fn ($r) => str_ends_with($r->url(), '/Init')
-            && $r['Amount'] === 170000
-            && $r['Recurrent'] === 'Y'
-            && $r['CustomerKey'] === 'user-'.$user->id
-            && str_starts_with($r['OrderId'], 'inv-'));
-
+        // Платёж в Т-Кассе создаётся только когда пользователь нажмёт «Оплатить».
+        Http::assertNotSent(fn ($r) => str_contains($r->url(), 'tbank'));
         Http::assertSent(fn ($r) => str_contains($r->url(), 'fcm.googleapis.com')
             && $r['message']['token'] === 'dev-1'
-            && $r['message']['data']['url'] === 'https://tbank.test/inv-1');
+            && $r['message']['data']['type'] === 'subscription');
 
-        $this->assertDatabaseHas('invoices', ['user_id' => $user->id, 'amount' => 1700, 'months' => 3, 'status' => 'pending', 'created_by' => 'boss', 'tbank_payment_id' => 'pay-inv-1']);
+        $this->assertDatabaseHas('invoices', ['user_id' => $user->id, 'amount' => 1700, 'months' => 1, 'status' => 'pending', 'created_by' => 'boss']);
+        $this->assertDatabaseHas('subscriptions', ['user_id' => $user->id, 'amount' => 1700, 'months' => 1]);
+
+        Sanctum::actingAs($user);
+        $this->getJson('/api/subscription')->assertOk()
+            ->assertJsonPath('data.price', '1 700 ₽ / 1 мес.')
+            ->assertJsonPath('data.can_pay', true);
     }
 
     public function test_invoice_is_refused_for_user_with_active_subscription(): void
@@ -186,6 +186,14 @@ class PanelTest extends TestCase
         ]);
         $this->asPanel()->postJson("/admin/api/users/{$user->id}/invoices", ['amount' => 2500, 'months' => 6])->assertCreated();
         $invoice = Invoice::firstOrFail();
+
+        // Пользователь нажимает «Оплатить»: создаётся платёж по счёту с сохранением карты.
+        Sanctum::actingAs($user);
+        $this->postJson('/api/billing/card/bind')->assertOk()
+            ->assertJson(['confirmation_url' => 'https://tbank.test/inv-2', 'invoice' => $invoice->id]);
+        Http::assertSent(fn ($r) => str_ends_with($r->url(), '/Init')
+            && $r['Amount'] === 250000 && $r['Recurrent'] === 'Y'
+            && str_starts_with($r['OrderId'], 'inv-'.$invoice->id.'-'));
 
         Http::fake([
             'api.tbank.test/v2/GetState' => Http::response([

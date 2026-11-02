@@ -13,7 +13,6 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
-use RuntimeException;
 
 /**
  * Пользователи в админке: краткая таблица, подробности, счета и условия подписки.
@@ -56,7 +55,8 @@ class UserController extends Controller
     }
 
     /**
-     * Выставляет счёт. Сумма — из запроса или цена по умолчанию из настроек.
+     * «Выставить счёт»: админ вписывает цену подписки. Она становится ценой пользователя,
+     * у него в приложении появляется кнопка оплаты, и ему приходит push.
      */
     public function invoice(Request $request, User $user): JsonResponse
     {
@@ -66,24 +66,20 @@ class UserController extends Controller
         }
 
         $data = $request->validate([
-            'amount' => ['nullable', 'integer', 'min:1', 'max:1000000'],
-            'months' => ['required', 'integer', 'min:1', 'max:12'],
+            'amount' => ['required', 'integer', 'min:1', 'max:1000000'],
+            'months' => ['sometimes', 'integer', 'min:1', 'max:12'],
+        ], [
+            'amount.required' => 'Укажите цену подписки',
         ]);
 
-        $amount = $data['amount'] ?? AppSetting::defaultPrice();
-
-        try {
-            $invoice = $this->invoices->issue($user, $amount, $data['months'], $request->user('panel')->login);
-        } catch (RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage()], 503);
-        }
+        $months = $data['months'] ?? $user->subscription?->months ?? AppSetting::defaultMonths();
+        $invoice = $this->invoices->issue($user, $data['amount'], $months, $request->user('panel')->login);
 
         return response()->json(['data' => [
             'id' => $invoice->id,
             'amount' => $invoice->amount,
             'months' => $invoice->months,
             'status' => $invoice->status,
-            'confirmation_url' => $invoice->confirmation_url,
         ]], 201);
     }
 

@@ -4,44 +4,26 @@
 
         <template v-if="!result">
             <div class="block">
-                <div class="muted small">Стоимость</div>
-                <div class="seg">
-                    <button class="btn" :class="mode === 'default' ? 'btn-primary' : 'btn-secondary'" @click="mode = 'default'">По умолчанию</button>
-                    <button class="btn" :class="mode === 'manual' ? 'btn-primary' : 'btn-secondary'" @click="mode = 'manual'">Вручную</button>
-                </div>
-                <p v-if="mode === 'default'" class="strong">{{ money(defaultPrice) }} в месяц</p>
-                <input v-else v-model.number="manual" class="input" type="number" min="1" placeholder="Сумма, ₽">
+                <div class="muted small">Цена подписки, ₽</div>
+                <input v-model.number="price" class="input" type="number" min="1" placeholder="Например, 1490" @keyup.enter="issue">
             </div>
 
-            <div class="block">
-                <div class="muted small">Срок действия</div>
-                <div class="chips">
-                    <button v-for="m in monthOptions" :key="m" class="btn" :class="months === m ? 'btn-primary' : 'btn-secondary'" @click="months = m">
-                        {{ monthLabel(m) }}
-                    </button>
-                </div>
-            </div>
-
-            <p class="muted small">Подписка продлевается автоматически. Пользователю придёт push со ссылкой на оплату.</p>
-            <div class="total">
-                <span class="muted">Итого</span>
-                <span class="strong total-value">{{ total > 0 ? money(total) : '—' }}</span>
-            </div>
+            <p class="muted small">
+                После этого у пользователя в приложении появится кнопка оплаты и придёт уведомление.
+                Подписка продлевается автоматически по этой цене.
+            </p>
             <ErrorText :message="error" />
             <div class="dialog-actions">
                 <button class="btn btn-secondary" @click="$emit('close')">Отмена</button>
-                <button class="btn btn-primary" :disabled="total <= 0 || busy" @click="issue">Выставить счёт</button>
+                <button class="btn btn-primary" :disabled="!valid || busy" @click="issue">Выставить счёт</button>
             </div>
         </template>
 
         <template v-else>
             <div class="notice">
-                Счёт на {{ money(result.amount) }} выставлен: {{ user.name }}, {{ monthLabel(result.months) }}.
-                Ссылка на оплату отправлена пользователю.
+                Цена подписки для {{ user.name }}: {{ money(result.amount) }} за {{ monthLabel(result.months) }}.
+                Пользователь может оплатить её в приложении.
             </div>
-            <p v-if="result.confirmation_url" class="small">
-                Ссылка: <a :href="result.confirmation_url" target="_blank" rel="noopener">открыть страницу оплаты</a>
-            </p>
             <div class="dialog-actions">
                 <button class="btn btn-primary" @click="finish">Готово</button>
             </div>
@@ -54,6 +36,10 @@ import { api, money } from '../api';
 import Modal from './Modal.vue';
 import ErrorText from './ErrorText.vue';
 
+/**
+ * «Выставить счёт»: админ вписывает цену подписки пользователя. Без неё оплатить подписку
+ * в приложении нельзя (кнопки нет); после — кнопка появляется, пользователь платит сам.
+ */
 export default {
     name: 'InvoiceDialog',
     components: { Modal, ErrorText },
@@ -63,27 +49,17 @@ export default {
     emits: ['close', 'done'],
     data() {
         return {
-            defaultPrice: 1490,
-            mode: 'default',
-            manual: null,
-            months: 1,
-            monthOptions: [1, 3, 6, 12],
+            price: null,
             result: null,
             error: '',
             busy: false,
         };
     },
     computed: {
-        total() {
-            const price = this.mode === 'default' ? this.defaultPrice : Number(this.manual) || 0;
-            return price * this.months;
+        valid() {
+            const p = Number(this.price);
+            return Number.isInteger(p) && p > 0;
         },
-    },
-    mounted() {
-        // Цена по умолчанию — индивидуальная цена пользователя; если её нет, сервер отдаёт цену из настроек.
-        api('GET', `/users/${this.user.id}`).then((res) => {
-            this.defaultPrice = res.data.subscription.amount;
-        }).catch(() => {});
     },
     methods: {
         money,
@@ -93,11 +69,11 @@ export default {
             return `${m} месяцев`;
         },
         async issue() {
+            if (!this.valid || this.busy) return;
             this.busy = true;
             this.error = '';
             try {
-                const amount = this.mode === 'manual' ? Number(this.manual) : null;
-                this.result = (await api('POST', `/users/${this.user.id}/invoices`, { amount, months: this.months })).data;
+                this.result = (await api('POST', `/users/${this.user.id}/invoices`, { amount: Number(this.price) })).data;
             } catch (e) {
                 this.error = e.message;
             } finally {

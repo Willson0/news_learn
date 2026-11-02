@@ -167,7 +167,7 @@ fun ProfileScreen(
     var subActive by remember { mutableStateOf(cachedSub?.active ?: (Session.subscriptionActive == true)) }
     var subUntil by remember { mutableStateOf(cachedSub?.until ?: "") }
     var subPrice by remember { mutableStateOf(cachedSub?.price ?: "") }
-    // Можно ли оплатить: без выставленного счёта или назначенного тарифа — нет.
+    // Можно ли оплатить: пока админ не назначил цену («Выставить счёт») — нет, кнопки оплаты нет.
     var subCanPay by remember { mutableStateOf(cachedSub?.canPay ?: true) }
     val instruments = remember {
         mutableStateListOf<ProfInstrument>().apply {
@@ -274,11 +274,7 @@ fun ProfileScreen(
                 )
 
                 if (restricted) {
-                    // Новый аккаунт оплатить не может, пока админ не выставит счёт (макет 484:13055):
-                    // объясняем тостом, а не ведём на оплату.
-                    ConditionsBlock(subPrice, subUntil) {
-                        if (subCanPay) onSubscription() else AppToast.show("Тариф ещё не определён. Когда администратор выставит счёт, придёт уведомление со стоимостью")
-                    }
+                    ConditionsBlock(subPrice, subUntil, subCanPay, onSubscription)
                     // Без подписки доступа к настройкам аккаунта нет: выход остаётся здесь.
                     Column(modifier = Modifier.padding(horizontal = T.ScreenX).padding(top = 24.dp)) {
                         var loggingOut by remember { mutableStateOf(false) }
@@ -484,7 +480,7 @@ private fun SubscriptionBlock(
  * Если срок подписки уже закончился, показываем дату окончания.
  */
 @Composable
-private fun ConditionsBlock(price: String, until: String, onSubscription: () -> Unit) {
+private fun ConditionsBlock(price: String, until: String, canPay: Boolean, onSubscription: () -> Unit) {
     Column(modifier = Modifier.padding(horizontal = T.ScreenX).padding(top = 40.dp)) {
         ScreenTitle("Условия")
         Text(
@@ -497,7 +493,7 @@ private fun ConditionsBlock(price: String, until: String, onSubscription: () -> 
                 .padding(top = 24.dp)
                 .fillMaxWidth()
                 .background(T.Surface, T.ShapeCard)
-                .padding(top = 16.dp),
+                .padding(top = 16.dp, bottom = if (canPay) 0.dp else 16.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
             Column(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -513,7 +509,10 @@ private fun ConditionsBlock(price: String, until: String, onSubscription: () -> 
                     Text(price.ifEmpty { "Не определен" }, style = AppFont.sans(T.FsBase, color = T.TextSecondary))
                 }
             }
-            AppButton("Привязать счет и оплатить", variant = ButtonVariant.Accent) { onSubscription() }
+            // Кнопка оплаты появляется, только когда админ назначил цену («Выставить счёт»).
+            if (canPay) {
+                AppButton("Привязать счет и оплатить", variant = ButtonVariant.Accent) { onSubscription() }
+            }
         }
         if (until.isNotEmpty()) {
             Text(

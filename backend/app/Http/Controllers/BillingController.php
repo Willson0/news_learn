@@ -53,20 +53,32 @@ class BillingController extends Controller
             return response()->json(['message' => 'Привязка карты временно недоступна'], 503);
         }
 
-        // Без действующей подписки оплатить можно только по условиям, которые задал админ.
+        // Без действующей подписки оплачивается счёт по цене, которую задал админ
+        // («Выставить счёт»). Страница оплаты счёта сразу сохраняет карту для автопродления.
         $subscription = $user->subscription;
         if (! $subscription?->grantsAccessNow()) {
-            // Выставлен счёт — оплачиваем его: та же страница Т-Кассы сохраняет карту для автопродления.
             $invoice = Invoice::pendingFor($user);
-            if ($invoice) {
-                return response()->json(['confirmation_url' => $invoice->confirmation_url, 'invoice' => $invoice->id]);
+            if (! $invoice && $subscription?->tariffDefined()) {
+                // Цена уже назначена (например, прошлый счёт не оплатили) — новый счёт на неё же.
+                [$amount, $months] = $this->billing->terms($user);
+                $invoice = $this->invoices->issue($user, $amount, $months, 'app', notify: false);
             }
-            if (! $subscription?->tariffDefined()) {
+            if (! $invoice) {
                 return response()->json([
-                    'message' => 'Тариф ещё не определён. Когда администратор его назначит, придёт уведомление со стоимостью.',
+                    'message' => 'Цена подписки ещё не назначена. Когда администратор её определит, придёт уведомление.',
                     'code' => 'tariff_not_defined',
                 ], 409);
             }
+
+            try {
+                $url = $this->invoices->checkoutUrl($invoice->load('user'));
+            } catch (RuntimeException $e) {
+                Log::error('Т-Касса: не создан платёж по счёту', ['invoice_id' => $invoice->id, 'error' => $e->getMessage()]);
+
+                return response()->json(['message' => 'Не удалось открыть оплату'], 502);
+            }
+
+            return response()->json(['confirmation_url' => $url, 'invoice' => $invoice->id]);
         }
 
         try {

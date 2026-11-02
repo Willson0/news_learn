@@ -22,12 +22,11 @@ class Invoice extends Model
         'paid_at' => 'datetime',
     ];
 
-    /** Последний неоплаченный счёт пользователя со ссылкой на оплату. */
+    /** Последний неоплаченный счёт пользователя. */
     public static function pendingFor(User $user): ?self
     {
         return self::where('user_id', $user->id)
             ->where('status', self::PENDING)
-            ->whereNotNull('confirmation_url')
             ->latest('id')
             ->first();
     }

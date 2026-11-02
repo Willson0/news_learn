@@ -24,48 +24,71 @@ class InvoiceService
     ) {}
 
     /**
-     * Выставляет счёт пользователю: создаёт платёж Т-Кассы с сохранением карты (Recurrent)
-     * и отправляет пользователю ссылку на оплату push-уведомлением.
+     * Выставляет счёт: админ вписывает цену подписки, она становится ценой пользователя,
+     * и в приложении появляется кнопка оплаты. Платёж в Т-Кассе создаётся, только когда
+     * пользователь нажимает «Оплатить» (см. checkoutUrl). Прежние неоплаченные счета закрываются.
      */
-    public function issue(User $user, int $amount, int $months, ?string $createdBy): Invoice
+    public function issue(User $user, int $amount, int $months, ?string $createdBy, bool $notify = true): Invoice
     {
-        $invoice = Invoice::create([
-            'user_id' => $user->id,
-            'amount' => $amount,
-            'months' => $months,
-            'status' => Invoice::PENDING,
-            'created_by' => $createdBy,
-        ]);
+        $invoice = DB::transaction(function () use ($user, $amount, $months, $createdBy) {
+            Invoice::where('user_id', $user->id)->where('status', Invoice::PENDING)
+                ->update(['status' => Invoice::CANCELED]);
 
-        try {
-            $payment = $this->tbank->init(
-                amount: $amount,
-                orderId: 'inv-'.$invoice->id.'-'.Str::random(8),
-                description: "Подписка «Карта ликвидности», {$months} мес.",
-                customerKey: TbankClient::customerKey($user->id),
-                recurrent: true,
-                email: $user->email,
+            $sub = Subscription::firstOrCreate(['user_id' => $user->id]);
+            $sub->fill(['amount' => $amount, 'months' => $months, 'plan' => 'custom'])->save();
+
+            return Invoice::create([
+                'user_id' => $user->id,
+                'amount' => $amount,
+                'months' => $months,
+                'status' => Invoice::PENDING,
+                'created_by' => $createdBy,
+            ]);
+        });
+
+        if ($notify) {
+            $this->push->sendToUser(
+                $user,
+                'Подписка доступна',
+                "Стоимость: {$this->money($amount)} за {$this->period($months)}. Оплатить можно в приложении, в профиле.",
+                ['type' => 'subscription'],
             );
-        } catch (\Throwable $e) {
-            // Платёж в Т-Кассе не создан: пустой счёт не оставляем.
-            $invoice->delete();
-
-            throw $e;
         }
 
-        $invoice->update([
-            'tbank_payment_id' => $payment['PaymentId'] ?? null,
-            'confirmation_url' => $payment['PaymentURL'] ?? null,
-        ]);
+        return $invoice;
+    }
 
-        $this->push->sendToUser(
-            $user,
-            'Выставлен счёт',
-            "Подписка: {$this->money($amount)} за {$this->period($months)}. Откройте ссылку для оплаты.",
-            ['type' => 'invoice', 'url' => (string) $invoice->confirmation_url],
+    /**
+     * Ссылка на оплату счёта. Платёж Т-Кассы с сохранением карты (Recurrent) создаётся при
+     * первом нажатии и переиспользуется, пока ссылка свежая (Т-Касса держит её сутки).
+     */
+    public function checkoutUrl(Invoice $invoice): string
+    {
+        if ($invoice->confirmation_url && $invoice->updated_at?->gt(now()->subHours(20))) {
+            return $invoice->confirmation_url;
+        }
+
+        $user = $invoice->user;
+        $payment = $this->tbank->init(
+            amount: $invoice->amount,
+            orderId: 'inv-'.$invoice->id.'-'.Str::random(8),
+            description: "Подписка «Карта ликвидности», {$invoice->months} мес.",
+            customerKey: TbankClient::customerKey($user->id),
+            recurrent: true,
+            email: $user->email,
         );
 
-        return $invoice->refresh();
+        $url = $payment['PaymentURL'] ?? null;
+        if (! is_string($url) || $url === '') {
+            throw new \RuntimeException('Т-Касса не вернула ссылку на оплату');
+        }
+
+        $invoice->forceFill([
+            'tbank_payment_id' => $payment['PaymentId'] ?? null,
+            'confirmation_url' => $url,
+        ])->save();
+
+        return $url;
     }
 
     /**

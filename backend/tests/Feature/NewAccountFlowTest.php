@@ -104,16 +104,16 @@ class NewAccountFlowTest extends TestCase
             ->assertJsonPath('data.can_pay', true)
             ->assertJsonPath('data.invoice.id', $invoice->id);
 
-        // «Привязать» ведёт на оплату счёта, новый платёж не создаётся.
+        // Свежая ссылка на оплату счёта переиспользуется, новый платёж не создаётся.
         $this->postJson('/api/billing/card/bind')->assertOk()
             ->assertJson(['confirmation_url' => 'https://tbank.test/invoice']);
         Http::assertNothingSent();
     }
 
-    public function test_assigned_terms_allow_paying_by_card(): void
+    public function test_assigned_price_without_invoice_pays_through_new_invoice(): void
     {
         Http::fake([
-            self::API.'/Init' => Http::response(['Success' => true, 'Status' => 'NEW', 'PaymentId' => 'p1', 'PaymentURL' => 'https://tbank.test/bind']),
+            self::API.'/Init' => Http::response(['Success' => true, 'Status' => 'NEW', 'PaymentId' => 'p1', 'PaymentURL' => 'https://tbank.test/pay']),
         ]);
         $user = User::factory()->create();
         Subscription::create(['user_id' => $user->id, 'active' => false, 'amount' => 2000, 'months' => 3]);
@@ -123,7 +123,12 @@ class NewAccountFlowTest extends TestCase
             ->assertJsonPath('data.price', '2 000 ₽ / 3 мес.')
             ->assertJsonPath('data.can_pay', true);
         $this->postJson('/api/billing/card/bind')->assertOk()
-            ->assertJson(['confirmation_url' => 'https://tbank.test/bind']);
+            ->assertJson(['confirmation_url' => 'https://tbank.test/pay']);
+
+        $invoice = Invoice::where('user_id', $user->id)->firstOrFail();
+        $this->assertSame([2000, 3, 'pending', 'app'], [$invoice->amount, $invoice->months, $invoice->status, $invoice->created_by]);
+        Http::assertSent(fn ($r) => str_ends_with($r->url(), '/Init') && $r['Amount'] === 200000 && $r['Recurrent'] === 'Y'
+            && str_starts_with($r['OrderId'], 'inv-'.$invoice->id.'-'));
     }
 
     public function test_card_bound_without_tariff_does_not_charge(): void
