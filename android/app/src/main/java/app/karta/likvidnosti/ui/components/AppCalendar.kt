@@ -82,7 +82,7 @@ fun AppCalendar(
         modifier = modifier
             .widthIn(max = 361.dp)
             .fillMaxWidth()
-            .liquidGlass(T.ShapeCard, Fills.Black2)
+            .liquidGlass(T.ShapeCard, Fills.Calendar)
             .padding(horizontal = 14.83.dp),
     ) {
         Row(

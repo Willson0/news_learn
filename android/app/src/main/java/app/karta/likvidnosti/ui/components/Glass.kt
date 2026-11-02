@@ -168,8 +168,11 @@ object Fills {
     /** Навбар: Theme.navbarBg + Theme.surfaceMuted. */
     val NavBar = GlassFill(listOf(SolidColor(T.NavbarBg), SolidColor(T.SurfaceMuted)))
 
-    /** «чёрный 2» — попапы, календарь, диалог. */
+    /** «чёрный 2» — попапы, диалог. */
     val Black2 = GlassFill(T.Black2)
+
+    /** Календарь: «чёрный 2», но плотнее (52 % вместо 40 %) — на Android он слишком просвечивал. */
+    val Calendar = GlassFill(Color.Black.copy(alpha = 0.52f))
 
     /** «red» — опасные кнопки. */
     val Danger = GlassFill(T.Danger)
