@@ -15,7 +15,7 @@ struct ProfileView: View {
     @State private var subActive = false
     @State private var subUntil = ""
     @State private var subPrice = ""
-    /// Можно ли оплатить: пока админ не назначил цену («Выставить счёт») — нет, кнопки оплаты нет.
+    /// Можно ли оплатить: пока админ не назначил цену («Выставить счёт») — нет.
     @State private var subCanPay = true
     @State private var instruments: [InstrumentDto] = []
     @State private var history: [ReportDto] = []
@@ -114,13 +114,11 @@ struct ProfileView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                // Кнопка оплаты появляется, только когда админ назначил цену («Выставить счёт»).
-                if subCanPay {
-                    AppButton(title: "Привязать счет и оплатить", variant: .accent) { router.push(.subscription) }
-                }
+                // Кнопка есть всегда, как в макете (484:13055 и 474:11853). Пока админ не назначил
+                // цену («Выставить счёт»), оплатить нечего — объясняем это вместо перехода к оплате.
+                AppButton(title: "Привязать счет и оплатить", variant: .accent) { payTapped() }
             }
             .padding(.top, 16)
-            .padding(.bottom, subCanPay ? 0 : 16)
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
             .padding(.top, 24)
             if !subUntil.isEmpty {
@@ -131,9 +129,10 @@ struct ProfileView: View {
                     .padding(.top, 12)
             }
             if subPrice.isEmpty {
-                Text("Когда тариф будет назначен, мы пришлём уведомление со стоимостью")
+                // Текст и перенос строки — как в макете 484:13064.
+                Text("После определения тарифа Вам придет\nуведомление и стоимость")
                     .font(Theme.sans(Theme.fontBase)).foregroundStyle(Theme.textSecondary)
-                    .frame(maxWidth: 300, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 12)
             }
@@ -473,6 +472,16 @@ struct ProfileView: View {
     private func applySubscription(_ s: SubscriptionDto) {
         subActive = s.active; subUntil = s.until ?? ""; subPrice = s.price ?? ""
         subCanPay = s.canPay
+    }
+
+    /// Цена ещё не назначена — оплачивать нечего: говорим, что пришлём уведомление.
+    private func payTapped() {
+        guard subCanPay else {
+            Haptics.light()
+            AppToast.shared.show("Цена подписки ещё не назначена. Когда администратор её определит, придёт уведомление")
+            return
+        }
+        router.push(.subscription)
     }
 
 

@@ -167,7 +167,7 @@ fun ProfileScreen(
     var subActive by remember { mutableStateOf(cachedSub?.active ?: (Session.subscriptionActive == true)) }
     var subUntil by remember { mutableStateOf(cachedSub?.until ?: "") }
     var subPrice by remember { mutableStateOf(cachedSub?.price ?: "") }
-    // Можно ли оплатить: пока админ не назначил цену («Выставить счёт») — нет, кнопки оплаты нет.
+    // Можно ли оплатить: пока админ не назначил цену («Выставить счёт») — нет.
     var subCanPay by remember { mutableStateOf(cachedSub?.canPay ?: true) }
     val instruments = remember {
         mutableStateListOf<ProfInstrument>().apply {
@@ -274,7 +274,11 @@ fun ProfileScreen(
                 )
 
                 if (restricted) {
-                    ConditionsBlock(subPrice, subUntil, subCanPay, onSubscription)
+                    ConditionsBlock(subPrice, subUntil) {
+                        // Цена ещё не назначена («Выставить счёт») — оплачивать нечего.
+                        if (subCanPay) onSubscription()
+                        else AppToast.show("Цена подписки ещё не назначена. Когда администратор её определит, придёт уведомление")
+                    }
                     // Без подписки доступа к настройкам аккаунта нет: выход остаётся здесь.
                     Column(modifier = Modifier.padding(horizontal = T.ScreenX).padding(top = 24.dp)) {
                         var loggingOut by remember { mutableStateOf(false) }
@@ -480,7 +484,7 @@ private fun SubscriptionBlock(
  * Если срок подписки уже закончился, показываем дату окончания.
  */
 @Composable
-private fun ConditionsBlock(price: String, until: String, canPay: Boolean, onSubscription: () -> Unit) {
+private fun ConditionsBlock(price: String, until: String, onPay: () -> Unit) {
     Column(modifier = Modifier.padding(horizontal = T.ScreenX).padding(top = 40.dp)) {
         ScreenTitle("Условия")
         Text(
@@ -493,7 +497,7 @@ private fun ConditionsBlock(price: String, until: String, canPay: Boolean, onSub
                 .padding(top = 24.dp)
                 .fillMaxWidth()
                 .background(T.Surface, T.ShapeCard)
-                .padding(top = 16.dp, bottom = if (canPay) 0.dp else 16.dp),
+                .padding(top = 16.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
             Column(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -509,10 +513,8 @@ private fun ConditionsBlock(price: String, until: String, canPay: Boolean, onSub
                     Text(price.ifEmpty { "Не определен" }, style = AppFont.sans(T.FsBase, color = T.TextSecondary))
                 }
             }
-            // Кнопка оплаты появляется, только когда админ назначил цену («Выставить счёт»).
-            if (canPay) {
-                AppButton("Привязать счет и оплатить", variant = ButtonVariant.Accent) { onSubscription() }
-            }
+            // Кнопка есть всегда, как в макете (484:13055 и 474:11853).
+            AppButton("Привязать счет и оплатить", variant = ButtonVariant.Accent) { onPay() }
         }
         if (until.isNotEmpty()) {
             Text(
@@ -523,9 +525,10 @@ private fun ConditionsBlock(price: String, until: String, canPay: Boolean, onSub
         }
         if (price.isEmpty()) {
             Text(
-                "Когда тариф будет назначен, мы пришлём уведомление со стоимостью",
+                // Текст и перенос строки — как в макете 484:13064.
+                "После определения тарифа Вам придет\nуведомление и стоимость",
                 style = AppFont.sans(T.FsBase, color = T.TextSecondary),
-                modifier = Modifier.widthIn(max = 300.dp).padding(top = 12.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
             )
         }
     }
