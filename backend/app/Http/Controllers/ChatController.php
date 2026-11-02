@@ -81,12 +81,7 @@ class ChatController extends Controller
         }
 
         if ($isAdmin) {
-            $direct = Chat::with(['latestMessage', 'owner'])
-                ->where('type', 'direct')
-                ->has('messages')
-                ->get()
-                ->sortByDesc(fn (Chat $c) => $c->latestMessage?->created_at)
-                ->values();
+            $direct = Chat::directChatsForStaff();
 
             $sections[] = [
                 'key' => 'direct',
@@ -686,15 +681,7 @@ class ChatController extends Controller
 
     public static function directChatFor(User $user): Chat
     {
-        return Chat::firstOrCreate(
-            ['type' => 'direct', 'user_id' => $user->id],
-            [
-                'slug' => 'dm-'.$user->id,
-                'title' => $user->name,
-                'section' => 'direct',
-                'position' => 0,
-            ],
-        );
+        return Chat::directFor($user);
     }
 
     private function storeAttachment(Message $message, $file, string $kind, ?int $duration): MessageAttachment

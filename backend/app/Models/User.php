@@ -36,6 +36,13 @@ class User extends Authenticatable
         'remember_token',
     ];
 
+    protected static function booted(): void
+    {
+        // Личный чат с администрацией заводим сразу при создании аккаунта: так он с первого
+        // дня виден админу в «Личных чатах», и админ может написать первым.
+        static::created(fn (User $user) => Chat::directFor($user));
+    }
+
     /**
      * @return array<string, string>
      */

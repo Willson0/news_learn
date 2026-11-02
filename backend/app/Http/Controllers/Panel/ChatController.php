@@ -33,15 +33,10 @@ class ChatController extends Controller
         ])->values()]);
     }
 
-    /** Личные чаты с пользователями, по последней активности. */
+    /** Личные чаты со всеми пользователями: сначала по последней активности, затем новые без переписки. */
     public function direct(): JsonResponse
     {
-        $chats = Chat::with(['owner', 'latestMessage'])
-            ->where('type', 'direct')
-            ->has('messages')
-            ->get()
-            ->sortByDesc(fn (Chat $c) => $c->latestMessage?->created_at)
-            ->values();
+        $chats = Chat::directChatsForStaff();
 
         return response()->json(['data' => $chats->map(fn (Chat $c) => [
             'slug' => $c->slug,

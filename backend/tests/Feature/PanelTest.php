@@ -301,10 +301,8 @@ class PanelTest extends TestCase
         $this->fakeFcm();
         $user = $this->user();
         DeviceToken::create(['user_id' => $user->id, 'token' => 'dev-3']);
-        $chat = Chat::create([
-            'slug' => 'dm-'.$user->id, 'title' => $user->name, 'type' => 'direct',
-            'section' => 'direct', 'position' => 0, 'user_id' => $user->id,
-        ]);
+        // Личный чат создаётся вместе с аккаунтом.
+        $chat = Chat::where('type', 'direct')->where('user_id', $user->id)->firstOrFail();
 
         $this->asPanel()->postJson("/admin/api/chats/{$chat->slug}/messages", ['body' => 'Здравствуйте'])
             ->assertCreated()

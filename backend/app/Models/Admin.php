@@ -42,6 +42,21 @@ class Admin extends Model
         return $query->exists();
     }
 
+    /**
+     * id всех пользователей-админов (главный по Telegram ID и записи таблицы admins).
+     *
+     * @return list<int>
+     */
+    public static function userIds(): array
+    {
+        $telegramIds = self::whereNotNull('telegram_id')->pluck('telegram_id')->map(fn ($id) => (string) $id)
+            ->push((string) self::rootTelegramId())->all();
+
+        return User::whereIn('id', self::whereNotNull('user_id')->pluck('user_id'))
+            ->orWhereIn('telegram_id', $telegramIds)
+            ->pluck('id')->map(fn ($id) => (int) $id)->all();
+    }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);

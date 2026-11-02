@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -17,6 +18,52 @@ class Chat extends Model
     protected $casts = [
         'pinned' => 'boolean',
     ];
+
+    /**
+     * Личный чат пользователя с администрацией. Создаётся вместе с аккаунтом, поэтому сразу
+     * виден в «Личных чатах» админа, даже пока в нём нет ни одного сообщения.
+     */
+    public static function directFor(User $user): self
+    {
+        return self::firstOrCreate(
+            ['type' => 'direct', 'user_id' => $user->id],
+            [
+                'slug' => 'dm-'.$user->id,
+                'title' => $user->name,
+                'section' => 'direct',
+                'position' => 0,
+            ],
+        );
+    }
+
+    /**
+     * Личные чаты для списка администрации: все пользователи, включая тех, кто ещё не писал.
+     * Сначала чаты с перепиской по последнему сообщению, затем пустые — новые аккаунты сверху.
+     * Пустые чаты самих админов (если такие есть) не показываем.
+     *
+     * @return Collection<int, self>
+     */
+    public static function directChatsForStaff(): Collection
+    {
+        $chats = self::with(['latestMessage', 'owner'])->where('type', 'direct')->get();
+        $adminIds = Admin::userIds();
+
+        return $chats
+            ->filter(fn (self $c) => $c->latestMessage !== null || ($c->owner !== null && ! in_array((int) $c->user_id, $adminIds, true)))
+            ->sort(function (self $a, self $b) {
+                $la = $a->latestMessage?->created_at;
+                $lb = $b->latestMessage?->created_at;
+                if ($la && $lb) {
+                    return $lb <=> $la;
+                }
+                if ($la || $lb) {
+                    return $la ? -1 : 1;
+                }
+
+                return [$b->created_at, $b->id] <=> [$a->created_at, $a->id];
+            })
+            ->values();
+    }
 
     public function messages(): HasMany
     {
