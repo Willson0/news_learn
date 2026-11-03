@@ -63,6 +63,8 @@ fun AppCalendar(
     end: LocalDate?,
     onChange: (start: LocalDate?, end: LocalDate?) -> Unit,
     modifier: Modifier = Modifier,
+    /** Экран под календарём уже размыт — заливка плашки чуть светлее, размытие видно. */
+    contentBehindBlurred: Boolean = false,
 ) {
     var cursor by remember { mutableStateOf((start ?: LocalDate.now()).withDayOfMonth(1)) }
 
@@ -82,7 +84,7 @@ fun AppCalendar(
         modifier = modifier
             .widthIn(max = 361.dp)
             .fillMaxWidth()
-            .glassPanel(T.ShapeCard)
+            .glassPanel(T.ShapeCard, contentBehindBlurred)
             .padding(horizontal = 14.83.dp),
     ) {
         Row(

@@ -323,8 +323,9 @@ private val GlassBody = hex("#1e1f21").copy(alpha = 0.12f)
  * но с сильным размытием подложки и плотной тёмной заливкой, чтобы текст читался на
  * любом фоне. Если размыть нечего (нет подложки или Android ниже 12) — заливка ещё плотнее.
  */
-fun Modifier.glassPanel(shape: Shape = T.ShapeCard): Modifier = composed {
-    val blurred = LocalBackdrop.current != null && BlurSupported
+fun Modifier.glassPanel(shape: Shape = T.ShapeCard, contentBehindBlurred: Boolean = false): Modifier = composed {
+    // contentBehindBlurred — экран сам размывает содержимое под плашкой (Modifier.blur).
+    val blurred = (contentBehindBlurred || LocalBackdrop.current != null) && BlurSupported
     this.liquidGlass(shape, if (blurred) Fills.PanelBlurred else Fills.PanelSolid, blur = 24.dp)
 }
 

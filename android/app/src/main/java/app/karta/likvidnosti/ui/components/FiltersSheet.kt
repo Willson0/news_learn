@@ -5,6 +5,7 @@ package app.karta.likvidnosti.ui.components
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -44,6 +45,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -278,12 +280,13 @@ fun FiltersSheet(
                     onDragStopped = { velocity -> settle(velocity) },
                 ),
         ) {
-            // Содержимое листа — подложка для календаря: он размывает чипсы под собой.
-            val sheetBackdrop = rememberBackdrop()
+            // Открыт календарь — всё содержимое листа под ним равномерно размывается
+            // (Android 12+), календарь остаётся чётким поверх.
+            val contentBlur by animateDpAsState(if (calendarOpen) 16.dp else 0.dp, tween(220), label = "calendar-blur")
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .backdropSource(sheetBackdrop)
+                    .then(if (contentBlur > 0.dp) Modifier.blur(contentBlur) else Modifier)
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = T.ScreenX)
                     .padding(bottom = 60.dp),
@@ -356,9 +359,7 @@ fun FiltersSheet(
                 exit = scaleOut(targetScale = 0.92f, transformOrigin = TransformOrigin(1f, 1f)) + fadeOut(),
                 modifier = Modifier.padding(horizontal = T.ScreenX).padding(top = 87.dp),
             ) {
-                CompositionLocalProvider(LocalBackdrop provides sheetBackdrop) {
-                    AppCalendar(start = dateStart, end = dateEnd, onChange = { s, e -> dateStart = s; dateEnd = e })
-                }
+                AppCalendar(start = dateStart, end = dateEnd, onChange = { s, e -> dateStart = s; dateEnd = e }, contentBehindBlurred = true)
             }
 
             PillActionButton(
