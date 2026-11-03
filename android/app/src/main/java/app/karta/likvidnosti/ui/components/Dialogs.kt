@@ -68,7 +68,7 @@ fun ConfirmDialog(
                             exit = scaleOut(targetScale = 0.92f),
                         )
                         .width(243.dp)
-                        .liquidGlass(T.ShapeCard, Fills.Black2)
+                        .glassPanel(T.ShapeCard)
                         .pressable(pressAlpha = 1f) {}
                         .padding(16.dp),
                 ) {

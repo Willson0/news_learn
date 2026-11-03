@@ -73,6 +73,7 @@ import app.karta.likvidnosti.ui.components.RemoteImage
 import app.karta.likvidnosti.ui.components.ReportCard
 import app.karta.likvidnosti.ui.components.ScreenTitle
 import app.karta.likvidnosti.ui.components.TabScaffold
+import app.karta.likvidnosti.ui.components.glassPanel
 import app.karta.likvidnosti.ui.components.liquidGlass
 import app.karta.likvidnosti.ui.components.pressable
 import app.karta.likvidnosti.ui.icons.AppIcon
@@ -567,7 +568,7 @@ private fun SortPopup(sort: String, onSelect: (String) -> Unit) {
     Column(
         modifier = Modifier
             .width(203.dp)
-            .liquidGlass(T.ShapeCard, Fills.Black2)
+            .glassPanel(T.ShapeCard)
             // Пункты по 43 вместо 19 с зазором 12: та же картинка, но цель нажатия крупнее.
             .padding(vertical = 4.dp, horizontal = 12.dp),
     ) {

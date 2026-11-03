@@ -278,9 +278,12 @@ fun FiltersSheet(
                     onDragStopped = { velocity -> settle(velocity) },
                 ),
         ) {
+            // Содержимое листа — подложка для календаря: он размывает чипсы под собой.
+            val sheetBackdrop = rememberBackdrop()
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .backdropSource(sheetBackdrop)
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = T.ScreenX)
                     .padding(bottom = 60.dp),
@@ -353,7 +356,9 @@ fun FiltersSheet(
                 exit = scaleOut(targetScale = 0.92f, transformOrigin = TransformOrigin(1f, 1f)) + fadeOut(),
                 modifier = Modifier.padding(horizontal = T.ScreenX).padding(top = 87.dp),
             ) {
-                AppCalendar(start = dateStart, end = dateEnd, onChange = { s, e -> dateStart = s; dateEnd = e })
+                CompositionLocalProvider(LocalBackdrop provides sheetBackdrop) {
+                    AppCalendar(start = dateStart, end = dateEnd, onChange = { s, e -> dateStart = s; dateEnd = e })
+                }
             }
 
             PillActionButton(

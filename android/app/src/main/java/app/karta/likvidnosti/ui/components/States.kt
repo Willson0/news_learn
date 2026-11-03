@@ -99,7 +99,7 @@ fun StaleDataBanner(savedAt: Long?, onRetry: () -> Unit, modifier: Modifier = Mo
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp)
-            .liquidGlass(RoundedCornerShape(24.dp))
+            .glassPanel(RoundedCornerShape(24.dp))
             .pressable { onRetry() }
             .padding(horizontal = 16.dp, vertical = 8.dp)
             .semantics { liveRegion = LiveRegionMode.Polite },
@@ -158,7 +158,7 @@ fun BoxScope.AppToastHost() {
         Box(
             modifier = Modifier
                 .heightIn(min = 32.dp)
-                .liquidGlass(RoundedCornerShape(24.dp))
+                .glassPanel(RoundedCornerShape(24.dp))
                 .padding(horizontal = 12.dp, vertical = 7.dp)
                 .semantics { liveRegion = LiveRegionMode.Polite },
             contentAlignment = Alignment.Center,
@@ -190,7 +190,7 @@ fun BoxScope.SlowNetworkHint(active: Boolean, bottom: androidx.compose.ui.unit.D
         Row(
             modifier = Modifier
                 .heightIn(min = 40.dp)
-                .liquidGlass(RoundedCornerShape(24.dp))
+                .glassPanel(RoundedCornerShape(24.dp))
                 .padding(horizontal = 16.dp, vertical = 8.dp)
                 .semantics { liveRegion = LiveRegionMode.Polite },
             verticalAlignment = Alignment.CenterVertically,

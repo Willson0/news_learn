@@ -154,6 +154,7 @@ import app.karta.likvidnosti.ui.components.ReportCover
 import app.karta.likvidnosti.ui.components.SkeletonBox
 import app.karta.likvidnosti.ui.components.backdropBlur
 import app.karta.likvidnosti.ui.components.fillShape
+import app.karta.likvidnosti.ui.components.glassPanel
 import app.karta.likvidnosti.ui.components.liquidGlass
 import app.karta.likvidnosti.ui.components.pressable
 import app.karta.likvidnosti.ui.components.screenBackground
@@ -1716,7 +1717,7 @@ fun ChatScreen(
                         Column(
                             modifier = Modifier
                                 .width(193.dp)
-                                .liquidGlass(T.ShapeCard, Fills.Black2)
+                                .glassPanel(T.ShapeCard)
                                 .padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
@@ -2192,7 +2193,7 @@ private fun DeleteChoicePanel(canDeleteAll: Boolean, onDeleteAll: () -> Unit, on
     Column(
         modifier = Modifier
             .width(193.dp)
-            .liquidGlass(T.ShapeCard, Fills.Black2)
+            .glassPanel(T.ShapeCard)
             .pressable(pressAlpha = 1f) {}
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -2242,7 +2243,7 @@ private fun PinnedBar(
             .padding(top = 24.dp)
             .fillMaxWidth()
             .height(65.dp)
-            .liquidGlass(T.ShapeCard)
+            .glassPanel(T.ShapeCard)
             .padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -2670,7 +2671,7 @@ private fun MessageMenuOverlay(
                 Column(
                     modifier = Modifier
                         .width(193.dp)
-                        .liquidGlass(T.ShapeCard)
+                        .glassPanel(T.ShapeCard)
                         .pressable(pressAlpha = 1f) {}
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),

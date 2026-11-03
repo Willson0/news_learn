@@ -9,6 +9,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -35,6 +36,9 @@ import app.karta.likvidnosti.data.Session
 import app.karta.likvidnosti.data.TokenStore
 import app.karta.likvidnosti.ui.components.AppTab
 import app.karta.likvidnosti.ui.components.AppToastHost
+import app.karta.likvidnosti.ui.components.LocalBackdrop
+import app.karta.likvidnosti.ui.components.backdropSource
+import app.karta.likvidnosti.ui.components.rememberBackdrop
 import app.karta.likvidnosti.ui.components.GlassNavBar
 import app.karta.likvidnosti.ui.components.NavBarExtra
 import app.karta.likvidnosti.ui.components.dismissKeyboardOnBackgroundTap
@@ -210,9 +214,12 @@ fun AppRoot() {
                 keyboard?.hide()
             },
     ) {
+        // Экран записывается в подложку: тост поверх размывает то, что под ним.
+        val rootBackdrop = rememberBackdrop()
         NavHost(
             navController = nav,
             startDestination = start,
+            modifier = Modifier.fillMaxSize().backdropSource(rootBackdrop),
             // Вкладки переключаются без анимации, внутренние экраны въезжают справа (как push в iOS).
             enterTransition = { if (isTabSwitch()) EnterTransition.None else slideInHorizontally(tween(320)) { it } },
             exitTransition = { if (isTabSwitch()) ExitTransition.None else slideOutHorizontally(tween(320)) { -it / 4 } },
@@ -391,7 +398,7 @@ fun AppRoot() {
             composable(Routes.SUBSCRIPTION) { SubscriptionScreen(onBack = { actions.back() }, onToMaterials = { actions.toHome() }) }
             composable(Routes.USER_AGREEMENT) { UserAgreementScreen(onBack = { actions.back() }) }
         }
-        AppToastHost()
+        CompositionLocalProvider(LocalBackdrop provides rootBackdrop) { AppToastHost() }
     }
 }
 

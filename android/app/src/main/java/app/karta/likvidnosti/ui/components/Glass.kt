@@ -168,11 +168,14 @@ object Fills {
     /** Навбар: Theme.navbarBg + Theme.surfaceMuted. */
     val NavBar = GlassFill(listOf(SolidColor(T.NavbarBg), SolidColor(T.SurfaceMuted)))
 
-    /** «чёрный 2» — попапы, диалог. */
+    /** «чёрный 2». */
     val Black2 = GlassFill(T.Black2)
 
-    /** Календарь: «чёрный 2», но плотнее (52 % вместо 40 %) — на Android он слишком просвечивал. */
-    val Calendar = GlassFill(Color.Black.copy(alpha = 0.52f))
+    /** Плашки с текстом поверх контента ([glassPanel]) при размытой подложке: фон экрана 78 %. */
+    val PanelBlurred = GlassFill(hex("#1a1b1d").copy(alpha = 0.78f))
+
+    /** То же без размытия (нечего размыть или Android ниже 12): фон экрана 92 %. */
+    val PanelSolid = GlassFill(hex("#1a1b1d").copy(alpha = 0.92f))
 
     /** «red» — опасные кнопки. */
     val Danger = GlassFill(T.Danger)
@@ -278,9 +281,9 @@ private class PositionHolder {
  * внутреннее свечение кромки и тонкий блик-обводка — яркий сверху-слева и
  * снизу-справа.
  */
-fun Modifier.liquidGlass(shape: Shape = CapsuleShape, fill: GlassFill = Fills.Glass): Modifier =
+fun Modifier.liquidGlass(shape: Shape = CapsuleShape, fill: GlassFill = Fills.Glass, blur: Dp = 10.dp): Modifier =
     this
-        .backdropBlur(10.dp, shape)
+        .backdropBlur(blur, shape)
         .drawWithCache {
             val outline = shape.createOutline(size, layoutDirection, this)
             val path = Path().apply { addOutline(outline) }
@@ -314,6 +317,16 @@ fun Modifier.liquidGlass(shape: Shape = CapsuleShape, fill: GlassFill = Fills.Gl
 
 /** Тёмная подложка стекла (цвет фона экрана, 12 %) — уменьшает прозрачность. */
 private val GlassBody = hex("#1e1f21").copy(alpha = 0.12f)
+
+/**
+ * Плашка с текстом поверх контента (тост, календарь, попапы, меню, диалоги): то же стекло,
+ * но с сильным размытием подложки и плотной тёмной заливкой, чтобы текст читался на
+ * любом фоне. Если размыть нечего (нет подложки или Android ниже 12) — заливка ещё плотнее.
+ */
+fun Modifier.glassPanel(shape: Shape = T.ShapeCard): Modifier = composed {
+    val blurred = LocalBackdrop.current != null && BlurSupported
+    this.liquidGlass(shape, if (blurred) Fills.PanelBlurred else Fills.PanelSolid, blur = 24.dp)
+}
 
 /** Стекло с одноцветной заливкой. */
 fun Modifier.liquidGlass(shape: Shape, fill: Color): Modifier = liquidGlass(shape, GlassFill(fill))

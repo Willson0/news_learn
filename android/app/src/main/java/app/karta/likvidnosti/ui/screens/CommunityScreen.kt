@@ -70,6 +70,7 @@ import app.karta.likvidnosti.ui.components.StaleDataBanner
 import app.karta.likvidnosti.ui.components.RemoteImage
 import app.karta.likvidnosti.ui.components.SegmentedControl
 import app.karta.likvidnosti.ui.components.TabScaffold
+import app.karta.likvidnosti.ui.components.glassPanel
 import app.karta.likvidnosti.ui.components.liquidGlass
 import app.karta.likvidnosti.ui.components.pressable
 import app.karta.likvidnosti.ui.components.PullToRefreshBox
@@ -497,7 +498,7 @@ private fun ChatListMenu(
                 Column(
                     modifier = Modifier
                         .width(240.dp)
-                        .liquidGlass(T.ShapeCard)
+                        .glassPanel(T.ShapeCard)
                         .pressable(pressAlpha = 1f) {}
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
