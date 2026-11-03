@@ -280,7 +280,7 @@ fun FiltersSheet(
         ) {
             // Содержимое листа — подложка для календаря: он размывает только то, что
             // ровно под ним (как backdrop-filter), остальной лист остаётся чётким.
-            val sheetBackdrop = rememberBackdrop()
+            val sheetBackdrop = rememberBackdrop(base = T.Surface)
             Column(
                 modifier = Modifier
                     .fillMaxSize()

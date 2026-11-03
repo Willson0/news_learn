@@ -194,7 +194,7 @@ object Fills {
  * размытую копию — как BackdropBlur в iOS. Работает на Android 12+ (API 31);
  * ниже — только полупрозрачная заливка и кромка.
  */
-class Backdrop internal constructor(internal val layer: GraphicsLayer) {
+class Backdrop internal constructor(internal val layer: GraphicsLayer, internal val base: Color) {
     /** Координаты источника: по ним стекло на каждом кадре считает, какой кусок подложки под ним. */
     internal var coords: LayoutCoordinates? = null
     internal var recorded: Boolean = false
@@ -208,9 +208,12 @@ val LocalBackdrop = staticCompositionLocalOf<Backdrop?> { null }
 private val BlurSupported: Boolean get() = Build.VERSION.SDK_INT >= 31
 
 @Composable
-fun rememberBackdrop(): Backdrop {
+fun rememberBackdrop(
+    /** Цвет фона под содержимым подложки: размытая копия кладётся на него и полностью закрывает чёткий контент. */
+    base: Color = T.Bg,
+): Backdrop {
     val layer = rememberGraphicsLayer()
-    return remember(layer) { Backdrop(layer) }
+    return remember(layer, base) { Backdrop(layer, base) }
 }
 
 /** Записывает содержимое в подложку [backdrop] (и рисует его как обычно). */
@@ -254,7 +257,7 @@ fun BackdropBox(
  * размытая копия всегда совпадает с тем, что под ней. Без [LocalBackdrop] или ниже
  * API 31 ничего не рисует.
  */
-fun Modifier.backdropBlur(radius: Dp, shape: Shape = RectangleShape): Modifier = composed {
+fun Modifier.backdropBlur(radius: Dp, shape: Shape = RectangleShape, opaqueBase: Boolean = false): Modifier = composed {
     val backdrop = LocalBackdrop.current
     if (backdrop == null || !BlurSupported) return@composed this
     val blurLayer = rememberGraphicsLayer()
@@ -279,7 +282,12 @@ fun Modifier.backdropBlur(radius: Dp, shape: Shape = RectangleShape): Modifier =
                     blurLayer.record {
                         withTransform({ transform(toLocal) }) { drawLayer(backdrop.layer) }
                     }
-                    clipPath(clip) { drawLayer(blurLayer) }
+                    // Сначала непрозрачный фон: там, где у содержимого прозрачные места (текст
+                    // без плашки), иначе просвечивал бы чёткий оригинал.
+                    clipPath(clip) {
+                        if (opaqueBase) drawRect(backdrop.base)
+                        drawLayer(blurLayer)
+                    }
                 }
                 drawContent()
             }
@@ -300,9 +308,14 @@ private class CoordsHolder {
  * внутреннее свечение кромки и тонкий блик-обводка — яркий сверху-слева и
  * снизу-справа.
  */
-fun Modifier.liquidGlass(shape: Shape = CapsuleShape, fill: GlassFill = Fills.Glass, blur: Dp = 10.dp): Modifier =
+fun Modifier.liquidGlass(
+    shape: Shape = CapsuleShape,
+    fill: GlassFill = Fills.Glass,
+    blur: Dp = 10.dp,
+    opaqueBase: Boolean = false,
+): Modifier =
     this
-        .backdropBlur(blur, shape)
+        .backdropBlur(blur, shape, opaqueBase)
         .drawWithCache {
             val outline = shape.createOutline(size, layoutDirection, this)
             val path = Path().apply { addOutline(outline) }
@@ -344,7 +357,7 @@ private val GlassBody = hex("#1e1f21").copy(alpha = 0.12f)
  */
 fun Modifier.glassPanel(shape: Shape = T.ShapeCard): Modifier = composed {
     val blurred = LocalBackdrop.current != null && BlurSupported
-    this.liquidGlass(shape, if (blurred) Fills.PanelBlurred else Fills.PanelSolid, blur = 24.dp)
+    this.liquidGlass(shape, if (blurred) Fills.PanelBlurred else Fills.PanelSolid, blur = 24.dp, opaqueBase = true)
 }
 
 /** Стекло с одноцветной заливкой. */
