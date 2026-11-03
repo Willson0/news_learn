@@ -19,9 +19,10 @@ android {
         applicationId = "app.karta.likvidnosti"
         minSdk = 24
         targetSdk = 35
-        versionCode = 12
-        versionName = "1.4.6"
+        versionCode = 13
+        versionName = "1.4.7"
         vectorDrawables { useSupportLibrary = true }
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // Адрес бэкенда (Laravel). Переопределяется на CI / при сборке релиза.
         // Должен оканчиваться на /api (см. BuildConfig.API_BASE_URL).
@@ -82,6 +83,13 @@ dependencies {
     implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.material3)
     debugImplementation(libs.androidx.compose.ui.tooling)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
+
+    // Скриншот-тесты на эмуляторе (CI «Android UI screenshots»): размытие под плашками.
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
 
     implementation(libs.retrofit)
     implementation(libs.retrofit.serialization)

@@ -53,7 +53,11 @@ import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.Matrix
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -191,8 +195,11 @@ object Fills {
  * ниже — только полупрозрачная заливка и кромка.
  */
 class Backdrop internal constructor(internal val layer: GraphicsLayer) {
-    internal var origin: Offset = Offset.Zero
+    /** Координаты источника: по ним стекло на каждом кадре считает, какой кусок подложки под ним. */
+    internal var coords: LayoutCoordinates? = null
     internal var recorded: Boolean = false
+    /** Растёт при каждом сдвиге источника — стекло поверх перерисовывается вместе с ним. */
+    internal var moves by mutableIntStateOf(0)
 }
 
 /** Подложка, доступная стеклу; null — размытия нет (элемент на непрозрачной плашке). */
@@ -208,7 +215,7 @@ fun rememberBackdrop(): Backdrop {
 
 /** Записывает содержимое в подложку [backdrop] (и рисует его как обычно). */
 fun Modifier.backdropSource(backdrop: Backdrop): Modifier = this
-    .onGloballyPositioned { backdrop.origin = it.positionInRoot() }
+    .onGloballyPositioned { backdrop.coords = it; backdrop.moves++ }
     .drawWithContent {
         if (BlurSupported) {
             backdrop.layer.record { this@drawWithContent.drawContent() }
@@ -240,26 +247,37 @@ fun BackdropBox(
 }
 
 /**
- * Размытая подложка под элементом (iOS `BackdropBlur(radius:)`), обрезанная
- * формой [shape]. Без [LocalBackdrop] или ниже API 31 ничего не рисует.
+ * Размытая подложка под элементом — как CSS `backdrop-filter: blur()` и iOS
+ * `BackdropBlur(radius:)`: размывается только то, что лежит ровно под элементом,
+ * в границах [shape]. Положение элемента относительно подложки берётся на каждом
+ * кадре полной матрицей (сдвиг, масштаб анимации появления, свайп листа), поэтому
+ * размытая копия всегда совпадает с тем, что под ней. Без [LocalBackdrop] или ниже
+ * API 31 ничего не рисует.
  */
 fun Modifier.backdropBlur(radius: Dp, shape: Shape = RectangleShape): Modifier = composed {
     val backdrop = LocalBackdrop.current
     if (backdrop == null || !BlurSupported) return@composed this
     val blurLayer = rememberGraphicsLayer()
-    val holder = remember { PositionHolder() }
+    val holder = remember { CoordsHolder() }
     this
-        .onGloballyPositioned { holder.pos = it.positionInRoot() }
+        .onGloballyPositioned { holder.coords = it; holder.moves++ }
         .drawWithCache {
             val outline = shape.createOutline(size, layoutDirection, this)
             val clip = Path().apply { addOutline(outline) }
             val r = radius.toPx()
+            val toLocal = Matrix()
             onDrawWithContent {
-                if (backdrop.recorded) {
-                    val off = holder.pos - backdrop.origin
+                // Чтение счётчиков подписывает отрисовку на сдвиги элемента и подложки.
+                holder.moves
+                backdrop.moves
+                val src = backdrop.coords
+                val me = holder.coords
+                if (backdrop.recorded && src != null && me != null && src.isAttached && me.isAttached) {
+                    toLocal.reset()
+                    me.transformFrom(src, toLocal)
                     blurLayer.renderEffect = BlurEffect(r, r, TileMode.Clamp)
                     blurLayer.record {
-                        translate(-off.x, -off.y) { drawLayer(backdrop.layer) }
+                        withTransform({ transform(toLocal) }) { drawLayer(backdrop.layer) }
                     }
                     clipPath(clip) { drawLayer(blurLayer) }
                 }
@@ -268,8 +286,9 @@ fun Modifier.backdropBlur(radius: Dp, shape: Shape = RectangleShape): Modifier =
         }
 }
 
-private class PositionHolder {
-    var pos: Offset = Offset.Zero
+private class CoordsHolder {
+    var coords: LayoutCoordinates? = null
+    var moves by mutableIntStateOf(0)
 }
 
 // MARK: - Жидкое стекло
@@ -323,9 +342,8 @@ private val GlassBody = hex("#1e1f21").copy(alpha = 0.12f)
  * но с сильным размытием подложки и плотной тёмной заливкой, чтобы текст читался на
  * любом фоне. Если размыть нечего (нет подложки или Android ниже 12) — заливка ещё плотнее.
  */
-fun Modifier.glassPanel(shape: Shape = T.ShapeCard, contentBehindBlurred: Boolean = false): Modifier = composed {
-    // contentBehindBlurred — экран сам размывает содержимое под плашкой (Modifier.blur).
-    val blurred = (contentBehindBlurred || LocalBackdrop.current != null) && BlurSupported
+fun Modifier.glassPanel(shape: Shape = T.ShapeCard): Modifier = composed {
+    val blurred = LocalBackdrop.current != null && BlurSupported
     this.liquidGlass(shape, if (blurred) Fills.PanelBlurred else Fills.PanelSolid, blur = 24.dp)
 }
 
