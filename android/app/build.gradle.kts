@@ -70,6 +70,9 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
+    // Firebase (play-services) тянет старый Fragment 1.0; release-lint требует >= 1.3.0
+    // для registerForActivityResult (InvalidFragmentVersionForActivityResult).
+    implementation(libs.androidx.fragment)
     implementation(libs.androidx.navigation.compose)
 
     implementation(platform(libs.androidx.compose.bom))

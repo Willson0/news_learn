@@ -43,6 +43,16 @@ jobs:
             exit 1
           }
 
+      - name: Release lint (как при сборке релиза)
+        run: |
+          set -o pipefail
+          ./gradlew :app:lintVitalRelease --console=plain 2>&1 | tee lint.log || {
+            echo "::group::Lint errors"
+            grep -E "Error:|error:" lint.log || true
+            echo "::endgroup::"
+            exit 1
+          }
+
       - name: Upload APK
         if: success()
         uses: actions/upload-artifact@v4
