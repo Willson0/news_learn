@@ -72,8 +72,9 @@ fun HeartBurst(burst: HeartBurstState, modifier: Modifier = Modifier) {
         if (alpha <= 0f) return@Canvas
         val heartPx = 26.dp.toPx()
         val k = heartPx / 24f * scale
+        val rise = 16.dp.toPx() * f
         withTransform({
-            translate(left = c.x - 12f * k, top = c.y - 12f * k - 16.dp.toPx() * f)
+            translate(left = c.x - 12f * k, top = c.y - 12f * k - rise)
             scale(k, k, pivot = Offset.Zero)
         }) {
             drawPath(HeartPath, HeartBrush, alpha = alpha)
