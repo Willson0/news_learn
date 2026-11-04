@@ -198,6 +198,8 @@ fun MessageBubble(
     onToggleReaction: ((String) -> Unit)? = null,
     /** Поиск по чату: совпадения в тексте подсвечиваются. */
     highlight: String? = null,
+    /** Тап по имени автора в шапке — открыть его профиль. */
+    onAuthor: (() -> Unit)? = null,
 ) {
     val r = 24.dp
     val shape = RoundedCornerShape(
@@ -219,7 +221,7 @@ fun MessageBubble(
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         if (showHeader && !message.mine && !message.author.isNullOrEmpty() && !hasVoice) {
-            BubbleHeader(message.author, message.role)
+            BubbleHeader(message.author, message.role, onAuthor)
         }
         if (message.isPrivate && !message.privateLabel.isNullOrEmpty()) {
             Text(message.privateLabel, style = AppFont.sans(T.FsBase, FontWeight.SemiBold))
@@ -385,21 +387,31 @@ private fun PhotoTile(
 }
 
 @Composable
-private fun BubbleHeader(author: String, role: String?) {
+private fun BubbleHeader(author: String, role: String?, onAuthor: (() -> Unit)? = null) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // Имя занимает всё свободное место (длинное — с многоточием), роль прижата к правому краю.
+        // Раньше свободное место делили пополам имя и распорка, и роль «съезжала» к середине
+        // пузыря на разное расстояние в зависимости от длины имени.
         Text(
             author,
             style = AppFont.sans(T.FsSm, FontWeight.SemiBold),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f, fill = false),
+            modifier = Modifier
+                .weight(1f)
+                .then(if (onAuthor != null) Modifier.pressable(onClick = onAuthor) else Modifier),
         )
-        Spacer(Modifier.weight(1f).widthIn(min = 12.dp))
         if (!role.isNullOrEmpty()) {
-            Text(role, style = AppFont.sans(T.FsSm, color = Secondary), maxLines = 1)
+            Text(
+                role,
+                style = AppFont.sans(T.FsSm, color = Secondary),
+                maxLines = 1,
+                softWrap = false,
+                modifier = Modifier.padding(start = 12.dp),
+            )
         }
     }
 }

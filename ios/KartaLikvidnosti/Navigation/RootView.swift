@@ -5,12 +5,23 @@ struct RootView: View {
     @EnvironmentObject var session: Session
     @EnvironmentObject var appData: AppData
 
+    /// Приветствие при входе: текст, пока оно на экране.
+    @State private var greeting: String?
+    /// До какого момента ждём имя пользователя для приветствия (без сети имя может не прийти).
+    @State private var greetDeadline: Date?
+
     var body: some View {
         Group {
             if router.authed {
                 MainFlow()
             } else {
                 AuthFlow()
+            }
+        }
+        .overlay {
+            if let greeting {
+                WelcomeGreetingView(text: greeting) { self.greeting = nil }
+                    .transition(.identity)
             }
         }
         .appToastHost()
@@ -32,7 +43,33 @@ struct RootView: View {
             Task {
                 if authed { await appData.preload() } else { appData.clear() }
             }
+            if authed {
+                requestGreeting()
+            } else {
+                greeting = nil
+                greetDeadline = nil
+            }
         }
+        .onAppear { if router.authed { requestGreeting() } }
+        .onReceive(session.$user) { _ in tryGreet() }
+    }
+
+    /// Вход в приложение (запуск с сохранённым входом или только что вошли) — приветствие.
+    private func requestGreeting() {
+        if Greeting.skipNext {
+            Greeting.skipNext = false
+            return
+        }
+        greetDeadline = Date().addingTimeInterval(6)
+        tryGreet()
+    }
+
+    private func tryGreet() {
+        guard let deadline = greetDeadline, router.authed else { return }
+        guard Date() <= deadline else { greetDeadline = nil; return }
+        guard let name = session.user?.name?.trimmingCharacters(in: .whitespaces), !name.isEmpty else { return }
+        greetDeadline = nil
+        greeting = Greeting.text(name: name)
     }
 }
 

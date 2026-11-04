@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Period;
 use App\Support\SubscriptionPayload;
 use Illuminate\Database\Eloquent\Model;
 
@@ -48,9 +49,8 @@ class AppSetting extends Model
     public static function subscriptionPriceLabel(?Subscription $sub = null): string
     {
         $amount = $sub?->amount ?? self::defaultPrice();
-        $months = $sub?->months ?? self::defaultMonths();
 
-        return SubscriptionPayload::label($amount, $months);
+        return SubscriptionPayload::label($amount, $sub?->period() ?? Period::months(self::defaultMonths()));
     }
 
     /** Срок периода по умолчанию, месяцы. */

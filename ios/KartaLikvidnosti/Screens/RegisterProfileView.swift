@@ -24,6 +24,8 @@ struct RegisterProfileView: View {
             AuthMessageView(text: "Приветствуем, \(greeting)!")
                 .task {
                     try? await Task.sleep(nanoseconds: 1_600_000_000)
+                    // «Приветствуем, имя!» уже показали — «Добрый день, …» сразу следом не нужно.
+                    Greeting.skipNext = true
                     router.enterApp()
                 }
         } else {

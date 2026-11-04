@@ -60,8 +60,8 @@ class BillingController extends Controller
             $invoice = Invoice::pendingFor($user);
             if (! $invoice && $subscription?->tariffDefined()) {
                 // Цена уже назначена (например, прошлый счёт не оплатили) — новый счёт на неё же.
-                [$amount, $months] = $this->billing->terms($user);
-                $invoice = $this->invoices->issue($user, $amount, $months, 'app', notify: false);
+                [$amount, $period] = $this->billing->terms($user);
+                $invoice = $this->invoices->issue($user, $amount, $period, 'app', notify: false);
             }
             if (! $invoice) {
                 return response()->json([

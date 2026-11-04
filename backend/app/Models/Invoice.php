@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Period;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -14,7 +15,7 @@ class Invoice extends Model
     public const CANCELED = 'canceled';
 
     protected $fillable = [
-        'user_id', 'amount', 'months', 'status', 'tbank_payment_id',
+        'user_id', 'amount', 'months', 'days', 'status', 'tbank_payment_id',
         'confirmation_url', 'paid_at', 'created_by',
     ];
 
@@ -29,6 +30,12 @@ class Invoice extends Model
             ->where('status', self::PENDING)
             ->latest('id')
             ->first();
+    }
+
+    /** Срок одного периода: дни, если заданы, иначе месяцы (у подписки без срока — по умолчанию из настроек). */
+    public function period(): Period
+    {
+        return Period::of($this->months, $this->days, null);
     }
 
     public function user(): BelongsTo

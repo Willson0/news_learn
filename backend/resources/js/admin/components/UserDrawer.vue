@@ -23,7 +23,7 @@
                 <section class="block">
                     <h3>Условия подписки</h3>
                     <p class="muted small">
-                        Сейчас: {{ money(user.subscription.amount) }} за {{ user.subscription.months }} мес.,
+                        Сейчас: {{ money(user.subscription.amount) }} за {{ user.subscription.period }},
                         {{ user.subscription.access_now ? 'активна' : 'не активна' }}
                         <span v-if="user.subscription.until"> до {{ formatDate(user.subscription.until) }}</span>.
                     </p>
@@ -32,8 +32,14 @@
                             <label class="field"><span>Сумма, ₽</span>
                                 <input v-model.number="terms.amount" class="input" type="number" min="1">
                             </label>
-                            <label class="field"><span>Срок периода, мес.</span>
-                                <input v-model.number="terms.months" class="input" type="number" min="1" max="12">
+                            <label class="field"><span>Срок периода</span>
+                                <span class="period-input">
+                                    <input v-model.number="terms.count" class="input" type="number" min="1" :max="terms.unit === 'days' ? 730 : 12">
+                                    <select v-model="terms.unit" class="input">
+                                        <option value="months">мес.</option>
+                                        <option value="days">дн.</option>
+                                    </select>
+                                </span>
                             </label>
                         </div>
                         <label class="field"><span>Действует до</span>
@@ -63,7 +69,7 @@
                     <p v-if="!user.invoices.length" class="muted small">Счетов пока нет</p>
                     <ul class="list">
                         <li v-for="i in user.invoices" :key="i.id">
-                            <span>{{ money(i.amount) }} · {{ i.months }} мес.</span>
+                            <span>{{ money(i.amount) }} · {{ i.period }}</span>
                             <span class="muted small">{{ i.date }} · {{ invoiceStatus(i.status) }}</span>
                         </li>
                     </ul>
@@ -108,7 +114,8 @@ export default {
                 const s = res.data.subscription;
                 this.terms = {
                     amount: s.amount,
-                    months: s.months,
+                    unit: s.days ? 'days' : 'months',
+                    count: s.days || s.months,
                     until: s.until || '',
                     auto_pay: s.auto_pay,
                     active: s.active,
@@ -122,7 +129,8 @@ export default {
             this.saved = false;
             this.error = '';
             try {
-                const payload = { ...this.terms, until: this.terms.until || null };
+                const { unit, count, ...rest } = this.terms;
+                const payload = { ...rest, until: this.terms.until || null, [unit]: count };
                 const res = await api('PUT', `/users/${this.userId}/subscription`, payload);
                 this.user = res.data;
                 this.saved = true;
@@ -164,3 +172,9 @@ export default {
     },
 };
 </script>
+
+<style scoped>
+.period-input { display: flex; gap: 6px; }
+.period-input .input:first-child { flex: 1; min-width: 0; }
+.period-input select.input { width: 84px; flex: none; }
+</style>

@@ -155,6 +155,8 @@ struct MessageBubble: View {
     var highlight: String? = nil
     /// Реакция, которую только что поставили: её плашка проявляется на месте.
     var popReaction: String? = nil
+    /// Тап по имени автора в шапке пузыря — открыть его профиль.
+    var onAuthor: (() -> Void)? = nil
 
     static let maxWidth: CGFloat = 302
     private let secondary = Color.white.opacity(0.6)
@@ -249,7 +251,14 @@ struct MessageBubble: View {
 
     private func header(_ author: String) -> some View {
         HStack(spacing: 12) {
-            Text(author).font(Theme.sans(Theme.fontSm, .semibold)).foregroundStyle(Theme.text).lineLimit(1)
+            if let onAuthor {
+                Button(action: onAuthor) {
+                    Text(author).font(Theme.sans(Theme.fontSm, .semibold)).foregroundStyle(Theme.text).lineLimit(1)
+                }
+                .buttonStyle(PressableStyle())
+            } else {
+                Text(author).font(Theme.sans(Theme.fontSm, .semibold)).foregroundStyle(Theme.text).lineLimit(1)
+            }
             Spacer(minLength: 0)
             if let role = message.role, !role.isEmpty {
                 Text(role).font(Theme.sans(Theme.fontSm)).foregroundStyle(secondary).lineLimit(1)

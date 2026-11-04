@@ -6,7 +6,7 @@ use App\Models\AppSetting;
 use App\Models\Payment;
 use App\Models\Subscription;
 use App\Models\User;
-use Illuminate\Support\Carbon;
+use App\Support\Period;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -74,13 +74,13 @@ class SubscriptionBilling
             return;
         }
 
-        [$amount, $months] = $this->terms($user);
+        [$amount, $period] = $this->terms($user);
         $base = $sub->until && $sub->until->toDateString() >= Subscription::today() ? $sub->until : Subscription::today();
 
         $sub->fill([
             'active' => true,
             'plan' => $sub->plan ?? 'monthly',
-            'until' => Carbon::parse($base)->addMonths($months)->toDateString(),
+            'until' => $period->extend($base)->toDateString(),
             'auto_pay' => true,
             'payment_method' => 'card',
             'last_payment_id' => $paymentId,
@@ -90,7 +90,7 @@ class SubscriptionBilling
             'user_id' => $user->id,
             'kind' => 'renewal',
             'amount' => $amount,
-            'months' => $months,
+            ...$period->columns(),
             'paid_at' => now(),
         ]);
     }
@@ -147,7 +147,7 @@ class SubscriptionBilling
     /**
      * Сумма и срок периода для пользователя: индивидуальные условия или значения по умолчанию.
      *
-     * @return array{0: int, 1: int}
+     * @return array{0: int, 1: Period}
      */
     public function terms(User $user): array
     {
@@ -155,7 +155,7 @@ class SubscriptionBilling
 
         return [
             $sub?->amount ?? AppSetting::defaultPrice(),
-            $sub?->months ?? AppSetting::defaultMonths(),
+            $sub?->period() ?? Period::months(AppSetting::defaultMonths()),
         ];
     }
 }

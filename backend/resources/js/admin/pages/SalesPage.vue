@@ -45,7 +45,7 @@
                     <td>{{ p.paid_at }}</td>
                     <td>{{ p.user }}</td>
                     <td>{{ p.kind }}</td>
-                    <td>{{ p.months }} мес.</td>
+                    <td>{{ p.period }}</td>
                     <td>{{ money(p.amount) }}</td>
                 </tr>
                 <tr v-if="!loading && items.length === 0"><td colspan="5" class="muted">Оплат за период нет</td></tr>

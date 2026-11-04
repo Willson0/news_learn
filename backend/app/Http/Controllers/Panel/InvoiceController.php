@@ -26,6 +26,8 @@ class InvoiceController extends Controller
                 'user' => ['id' => $i->user_id, 'name' => $i->user?->name],
                 'amount' => $i->amount,
                 'months' => $i->months,
+                'days' => $i->days,
+                'period' => $i->period()->short(),
                 'status' => $i->status,
                 'created_at' => $i->created_at?->format('d.m.Y H:i'),
                 'paid_at' => $i->paid_at?->format('d.m.Y H:i'),

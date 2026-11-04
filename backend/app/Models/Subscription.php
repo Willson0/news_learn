@@ -3,13 +3,14 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
+use App\Support\Period;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Subscription extends Model
 {
     protected $fillable = [
-        'user_id', 'active', 'plan', 'amount', 'months', 'until', 'auto_pay', 'payment_method', 'last_payment_id',
+        'user_id', 'active', 'plan', 'amount', 'months', 'days', 'until', 'auto_pay', 'payment_method', 'last_payment_id',
     ];
 
     protected $casts = [
@@ -53,6 +54,12 @@ class Subscription extends Model
     public function scopeGrantingAccess(Builder $query): Builder
     {
         return $query->where('active', true)->whereNotNull('until')->whereDate('until', '>=', self::today());
+    }
+
+    /** Срок одного периода: дни, если заданы, иначе месяцы (у подписки без срока — по умолчанию из настроек). */
+    public function period(): Period
+    {
+        return Period::of($this->months, $this->days, AppSetting::defaultMonths());
     }
 
     public function user(): BelongsTo

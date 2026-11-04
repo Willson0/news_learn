@@ -22,7 +22,7 @@ class SubscriptionPayload
         // Стоимость показываем, только когда она известна: по выставленному счёту или по
         // назначенному тарифу. Иначе null — приложения пишут «Не определен» (макет 484:13055).
         $price = match (true) {
-            $invoice !== null => self::label($invoice->amount, $invoice->months),
+            $invoice !== null => self::label($invoice->amount, $invoice->period()),
             $tariff => AppSetting::subscriptionPriceLabel($sub),
             default => null,
         };
@@ -41,12 +41,13 @@ class SubscriptionPayload
                 'id' => $invoice->id,
                 'amount' => $invoice->amount,
                 'months' => $invoice->months,
+                'days' => $invoice->days,
             ] : null,
         ];
     }
 
-    public static function label(int $amount, int $months): string
+    public static function label(int $amount, Period $period): string
     {
-        return number_format($amount, 0, ',', ' ').' ₽ / '.$months.' мес.';
+        return number_format($amount, 0, ',', ' ').' ₽ / '.$period->short();
     }
 }

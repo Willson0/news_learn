@@ -232,6 +232,49 @@ class PanelTest extends TestCase
         $this->assertSame(1, Payment::count());
     }
 
+    public function test_invoice_with_custom_days_period(): void
+    {
+        $user = $this->user();
+
+        // Свой срок в днях вместо 1/3/6/12 месяцев; неверный срок отклоняется.
+        $this->asPanel()->postJson("/admin/api/users/{$user->id}/invoices", ['amount' => 900, 'days' => 0])->assertStatus(422);
+        $this->asPanel()->postJson("/admin/api/users/{$user->id}/invoices", ['amount' => 900, 'days' => 5000])->assertStatus(422);
+        $this->asPanel()->postJson("/admin/api/users/{$user->id}/invoices", ['amount' => 900, 'days' => 45])
+            ->assertCreated()
+            ->assertJsonPath('data.days', 45)
+            ->assertJsonPath('data.period', '45 дней');
+        $this->assertDatabaseHas('invoices', ['user_id' => $user->id, 'amount' => 900, 'days' => 45, 'months' => 0, 'status' => 'pending']);
+        $this->assertDatabaseHas('subscriptions', ['user_id' => $user->id, 'amount' => 900, 'days' => 45]);
+
+        Sanctum::actingAs($user);
+        $this->getJson('/api/subscription')->assertOk()
+            ->assertJsonPath('data.price', '900 ₽ / 45 дн.')
+            ->assertJsonPath('data.invoice.days', 45);
+
+        // Оплата счёта продлевает подписку ровно на 45 дней.
+        $invoice = Invoice::firstOrFail();
+        app(\App\Services\InvoiceService::class)->markPaid($invoice, ['PaymentId' => 'pay-days-1']);
+        $sub = Subscription::where('user_id', $user->id)->firstOrFail();
+        $this->assertSame(
+            \Illuminate\Support\Carbon::parse(Subscription::today())->addDays(45)->toDateString(),
+            $sub->until->toDateString(),
+        );
+        $this->assertDatabaseHas('payments', ['user_id' => $user->id, 'kind' => 'invoice', 'days' => 45]);
+
+        // Автопродление идёт на тот же срок в днях.
+        $until = $sub->until->toDateString();
+        app(\App\Services\SubscriptionBilling::class)->markPaid($user->fresh(), 'pay-days-2');
+        $this->assertSame(
+            \Illuminate\Support\Carbon::parse($until)->addDays(45)->toDateString(),
+            $sub->fresh()->until->toDateString(),
+        );
+
+        // Переход обратно на месяцы сбрасывает дни.
+        $this->asPanel()->putJson("/admin/api/users/{$user->id}/subscription", ['months' => 2])
+            ->assertOk()->assertJsonPath('data.subscription.period', '2 месяца');
+        $this->assertDatabaseHas('subscriptions', ['user_id' => $user->id, 'months' => 2, 'days' => null]);
+    }
+
     public function test_terms_change_updates_subscription_and_notifies(): void
     {
         $this->fakeFcm();

@@ -51,6 +51,8 @@ class AnalyticsController extends Controller
             'kind' => $p->kind === 'invoice' ? 'Счёт' : 'Автопродление',
             'amount' => $p->amount,
             'months' => $p->months,
+            'days' => $p->days,
+            'period' => $p->period()->short(),
             'paid_at' => $p->paid_at->format('d.m.Y H:i'),
         ]);
 

@@ -36,6 +36,8 @@ import app.karta.likvidnosti.data.Session
 import app.karta.likvidnosti.data.TokenStore
 import app.karta.likvidnosti.ui.components.AppTab
 import app.karta.likvidnosti.ui.components.AppToastHost
+import app.karta.likvidnosti.ui.components.Greeting
+import app.karta.likvidnosti.ui.components.WelcomeGreeting
 import app.karta.likvidnosti.ui.components.LocalBackdrop
 import app.karta.likvidnosti.ui.components.backdropSource
 import app.karta.likvidnosti.ui.components.rememberBackdrop
@@ -83,6 +85,8 @@ object AppBoot {
 fun AppRoot() {
     var ready by remember { mutableStateOf(false) }
     var authed by remember { mutableStateOf(false) }
+    /** Приветствие при входе («Доброе утро, …»), пока оно на экране. */
+    var greeting by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
@@ -106,6 +110,8 @@ fun AppRoot() {
         }
         ready = true
         AppBoot.ready = true
+        // Запуск с сохранённым входом — приветствие поверх приложения.
+        if (authed) greeting = Greeting.text(Session.user?.name)
     }
 
     if (!ready) {
@@ -187,12 +193,16 @@ fun AppRoot() {
         GlassNavBar(current = tab, onSelect = { selectTab(it) }, extra = extra)
     }
 
-    /** Вход в приложение после авторизации (iOS Router.enterApp): стек авторизации сбрасывается. */
-    fun enterApp() {
+    /**
+     * Вход в приложение после авторизации (iOS Router.enterApp): стек авторизации сбрасывается.
+     * Сразу после регистрации «Приветствуем, имя!» уже было — тогда второго приветствия нет.
+     */
+    fun enterApp(greet: Boolean = true) {
         scope.launch {
             runCatching { Session.load(force = true) }
             scope.launch { AppData.preload() }
             nav.navigate(if (Session.restricted) Routes.PROFILE else Routes.HOME) { popUpTo(0) { inclusive = true } }
+            if (greet) greeting = Greeting.text(Session.user?.name)
         }
     }
 
@@ -247,7 +257,7 @@ fun AppRoot() {
                 )
             }
             composable(Routes.REGISTER_PROFILE) {
-                RegisterProfileScreen(onDone = { enterApp() })
+                RegisterProfileScreen(onDone = { enterApp(greet = false) })
             }
             composable(Routes.PASSWORD_RECOVERY) {
                 PasswordRecoveryScreen(onBack = { actions.back() }, onDone = { enterApp() })
@@ -398,6 +408,7 @@ fun AppRoot() {
             composable(Routes.SUBSCRIPTION) { SubscriptionScreen(onBack = { actions.back() }, onToMaterials = { actions.toHome() }) }
             composable(Routes.USER_AGREEMENT) { UserAgreementScreen(onBack = { actions.back() }) }
         }
+        greeting?.let { text -> WelcomeGreeting(text) { greeting = null } }
         CompositionLocalProvider(LocalBackdrop provides rootBackdrop) { AppToastHost() }
     }
 }

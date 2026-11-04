@@ -7,6 +7,7 @@ use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Subscription;
 use App\Models\User;
+use App\Support\Period;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -28,19 +29,19 @@ class InvoiceService
      * и в приложении появляется кнопка оплаты. Платёж в Т-Кассе создаётся, только когда
      * пользователь нажимает «Оплатить» (см. checkoutUrl). Прежние неоплаченные счета закрываются.
      */
-    public function issue(User $user, int $amount, int $months, ?string $createdBy, bool $notify = true): Invoice
+    public function issue(User $user, int $amount, Period $period, ?string $createdBy, bool $notify = true): Invoice
     {
-        $invoice = DB::transaction(function () use ($user, $amount, $months, $createdBy) {
+        $invoice = DB::transaction(function () use ($user, $amount, $period, $createdBy) {
             Invoice::where('user_id', $user->id)->where('status', Invoice::PENDING)
                 ->update(['status' => Invoice::CANCELED]);
 
             $sub = Subscription::firstOrCreate(['user_id' => $user->id]);
-            $sub->fill(['amount' => $amount, 'months' => $months, 'plan' => 'custom'])->save();
+            $sub->fill(['amount' => $amount, 'plan' => 'custom'] + $period->columns())->save();
 
             return Invoice::create([
                 'user_id' => $user->id,
                 'amount' => $amount,
-                'months' => $months,
+                ...$period->columns(),
                 'status' => Invoice::PENDING,
                 'created_by' => $createdBy,
             ]);
@@ -50,7 +51,7 @@ class InvoiceService
             $this->push->sendToUser(
                 $user,
                 'Подписка доступна',
-                "Стоимость: {$this->money($amount)} за {$this->period($months)}. Оплатить можно в приложении, в профиле.",
+                "Стоимость: {$this->money($amount)} за {$period->label()}. Оплатить можно в приложении, в профиле.",
                 ['type' => 'subscription'],
             );
         }
@@ -72,7 +73,7 @@ class InvoiceService
         $payment = $this->tbank->init(
             amount: $invoice->amount,
             orderId: 'inv-'.$invoice->id.'-'.Str::random(8),
-            description: "Подписка «Карта ликвидности», {$invoice->months} мес.",
+            description: 'Подписка «Карта ликвидности», '.$invoice->period()->short(),
             customerKey: TbankClient::customerKey($user->id),
             recurrent: true,
             email: $user->email,
@@ -117,16 +118,21 @@ class InvoiceService
     /**
      * Меняет условия подписки пользователя (сумма, срок, автопродление). Пользователю уходит push.
      *
-     * @param  array{amount?: int, months?: int, until?: string|null, auto_pay?: bool, active?: bool}  $terms
+     * @param  array{amount?: int, months?: int, days?: int, until?: string|null, auto_pay?: bool, active?: bool}  $terms
      */
     public function changeTerms(User $user, array $terms): Subscription
     {
         $sub = Subscription::firstOrCreate(['user_id' => $user->id]);
         $sub->fill(array_filter([
             'amount' => $terms['amount'] ?? null,
-            'months' => $terms['months'] ?? null,
             'plan' => isset($terms['amount']) ? 'custom' : null,
         ], fn ($v) => $v !== null));
+        // Срок: либо дни, либо месяцы — второе при этом сбрасывается.
+        if (! empty($terms['days'])) {
+            $sub->fill(Period::days((int) $terms['days'])->columns());
+        } elseif (! empty($terms['months'])) {
+            $sub->fill(Period::months((int) $terms['months'])->columns());
+        }
 
         if (array_key_exists('until', $terms)) {
             $sub->until = $terms['until'] ? Carbon::parse($terms['until']) : null;
@@ -142,7 +148,7 @@ class InvoiceService
         $this->push->sendToUser(
             $user,
             'Условия подписки изменены',
-            "Теперь подписка: {$this->money($sub->amount ?? AppSetting::defaultPrice())} за {$this->period($sub->months ?? AppSetting::defaultMonths())}.",
+            "Теперь подписка: {$this->money($sub->amount ?? AppSetting::defaultPrice())} за {$sub->period()->label()}.",
             ['type' => 'subscription'],
         );
 
@@ -169,8 +175,8 @@ class InvoiceService
                 'active' => true,
                 'plan' => 'custom',
                 'amount' => $invoice->amount,
-                'months' => $invoice->months,
-                'until' => Carbon::parse($base)->addMonths($invoice->months)->toDateString(),
+                ...$invoice->period()->columns(),
+                'until' => $invoice->period()->extend($base)->toDateString(),
                 'auto_pay' => true,
                 'payment_method' => 'card',
                 'last_payment_id' => (string) $state['PaymentId'],
@@ -183,7 +189,7 @@ class InvoiceService
                 'invoice_id' => $invoice->id,
                 'kind' => 'invoice',
                 'amount' => $invoice->amount,
-                'months' => $invoice->months,
+                ...$invoice->period()->columns(),
                 'paid_at' => now(),
             ]);
 
@@ -210,14 +216,5 @@ class InvoiceService
     private function money(int $amount): string
     {
         return number_format($amount, 0, ',', ' ').' ₽';
-    }
-
-    private function period(int $months): string
-    {
-        return match (true) {
-            $months === 1 => '1 месяц',
-            $months >= 2 && $months <= 4 => "{$months} месяца",
-            default => "{$months} месяцев",
-        };
     }
 }

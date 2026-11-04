@@ -34,6 +34,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -135,6 +136,8 @@ import app.karta.likvidnosti.data.api.MessageQuoteDto
 import app.karta.likvidnosti.data.api.ParticipantDto
 import app.karta.likvidnosti.data.fileUrl
 import app.karta.likvidnosti.ui.components.AvatarCircle
+import app.karta.likvidnosti.ui.components.HeartBurst
+import app.karta.likvidnosti.ui.components.HeartBurstState
 import app.karta.likvidnosti.ui.components.figmaFade
 import app.karta.likvidnosti.ui.components.figmaTween
 import app.karta.likvidnosti.ui.components.chatSpring
@@ -196,6 +199,7 @@ import app.karta.likvidnosti.data.api.ApiException
 import app.karta.likvidnosti.data.ChatOutbox
 
 private val REACTIONS = listOf("👍", "❤️", "🔥", "😂", "😮", "😢", "🙏", "👏")
+private const val HEART = "❤️"
 private val Secondary = Color.White.copy(alpha = 0.6f)
 private val ChatSpring = figmaTween<Float>()
 
@@ -302,7 +306,7 @@ private fun replyPreview(m: ChatMessage): String = when {
 private val MentionRegex = Regex("(^|\\s)@[^\\s@]*$")
 // «/текст/» — личное сообщение автору отчёта.
 /** Вибрация записи голосового: системные паттерны, где они есть (Android 11+). */
-private enum class VoiceHaptic { Start, Tick, Lock, Cancel, Send, Toggle }
+private enum class VoiceHaptic { Start, Tick, Lock, Cancel, Send, Toggle, Heart }
 
 private fun View.voiceHaptic(kind: VoiceHaptic) {
     val modern = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
@@ -313,6 +317,8 @@ private fun View.voiceHaptic(kind: VoiceHaptic) {
         VoiceHaptic.Cancel -> if (modern) HapticFeedbackConstants.REJECT else HapticFeedbackConstants.LONG_PRESS
         VoiceHaptic.Send -> if (modern) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.KEYBOARD_TAP
         VoiceHaptic.Toggle -> HapticFeedbackConstants.VIRTUAL_KEY
+        // Двойной тап — ❤️: один короткий лёгкий щелчок.
+        VoiceHaptic.Heart -> HapticFeedbackConstants.VIRTUAL_KEY
     }
     performHapticFeedback(constant, HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING)
 }
@@ -386,6 +392,7 @@ fun ChatScreen(
     val pendingImages = remember { mutableStateListOf<Uri>() }
     var replyTo by remember { mutableStateOf<ChatMessage?>(null) }
     var menuFor by remember { mutableStateOf<Long?>(null) }
+    var heartBurst by remember { mutableStateOf<HeartBurstState?>(null) }
     var deleteMenu by remember { mutableStateOf(false) }
     var selectDeleteMenu by remember { mutableStateOf(false) }
     var selectMode by remember { mutableStateOf(false) }
@@ -1062,6 +1069,22 @@ fun ChatScreen(
         }
     }
 
+    /**
+     * Двойной тап по сообщению ставит ❤️ (уже стоит — только анимация и отклик:
+     * реакция не снимается, снять её можно тапом по плашке или из меню).
+     */
+    fun heartTap(m: ChatMessage, at: Offset) {
+        if (selectMode || m.uploading || m.failed || m.isSystem || m.id <= 0) return
+        val burst = HeartBurstState(m.id, at)
+        heartBurst = burst
+        view.voiceHaptic(VoiceHaptic.Heart)
+        if (m.reactions.none { it.emoji == HEART && it.mine }) react(m.id, HEART)
+        scope.launch {
+            delay(1000)
+            if (heartBurst?.token == burst.token) heartBurst = null
+        }
+    }
+
     fun clampPinIndex() {
         pinIndex = pinIndex.coerceIn(0, (pins.size - 1).coerceAtLeast(0))
     }
@@ -1421,22 +1444,28 @@ fun ChatScreen(
                                                 }
                                             }
                                         }
-                                        MessageBubble(
-                                            message = m,
-                                            modifier = Modifier
+                                        val msg by rememberUpdatedState(m)
+                                        Box(
+                                            Modifier
                                                 .weight(1f, fill = false)
                                                 .graphicsLayer {
                                                     alpha = if (menuFor == m.id) 0f else appear.value.coerceIn(0f, 1f)
-                                                }
-                                                .combinedClickable(
-                                                    interactionSource = remember { MutableInteractionSource() },
-                                                    indication = null,
-                                                    onClick = {
-                                                        if (selectMode) toggleSelect(m.id)
-                                                        else if (m.failed) failedMenuFor = m.id
+                                                },
+                                        ) {
+                                        MessageBubble(
+                                            message = m,
+                                            // Тап, двойной тап (❤️ в точке касания) и долгое нажатие (меню).
+                                            // В режиме выбора двойного тапа нет — одиночный срабатывает сразу.
+                                            modifier = Modifier.pointerInput(selectMode) {
+                                                detectTapGestures(
+                                                    onTap = {
+                                                        if (selectMode) toggleSelect(msg.id)
+                                                        else if (msg.failed) failedMenuFor = msg.id
                                                     },
-                                                    onLongClick = { onLongPress(m) },
-                                                ),
+                                                    onDoubleTap = if (selectMode) null else { at -> heartTap(msg, at) },
+                                                    onLongPress = { onLongPress(msg) },
+                                                )
+                                            },
                                             isTail = isTail,
                                             showHeader = isFirst && !isDirect,
                                             isPlaying = playingId == m.id,
@@ -1447,7 +1476,10 @@ fun ChatScreen(
                                             onLongPress = { onLongPress(m) },
                                             onToggleReaction = if (selectMode || m.uploading) null else { e -> react(m.id, e) },
                                             highlight = if (searchMode) searchQuery else null,
+                                            onAuthor = if (selectMode || m.userId == null) null else { { m.userId?.let { onUser(it) } } },
                                         )
+                                        heartBurst?.takeIf { it.messageId == m.id }?.let { HeartBurst(it, Modifier.matchParentSize()) }
+                                        }
                                     }
                                 }
                                 }
@@ -1500,6 +1532,11 @@ fun ChatScreen(
                         onCloseSearch = { closeSearch() },
                         onBack = onBack,
                         onInfo = { openInfo() },
+                        // В личном чате с пользователем (у администратора) иконка открывает его профиль.
+                        onAvatar = {
+                            val uid = if (Session.isAdmin && slug.startsWith("dm-")) slug.removePrefix("dm-").toLongOrNull() else null
+                            if (uid != null) onUser(uid) else openInfo()
+                        },
                         onCancelSelect = { exitSelect() },
                         onOpenPin = { openPin(it) },
                         onUnpin = { unpinConfirm = it },
@@ -1890,6 +1927,7 @@ private fun BoxScope.ChatTopBar(
     onCloseSearch: () -> Unit,
     onBack: () -> Unit,
     onInfo: () -> Unit,
+    onAvatar: () -> Unit,
     onCancelSelect: () -> Unit,
     onOpenPin: (MessageQuoteDto) -> Unit,
     onUnpin: (MessageQuoteDto) -> Unit,
@@ -1939,8 +1977,8 @@ private fun BoxScope.ChatTopBar(
                             }
                         }
                     }
-                    // Иконка чата открывает то же инфо, что и название.
-                    ReportCover(avatar, Modifier.size(42.dp).clip(CircleShape).pressable { onInfo() }, loading = !loaded)
+                    // Иконка чата открывает то же инфо, что и название (в личном чате — профиль).
+                    ReportCover(avatar, Modifier.size(42.dp).clip(CircleShape).pressable { onAvatar() }, loading = !loaded)
                 }
             }
         }

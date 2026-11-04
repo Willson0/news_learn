@@ -41,6 +41,8 @@ struct ChatView: View {
     @State private var reactionSeq: [Int: Int] = [:]
     /// Только что поставленная реакция — её плашка проявляется на месте.
     @State private var popReaction: PopReaction?
+    /// Сердечко от двойного тапа по сообщению: где и на каком сообщении проиграть анимацию.
+    @State private var heartBurst: HeartBurst?
     struct PopReaction: Equatable { let id: Int; let emoji: String }
     @State private var flashId: Int? = nil
     // Поиск по сообщениям.
@@ -301,8 +303,9 @@ struct ChatView: View {
                     }
                     .buttonStyle(PressableStyle())
                     Spacer(minLength: 12)
-                    // Иконка чата открывает то же инфо, что и название.
-                    Button { openInfo() } label: {
+                    // Иконка чата открывает то же инфо, что и название; в личном чате
+                    // с пользователем (у администратора) — профиль этого пользователя.
+                    Button { openHeaderAvatar() } label: {
                         chatAvatar
                             // Почти прозрачная подложка: картинка сама нажатия не ловит.
                             .background(Circle().fill(Color.white.opacity(0.001)))
@@ -692,7 +695,18 @@ struct ChatView: View {
                                 .transition(.opacity)
                         }
                     }
+                    .overlay(alignment: .topLeading) {
+                        if let burst = heartBurst, burst.id == m.id {
+                            HeartBurstView(burst: burst)
+                        }
+                    }
                     .opacity(menuFor == m.id ? 0 : 1)
+                    // Двойной тап — сердечко. В режиме выбора жест выключен, и одиночный тап
+                    // срабатывает сразу, без ожидания второго.
+                    .gesture(
+                        SpatialTapGesture(count: 2).onEnded { v in onDoubleTap(m, at: v.location) },
+                        including: selectMode ? .subviews : .all
+                    )
                     .onTapGesture { onTap(m) }
                     .modifier(MessageContextMenu(enabled: !selectMode && !searchMode && !m.pending && !m.failed && !m.isSystem) {
                         systemMenuItems(m)
@@ -701,7 +715,9 @@ struct ChatView: View {
             }
         }
         .contentShape(Rectangle())
-        .onTapGesture { if selectMode { toggleSelect(m.id) } }
+        // Тап по строке нужен только в режиме выбора; вне его жест выключен и не
+        // перехватывает нажатия на аватар и пузырь.
+        .gesture(TapGesture().onEnded { if selectMode { toggleSelect(m.id) } }, including: selectMode ? .all : .subviews)
         .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 8)), removal: .opacity))
     }
 
@@ -752,7 +768,35 @@ struct ChatView: View {
                       onOpenImage: { if m.failed { failedMenuFor = m.id } else if !selectMode { openPhoto(m.image?.url) } },
                       onToggleReaction: m.pending || selectMode ? nil : { emoji in react(m.id, emoji) },
                       highlight: searchMode ? searchQuery : nil,
-                      popReaction: popReaction?.id == m.id ? popReaction?.emoji : nil)
+                      popReaction: popReaction?.id == m.id ? popReaction?.emoji : nil,
+                      onAuthor: m.userId == nil || selectMode ? nil : { openUser(m) })
+    }
+
+    /// Двойной тап по сообщению ставит ❤️ (если уже стоит — только анимация и отклик,
+    /// реакция не снимается: снять можно тапом по плашке или из меню).
+    private func onDoubleTap(_ m: ChatMessage, at point: CGPoint) {
+        guard !selectMode, !m.pending, !m.failed, !m.isSystem, m.id > 0 else { return }
+        let burst = HeartBurst(id: m.id, point: point)
+        heartBurst = burst
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            if heartBurst?.token == burst.token { heartBurst = nil }
+        }
+        if m.reactions.contains(where: { $0.emoji == Self.heart && $0.mine }) {
+            Haptics.soft()
+        } else {
+            react(m.id, Self.heart, haptic: false)
+            Haptics.soft()
+        }
+    }
+
+    private static let heart = "❤️"
+
+    private func openHeaderAvatar() {
+        if session.isAdmin, chatId.hasPrefix("dm-"), let uid = Int(chatId.dropFirst(3)) {
+            router.push(.chatUser(id: chatId, uid: String(uid)))
+        } else {
+            openInfo()
+        }
     }
 
     /// Тап: в режиме выбора — отметить. Меню — только по долгому нажатию.
@@ -1602,9 +1646,9 @@ struct ChatView: View {
     /// - Parameter afterSystemMenu: реакция выбрана в системном меню. Пузырь меняется,
     ///   когда меню почти закрылось: иначе система возвращает старый снимок пузыря,
     ///   а он рывком подменяется новым.
-    private func react(_ id: Int, _ emoji: String, closing: Bool = false, afterSystemMenu: Bool = false) {
+    private func react(_ id: Int, _ emoji: String, closing: Bool = false, afterSystemMenu: Bool = false, haptic: Bool = true) {
         if closing { closeMenu() }
-        Haptics.light()
+        if haptic { Haptics.light() }
         let seq = (reactionSeq[id] ?? 0) + 1
         reactionSeq[id] = seq
         let delay: Double = afterSystemMenu ? Self.systemMenuDismiss : 0
@@ -2334,5 +2378,60 @@ private final class LevelSmoother {
     func next(_ level: CGFloat) -> CGFloat {
         value += (level - value) * 0.25
         return value
+    }
+}
+
+
+// MARK: - Сердечко по двойному тапу
+
+struct HeartBurst: Equatable {
+    let id: Int
+    let point: CGPoint
+    let token = UUID()
+}
+
+/// Маленькое сердце в точке двойного тапа: мягко «выпрыгивает» пружиной, за ним
+/// расходится тонкое кольцо, затем сердце чуть всплывает и тает. Всего ~0,8 с,
+/// размер 26 pt — заметно, но не отвлекает от переписки. Нажатия не ловит.
+struct HeartBurstView: View {
+    let burst: HeartBurst
+    @State private var popped = false
+    @State private var gone = false
+    @State private var ring = false
+
+    private static let pink = Color(hex: "#ff2d6f")
+    private static let gradient = LinearGradient(
+        colors: [Color(hex: "#ff6fb0"), Color(hex: "#ff0a54")],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Self.pink.opacity(0.5), lineWidth: 1.5)
+                .frame(width: 30, height: 30)
+                .scaleEffect(ring ? 1.9 : 0.6)
+                .opacity(ring ? 0 : 0.8)
+            Image(systemName: "heart.fill")
+                .font(.system(size: 26, weight: .semibold))
+                .foregroundStyle(Self.gradient)
+                .shadow(color: Self.pink.opacity(0.35), radius: 6, y: 1)
+                .scaleEffect(gone ? 0.9 : (popped ? 1 : 0.3))
+                .opacity(gone ? 0 : (popped ? 1 : 0))
+                .offset(y: gone ? -16 : 0)
+        }
+        .position(burst.point)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .task(id: burst.token) {
+            popped = false
+            gone = false
+            ring = false
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.55)) { popped = true }
+            withAnimation(.easeOut(duration: 0.55)) { ring = true }
+            try? await Task.sleep(nanoseconds: 420_000_000)
+            withAnimation(.easeIn(duration: 0.35)) { gone = true }
+        }
     }
 }

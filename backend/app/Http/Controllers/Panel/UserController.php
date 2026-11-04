@@ -8,6 +8,7 @@ use App\Models\Invoice;
 use App\Models\Report;
 use App\Models\User;
 use App\Services\InvoiceService;
+use App\Support\Period;
 use Illuminate\Support\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -19,6 +20,9 @@ use Illuminate\Validation\ValidationException;
  */
 class UserController extends Controller
 {
+    /** Самый длинный свой срок счёта в днях (около двух лет). */
+    public const MAX_DAYS = 730;
+
     public function __construct(private InvoiceService $invoices) {}
 
     public function index(Request $request): JsonResponse
@@ -68,17 +72,28 @@ class UserController extends Controller
         $data = $request->validate([
             'amount' => ['required', 'integer', 'min:1', 'max:1000000'],
             'months' => ['sometimes', 'integer', 'min:1', 'max:12'],
+            // Свой срок в днях вместо фиксированных месяцев.
+            'days' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:'.self::MAX_DAYS],
         ], [
             'amount.required' => 'Укажите цену подписки',
+            'days.min' => 'Срок — не меньше 1 дня',
+            'days.max' => 'Срок — не больше '.self::MAX_DAYS.' дней',
+            'days.integer' => 'Срок укажите целым числом дней',
         ]);
 
-        $months = $data['months'] ?? $user->subscription?->months ?? AppSetting::defaultMonths();
-        $invoice = $this->invoices->issue($user, $data['amount'], $months, $request->user('panel')->login);
+        $period = match (true) {
+            ! empty($data['days']) => Period::days((int) $data['days']),
+            ! empty($data['months']) => Period::months((int) $data['months']),
+            default => $user->subscription?->period() ?? Period::months(AppSetting::defaultMonths()),
+        };
+        $invoice = $this->invoices->issue($user, $data['amount'], $period, $request->user('panel')->login);
 
         return response()->json(['data' => [
             'id' => $invoice->id,
             'amount' => $invoice->amount,
             'months' => $invoice->months,
+            'days' => $invoice->days,
+            'period' => $invoice->period()->label(),
             'status' => $invoice->status,
         ]], 201);
     }
@@ -107,6 +122,7 @@ class UserController extends Controller
         $data = $request->validate([
             'amount' => ['sometimes', 'integer', 'min:1', 'max:1000000'],
             'months' => ['sometimes', 'integer', 'min:1', 'max:12'],
+            'days' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:'.self::MAX_DAYS],
             'until' => ['sometimes', 'nullable', 'date'],
             'auto_pay' => ['sometimes', 'boolean'],
             'active' => ['sometimes', 'boolean'],
@@ -160,7 +176,7 @@ class UserController extends Controller
                 'expired' => 'Истекла',
                 default => 'Без подписки',
             },
-            'plan' => $sub && ($sub->active || $sub->until) ? number_format($sub->amount ?? AppSetting::defaultPrice(), 0, ',', ' ').' ₽ / '.($sub->months ?? AppSetting::defaultMonths()).' мес.' : 'Нет подписки',
+            'plan' => $sub && ($sub->active || $sub->until) ? number_format($sub->amount ?? AppSetting::defaultPrice(), 0, ',', ' ').' ₽ / '.$sub->period()->short() : 'Нет подписки',
             'until' => $sub?->until?->format('d.m.Y'),
             'reports' => $reports,
         ];
@@ -190,6 +206,8 @@ class UserController extends Controller
                 'access_now' => (bool) $sub?->grantsAccessNow(),
                 'amount' => $sub?->amount ?? AppSetting::defaultPrice(),
                 'months' => $sub?->months ?? AppSetting::defaultMonths(),
+                'days' => $sub?->days,
+                'period' => ($sub?->period() ?? Period::months(AppSetting::defaultMonths()))->label(),
                 'until' => $sub?->until?->format('Y-m-d'),
                 'auto_pay' => (bool) $sub?->auto_pay,
                 'has_terms' => $sub !== null,
@@ -199,6 +217,8 @@ class UserController extends Controller
                 'id' => $i->id,
                 'amount' => $i->amount,
                 'months' => $i->months,
+                'days' => $i->days,
+                'period' => $i->period()->short(),
                 'status' => $i->status,
                 'date' => $i->created_at?->format('d.m.Y'),
                 'confirmation_url' => $i->confirmation_url,

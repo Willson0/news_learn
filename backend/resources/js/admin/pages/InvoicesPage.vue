@@ -20,7 +20,7 @@
                 <tr v-for="i in invoices" :key="i.id">
                     <td>{{ i.user.name }}</td>
                     <td>{{ money(i.amount) }}</td>
-                    <td>{{ i.months }} мес.</td>
+                    <td>{{ i.period }}</td>
                     <td>{{ i.created_at }}</td>
                     <td>{{ i.paid_at || '—' }}</td>
                     <td><span class="tag" :class="tagClass(i.status)">{{ label(i.status) }}</span></td>
