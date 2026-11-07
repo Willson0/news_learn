@@ -59,6 +59,7 @@ Route::prefix('admin')->group(function () {
             // Настройки и администраторы (по Telegram ID).
             Route::get('/settings', [Panel\SettingsController::class, 'show']);
             Route::put('/settings', [Panel\SettingsController::class, 'update']);
+            Route::post('/settings/mail/test', [Panel\SettingsController::class, 'testMail'])->middleware('throttle:10,1');
             Route::get('/admins', [Admin\AdminController::class, 'index']);
             Route::post('/admins', [Admin\AdminController::class, 'store']);
             Route::delete('/admins/{telegramId}', [Admin\AdminController::class, 'destroy']);

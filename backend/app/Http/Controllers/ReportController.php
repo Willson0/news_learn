@@ -20,7 +20,10 @@ class ReportController extends Controller
         }
 
         // Черновики видны только в админке, пользователям не показываем.
-        $query = Report::with('instrument')->where('status', '!=', 'draft')->latest('published_at');
+        // Новее выше: по дате публикации, а в один день — по времени добавления (раньше порядок
+        // отчётов одного дня был случайным: published_at хранит только дату).
+        $query = Report::with('instrument')->where('status', '!=', 'draft')
+            ->orderByDesc('published_at')->orderByDesc('created_at')->orderByDesc('id');
 
         // Фильтр по инструменту (ключ: gold, wti, btc …) — главный экран.
         if ($instrument = $request->query('instrument')) {

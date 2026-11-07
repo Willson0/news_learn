@@ -8,7 +8,6 @@ import android.view.MotionEvent
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -194,7 +193,8 @@ private fun ChartWebView(source: ChartSource, modifier: Modifier, onLoaded: () -
                     if (event.action == MotionEvent.ACTION_DOWN) v.parent?.requestDisallowInterceptTouchEvent(true)
                     false
                 }
-                webViewClient = object : WebViewClient() {
+                // Падение процесса WebView не закрывает приложение — показываем «Не удалось загрузить график».
+                webViewClient = object : SafeWebViewClient(onRendererGone = { onFailedState.value() }) {
                     override fun onPageFinished(view: WebView?, url: String?) {
                         // Виджету нужно мгновение, чтобы нарисовать график после загрузки скрипта.
                         Handler(Looper.getMainLooper()).postDelayed({ onLoadedState.value() }, 600)
@@ -214,6 +214,7 @@ private fun ChartWebView(source: ChartSource, modifier: Modifier, onLoaded: () -
                 web.load(source)
             }
         },
+        onRelease = { it.release() },
     )
 }
 

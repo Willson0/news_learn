@@ -19,9 +19,27 @@
             <template v-if="slug">
                 <header class="chat-head"><h2>{{ title }}</h2></header>
                 <div ref="log" class="chat-log">
-                    <div v-for="m in messages" :key="m.id" class="msg" :class="{ admin: m.admin }">
-                        <div class="msg-meta small muted">{{ m.author }} · {{ m.time }}</div>
-                        <div class="msg-text">{{ m.text }}</div>
+                    <div v-for="m in messages" :key="m.id" class="msg" :class="{ admin: m.admin, system: m.system }">
+                        <div class="msg-meta small muted">
+                            {{ m.author }} · {{ m.time }}<span v-if="m.private"> · лично</span>
+                        </div>
+                        <div v-if="m.reply" class="msg-reply small">
+                            <span class="strong">{{ m.reply.author }}</span>
+                            <span class="muted"> {{ m.reply.text }}</span>
+                        </div>
+                        <div v-if="images(m).length" class="msg-images" :class="{ multi: images(m).length > 1 }">
+                            <a v-for="a in images(m)" :key="a.id" :href="a.url" target="_blank" rel="noopener">
+                                <img :src="a.url" :alt="a.name || 'Фото'" loading="lazy">
+                            </a>
+                        </div>
+                        <div v-for="a in voices(m)" :key="a.id" class="msg-voice">
+                            <audio :src="a.url" controls preload="none" />
+                            <span v-if="a.duration" class="small muted">{{ a.duration }}</span>
+                        </div>
+                        <a v-for="a in files(m)" :key="a.id" class="msg-file" :href="a.url" target="_blank" rel="noopener">
+                            📎 {{ a.name || 'Файл' }}<span v-if="a.size" class="small muted"> · {{ a.size }}</span>
+                        </a>
+                        <div v-if="m.text" class="msg-text">{{ m.text }}</div>
                     </div>
                 </div>
                 <form class="reply" @submit.prevent="send">
@@ -64,6 +82,15 @@ export default {
         clearInterval(this.timer);
     },
     methods: {
+        images(m) {
+            return (m.attachments || []).filter((a) => a.kind === 'image');
+        },
+        voices(m) {
+            return (m.attachments || []).filter((a) => a.kind === 'voice');
+        },
+        files(m) {
+            return (m.attachments || []).filter((a) => a.kind !== 'image' && a.kind !== 'voice');
+        },
         async loadList() {
             try {
                 const path = this.tab === 'direct' ? '/chats/direct' : '/chats/groups';

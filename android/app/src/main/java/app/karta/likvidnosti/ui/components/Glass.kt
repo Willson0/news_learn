@@ -54,6 +54,7 @@ import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.findRootCoordinates
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.runtime.setValue
@@ -275,7 +276,13 @@ fun Modifier.backdropBlur(radius: Dp, shape: Shape = RectangleShape, opaqueBase:
                 backdrop.moves
                 val src = backdrop.coords
                 val me = holder.coords
-                if (backdrop.recorded && src != null && me != null && src.isAttached && me.isAttached) {
+                // Подложка и элемент должны быть в одном окне: стекло внутри Dialog/Popup
+                // (другое окно, другой корень) получает LocalBackdrop по композиции, но
+                // transformFrom между разными иерархиями бросает IllegalArgumentException,
+                // а слой чужого окна рисовать нельзя — это роняло приложение (HTML-отчёт).
+                if (backdrop.recorded && src != null && me != null && src.isAttached && me.isAttached &&
+                    src.findRootCoordinates() == me.findRootCoordinates()
+                ) {
                     toLocal.reset()
                     me.transformFrom(src, toLocal)
                     blurLayer.renderEffect = BlurEffect(r, r, TileMode.Clamp)

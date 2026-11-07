@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers\Panel;
 
+use App\Http\Controllers\ChatController as AppChatController;
 use App\Http\Controllers\Controller;
 use App\Models\Chat;
 use App\Models\Message;
+use App\Models\MessageAttachment;
 use App\Services\PushService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -42,7 +44,7 @@ class ChatController extends Controller
             'slug' => $c->slug,
             'title' => $c->owner?->name ?? $c->title,
             'username' => $c->owner?->username,
-            'preview' => $c->latestMessage?->body,
+            'preview' => $c->latestMessage ? self::previewOf($c->latestMessage) : null,
             'time' => $c->latestMessage?->created_at?->format('d.m.Y H:i'),
         ])->values()]);
     }
@@ -51,14 +53,13 @@ class ChatController extends Controller
     {
         $chat = Chat::where('slug', $slug)->firstOrFail();
 
-        $messages = $chat->messages()->oldest()->limit(300)->get()->map(fn (Message $m) => [
-            'id' => $m->id,
-            'author' => $m->author_name,
-            'role' => $m->author_role,
-            'admin' => $m->user_id === null,
-            'text' => $m->body,
-            'time' => $m->created_at?->format('d.m.Y H:i'),
-        ])->values();
+        // Последние 300 сообщений (а не первые), в хронологическом порядке.
+        $messages = $chat->messages()
+            ->with(['attachments', 'replyTo.attachments'])
+            ->latest('id')->limit(300)->get()
+            ->reverse()
+            ->map(fn (Message $m) => self::present($m))
+            ->values();
 
         return response()->json([
             'chat' => ['slug' => $chat->slug, 'title' => $chat->title, 'type' => $chat->type],
@@ -91,13 +92,63 @@ class ChatController extends Controller
             ]);
         }
 
-        return response()->json(['data' => [
-            'id' => $message->id,
-            'author' => $message->author_name,
-            'role' => $message->author_role,
-            'admin' => true,
-            'text' => $message->body,
-            'time' => $message->created_at?->format('d.m.Y H:i'),
-        ]], 201);
+        return response()->json(['data' => self::present($message->load('attachments'))], 201);
+    }
+
+    /**
+     * Сообщение для просмотра в админке: текст, вложения (фото, голосовые, файлы — по подписанным
+     * ссылкам, как в приложении), цитата ответа и служебные «зашёл/вышел».
+     *
+     * @return array<string, mixed>
+     */
+    private static function present(Message $m): array
+    {
+        $attachments = $m->attachments->map(fn (MessageAttachment $a) => [
+            'id' => $a->id,
+            'kind' => $a->kind,
+            'url' => AppChatController::fileUrl($a),
+            'name' => $a->name,
+            'size' => AppChatController::formatSize($a->size),
+            'duration' => $a->kind === 'voice' ? AppChatController::formatDuration($a->duration) : null,
+            'width' => $a->width,
+            'height' => $a->height,
+        ])->values()->all();
+
+        $reply = $m->relationLoaded('replyTo') && $m->replyTo ? [
+            'author' => $m->replyTo->author_name,
+            'text' => self::previewOf($m->replyTo),
+        ] : null;
+
+        return [
+            'id' => $m->id,
+            'author' => $m->author_name,
+            'role' => $m->author_role,
+            'admin' => $m->user_id === null,
+            'system' => $m->isSystem(),
+            'private' => $m->isPrivate(),
+            'text' => $m->isSystem() ? AppChatController::eventText($m) : $m->body,
+            'attachments' => $attachments,
+            'reply' => $reply,
+            'time' => $m->created_at?->format('d.m.Y H:i'),
+        ];
+    }
+
+    /** Короткий текст сообщения для списка чатов и цитат: у фото без подписи — «Фото» и т. п. */
+    private static function previewOf(Message $m): string
+    {
+        if ($m->isSystem()) {
+            return AppChatController::eventText($m);
+        }
+        if ((string) $m->body !== '') {
+            return (string) $m->body;
+        }
+        $att = $m->attachments->first();
+
+        return match ($att?->kind) {
+            'image' => $m->attachments->count() > 1 ? 'Фото ('.$m->attachments->count().')' : 'Фото',
+            'voice' => 'Голосовое сообщение',
+            'file' => $att->name ?: 'Файл',
+            default => 'Сообщение',
+        };
     }
 }
