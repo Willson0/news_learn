@@ -5,7 +5,7 @@ status=0
 ./gradlew :app:connectedDebugAndroidTest --console=plain \
   -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true || status=$?
 mkdir -p shots
-for f in calendar toast_dialog; do
+for f in calendar toast_dialog report_html; do
   adb exec-out run-as app.karta.likvidnosti cat "files/shots/$f.png" > "shots/$f.png" || true
 done
 ls -la shots

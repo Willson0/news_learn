@@ -318,7 +318,7 @@ private fun ReportBody(report: ReportDto, failed: Boolean, onRetry: () -> Unit, 
 
 /** HTML-отчёт на весь экран с кнопкой закрытия. Назад тоже закрывает. */
 @Composable
-private fun ReportHtmlScreen(url: String, onClose: () -> Unit) {
+internal fun ReportHtmlScreen(url: String, onClose: () -> Unit) {
     Dialog(
         onDismissRequest = onClose,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
