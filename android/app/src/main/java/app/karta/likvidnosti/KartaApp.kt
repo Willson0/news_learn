@@ -64,13 +64,15 @@ class KartaApp : Application(), ImageLoaderFactory {
         }
     }
 
-    /** Канал для push-уведомлений (обязателен с Android 8). */
+    /** Канал для push-уведомлений (обязателен с Android 8; ниже каналов нет — minSdk 24). */
     private fun createNotificationChannel() {
+        if (android.os.Build.VERSION.SDK_INT < 26) return
+        // Высокая важность: уведомление о новом отчёте всплывает баннером со звуком.
         val channel = NotificationChannel(
             KartaMessagingService.CHANNEL_ID,
             "Уведомления",
-            NotificationManager.IMPORTANCE_DEFAULT,
-        )
+            NotificationManager.IMPORTANCE_HIGH,
+        ).apply { description = "Новые отчёты, сообщения в чатах, счета" }
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 }

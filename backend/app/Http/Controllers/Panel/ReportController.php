@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Panel;
 use App\Http\Controllers\Admin\ReportController as AdminReportController;
 use App\Http\Controllers\ReportController as PublicReportController;
 use App\Models\Report;
+use App\Services\ReportNotifier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -32,6 +33,9 @@ class ReportController extends AdminReportController
         ]);
 
         $report->update(['status' => $data['status']]);
+
+        // Черновик опубликован впервые — подписчики получают push о новом отчёте.
+        ReportNotifier::dispatchFor($report);
 
         return response()->json(['data' => PublicReportController::present($report->fresh(['instrument', 'chat']), true)]);
     }

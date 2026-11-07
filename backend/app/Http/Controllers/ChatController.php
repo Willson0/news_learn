@@ -624,7 +624,7 @@ class ChatController extends Controller
     }
 
     /** Текст служебного сообщения для превью и цитат. */
-    private static function eventText(Message $m): string
+    public static function eventText(Message $m): string
     {
         $name = $m->author_name ?: 'Пользователь';
 
@@ -752,7 +752,7 @@ class ChatController extends Controller
 
         return [
             'id' => $a->id,
-            'url' => $this->fileUrl($a),
+            'url' => self::fileUrl($a),
             'name' => $a->name,
             'ext' => self::extOf($a->name),
             'size' => self::formatSize($a->size),
@@ -763,7 +763,7 @@ class ChatController extends Controller
         ];
     }
 
-    private function fileUrl(MessageAttachment $a): string
+    public static function fileUrl(MessageAttachment $a): string
     {
         // Срок ссылки — конец следующего месяца: адрес не меняется при каждом открытии чата
         // (кэш картинок работает), а старые вложения не перестают открываться через 30 дней.
@@ -876,13 +876,13 @@ class ChatController extends Controller
 
         foreach ($m->attachments as $a) {
             if ($a->kind === 'image') {
-                $image ??= ['url' => $this->fileUrl($a), 'width' => $a->width, 'height' => $a->height];
-                $images[] = ['url' => $this->fileUrl($a), 'width' => $a->width, 'height' => $a->height];
+                $image ??= ['url' => self::fileUrl($a), 'width' => $a->width, 'height' => $a->height];
+                $images[] = ['url' => self::fileUrl($a), 'width' => $a->width, 'height' => $a->height];
             } elseif ($a->kind === 'voice') {
-                $voice = ['url' => $this->fileUrl($a), 'duration' => self::formatDuration($a->duration)];
+                $voice = ['url' => self::fileUrl($a), 'duration' => self::formatDuration($a->duration)];
             } elseif ($a->kind === 'file') {
                 $file = [
-                    'url' => $this->fileUrl($a),
+                    'url' => self::fileUrl($a),
                     'name' => $a->name,
                     'ext' => self::extOf($a->name),
                     'size' => self::formatSize($a->size),
@@ -960,7 +960,7 @@ class ChatController extends Controller
         return mb_strtolower($ext);
     }
 
-    private static function formatSize(?int $bytes): string
+    public static function formatSize(?int $bytes): string
     {
         if (! $bytes) {
             return '';
@@ -975,7 +975,7 @@ class ChatController extends Controller
         return round($bytes / (1024 * 1024), 1).' МБ';
     }
 
-    private static function formatDuration(?int $seconds): string
+    public static function formatDuration(?int $seconds): string
     {
         $seconds = (int) $seconds;
         $m = intdiv($seconds, 60);

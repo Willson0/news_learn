@@ -9,6 +9,10 @@ import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
@@ -22,6 +26,10 @@ object Push {
 
     @Volatile
     private var appContext: Context? = null
+
+    /** Просьба к MainActivity показать запрос разрешения на уведомления (Android 13+) — сразу после входа. */
+    private val _permissionRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    val permissionRequests: SharedFlow<Unit> = _permissionRequests
 
     fun init(context: Context) {
         appContext = context.applicationContext
@@ -41,8 +49,13 @@ object Push {
         }
     }
 
-    /** Отправляет токен на бэкенд. Вызывается после входа и при обновлении токена FCM. */
+    /**
+     * Отправляет токен на бэкенд. Вызывается после входа и при каждом запуске приложения:
+     * раньше токен регистрировался только при входе, и если запрос тогда не прошёл (нет сети,
+     * сервер недоступен) или вход был в сборке без Firebase, устройство так и оставалось без push.
+     */
     fun syncToken() {
+        _permissionRequests.tryEmit(Unit)
         scope.launch {
             val token = currentToken() ?: return@launch
             registerToken(token)
@@ -62,7 +75,11 @@ object Push {
     }
 
     private suspend fun registerToken(token: String) {
-        if (!TokenStore.isAuthenticated) return
-        runCatching { Network.api.registerDevice(DeviceBody(token)) }
+        // Несколько попыток с паузой: запуск часто совпадает с плохой сетью.
+        repeat(3) { attempt ->
+            if (!TokenStore.isAuthenticated) return
+            if (runCatching { Network.api.registerDevice(DeviceBody(token)) }.isSuccess) return
+            delay(5_000L * (attempt + 1))
+        }
     }
 }

@@ -21,7 +21,20 @@
                 </select>
             </label>
             <ErrorText :message="error" />
-            <p v-if="result" class="notice">Отправлено: {{ result.sent }} из {{ result.devices }} устройств.</p>
+            <p v-if="!configured" class="warning">
+                Push не настроен: не загружен ключ Firebase. Его можно загрузить в
+                <router-link to="/settings">Настройках</router-link> (раздел «Push-уведомления»).
+            </p>
+            <template v-if="result">
+                <p class="notice">
+                    Отправлено: {{ result.sent }} из {{ result.devices }} устройств
+                    <span v-if="result.android || result.ios">
+                        (Android: {{ result.android.sent }} из {{ result.android.devices }},
+                        iPhone: {{ result.ios.sent }} из {{ result.ios.devices }})</span>.
+                </p>
+                <p v-for="w in result.warnings || []" :key="w" class="warning">{{ w }}</p>
+                <p v-for="e in result.errors || []" :key="e" class="error small">{{ e }}</p>
+            </template>
             <button class="btn btn-primary" :disabled="busy">Отправить рассылку</button>
         </form>
     </section>
@@ -40,7 +53,15 @@ export default {
             result: null,
             error: '',
             busy: false,
+            configured: true,
         };
+    },
+    async mounted() {
+        try {
+            this.configured = (await api('GET', '/settings')).data.fcm_configured;
+        } catch {
+            // Не критично: предупреждение просто не покажем заранее.
+        }
     },
     methods: {
         async send() {

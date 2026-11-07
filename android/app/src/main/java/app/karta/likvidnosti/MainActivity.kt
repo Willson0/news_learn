@@ -13,7 +13,12 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import app.karta.likvidnosti.data.TokenStore
+import app.karta.likvidnosti.push.Push
+import kotlinx.coroutines.launch
 import app.karta.likvidnosti.ui.AppBoot
 import app.karta.likvidnosti.ui.AppRoot
 import app.karta.likvidnosti.ui.theme.KartaTheme
@@ -31,6 +36,15 @@ class MainActivity : ComponentActivity() {
         handleYandexLink(intent)
         handlePushLink(intent)
         askNotificationPermissionIfNeeded()
+        // Уже вошли — при каждом запуске заново отдаём FCM-токен бэкенду (он мог смениться
+        // или не дойти при входе), иначе push о новых отчётах на это устройство не приходят.
+        if (TokenStore.isAuthenticated) Push.syncToken()
+        // Вход прямо сейчас — сразу спрашиваем разрешение на уведомления, а не при следующем запуске.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                Push.permissionRequests.collect { askNotificationPermissionIfNeeded() }
+            }
+        }
         setContent {
             KartaTheme {
                 AppRoot()
@@ -57,10 +71,15 @@ class MainActivity : ComponentActivity() {
         CustomTabsIntent.Builder().build().launchUrl(this, Uri.parse(url))
     }
 
+    private var permissionAsked = false
+
     private fun askNotificationPermissionIfNeeded() {
-        if (Build.VERSION.SDK_INT < 33 || !TokenStore.isAuthenticated) return
+        if (Build.VERSION.SDK_INT < 33 || !TokenStore.isAuthenticated || permissionAsked) return
         val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
-        if (!granted) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        if (!granted) {
+            permissionAsked = true
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
     }
 }

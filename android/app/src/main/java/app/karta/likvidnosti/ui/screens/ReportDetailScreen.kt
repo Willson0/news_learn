@@ -1,8 +1,11 @@
 package app.karta.likvidnosti.ui.screens
 
 import android.annotation.SuppressLint
+import android.content.Intent
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.expandVertically
@@ -28,7 +31,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.window.Dialog
@@ -62,6 +69,10 @@ import app.karta.likvidnosti.ui.components.GlassCircleButton
 import app.karta.likvidnosti.ui.components.figmaSlow
 import app.karta.likvidnosti.ui.components.GlassLabel
 import app.karta.likvidnosti.ui.components.LoadErrorState
+import app.karta.likvidnosti.ui.components.LoadingBlock
+import app.karta.likvidnosti.ui.components.LocalBackdrop
+import app.karta.likvidnosti.ui.components.SafeWebViewClient
+import app.karta.likvidnosti.ui.components.release
 import app.karta.likvidnosti.ui.components.GlassTopBar
 import app.karta.likvidnosti.ui.components.ReportActionButton
 import app.karta.likvidnosti.ui.components.ReportActionVariant
@@ -323,34 +334,96 @@ internal fun ReportHtmlScreen(url: String, onClose: () -> Unit) {
         onDismissRequest = onClose,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
-        Box(modifier = Modifier.fillMaxSize().background(T.Background)) {
-            ReportWebView(url, Modifier.fillMaxSize())
-            GlassCircleButton(
-                icon = AppIcons.close,
-                contentDescription = "Закрыть",
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .statusBarsPadding()
-                    .padding(end = T.ScreenX, top = 12.dp),
-                onClick = onClose,
-            )
+        // Диалог — отдельное окно: подложки экрана отчёта здесь нет, стекло кнопки рисуется
+        // без размытия (раньше оно тянулось к подложке чужого окна, и приложение падало).
+        CompositionLocalProvider(LocalBackdrop provides null) {
+            Box(modifier = Modifier.fillMaxSize().background(T.Background)) {
+                ReportWebView(url, Modifier.fillMaxSize())
+                GlassCircleButton(
+                    icon = AppIcons.close,
+                    contentDescription = "Закрыть",
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .statusBarsPadding()
+                        .padding(end = T.ScreenX, top = 12.dp),
+                    onClick = onClose,
+                )
+            }
         }
     }
 }
 
-/** HTML-отчёт (WebView, JavaScript включён как в веб-версии). */
+/**
+ * HTML-отчёт (WebView, JavaScript включён как в веб-версии). Пока страница грузится —
+ * пульсирующая заглушка; если не загрузилась или процесс WebView упал — ошибка с «Повторить»,
+ * приложение при этом не закрывается. Ссылки из отчёта открываются в браузере.
+ */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-private fun ReportWebView(url: String, modifier: Modifier = Modifier) {
-    AndroidView(
-        modifier = modifier,
-        factory = { ctx ->
-            WebView(ctx).apply {
-                webViewClient = WebViewClient()
-                settings.javaScriptEnabled = true
-                setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                loadUrl(url)
+internal fun ReportWebView(url: String, modifier: Modifier = Modifier) {
+    // 0 — загрузка, 1 — показан, 2 — ошибка.
+    var state by remember(url) { mutableIntStateOf(0) }
+    var attempt by remember(url) { mutableIntStateOf(0) }
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        if (state != 2) {
+            key(url, attempt) {
+                AndroidView(
+                    modifier = Modifier.fillMaxSize().alpha(if (state == 1) 1f else 0f),
+                    factory = { ctx ->
+                        WebView(ctx).apply {
+                            settings.javaScriptEnabled = true
+                            settings.domStorageEnabled = true
+                            settings.useWideViewPort = true
+                            settings.loadWithOverviewMode = true
+                            settings.builtInZoomControls = true
+                            settings.displayZoomControls = false
+                            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                            webViewClient = object : SafeWebViewClient(onRendererGone = { state = 2 }) {
+                                override fun onPageFinished(view: WebView?, loaded: String?) {
+                                    if (state == 0) state = 1
+                                }
+
+                                override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
+                                    if (request?.isForMainFrame == true) state = 2
+                                }
+
+                                override fun onReceivedHttpError(view: WebView?, request: WebResourceRequest?, response: WebResourceResponse?) {
+                                    if (request?.isForMainFrame == true) state = 2
+                                }
+
+                                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                                    val target = request?.url ?: return false
+                                    // Переход по ссылке из отчёта — во внешний браузер, отчёт остаётся открытым.
+                                    if (request.isForMainFrame && request.hasGesture() &&
+                                        (target.scheme == "http" || target.scheme == "https")
+                                    ) {
+                                        runCatching {
+                                            context.startActivity(
+                                                Intent(Intent.ACTION_VIEW, target).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                                            )
+                                        }
+                                        return true
+                                    }
+                                    return false
+                                }
+                            }
+                            loadUrl(url)
+                        }
+                    },
+                    onRelease = { it.release() },
+                )
             }
-        },
-    )
+        }
+        when (state) {
+            0 -> LoadingBlock(Modifier.fillMaxSize())
+            2 -> LoadErrorState(
+                onRetry = {
+                    attempt++
+                    state = 0
+                },
+                modifier = Modifier.padding(horizontal = T.ScreenX),
+                text = "Не удалось открыть отчет. Проверьте интернет и попробуйте ещё раз",
+            )
+        }
+    }
 }

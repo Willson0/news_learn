@@ -8,6 +8,7 @@ use App\Models\Chat;
 use App\Models\Instrument;
 use App\Models\Report;
 use App\Models\User;
+use App\Services\ReportNotifier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -55,6 +56,9 @@ class ReportController extends Controller
 
             return $report;
         });
+
+        // Новый актуальный отчёт — push подписчикам (после ответа, чтобы админ не ждал).
+        ReportNotifier::dispatchFor($report);
 
         return response()->json(['data' => PublicReportController::present($report->fresh(['instrument', 'chat']), true)], 201);
     }

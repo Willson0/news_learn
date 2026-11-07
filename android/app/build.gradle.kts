@@ -19,8 +19,8 @@ android {
         applicationId = "app.karta.likvidnosti"
         minSdk = 24
         targetSdk = 35
-        versionCode = 14
-        versionName = "1.4.8"
+        versionCode = 15
+        versionName = "1.4.9"
         vectorDrawables { useSupportLibrary = true }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

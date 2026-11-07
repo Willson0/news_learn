@@ -2,8 +2,8 @@
 
 namespace App\Providers;
 
-use App\Models\AppSetting;
 use App\Services\TelegramInitData;
+use App\Support\MailSettings;
 use Carbon\Carbon;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -30,12 +30,9 @@ class AppServiceProvider extends ServiceProvider
 
         $this->configureRateLimiting();
 
-        // Ключ почтового сервиса, заданный в настройках админки, важнее .env.
+        // Почта (SMTP / Resend), заданная в настройках админки, важнее .env.
         try {
-            $emailKey = AppSetting::get('email_api_key');
-            if (is_string($emailKey) && $emailKey !== '') {
-                config(['services.resend.key' => $emailKey]);
-            }
+            MailSettings::apply();
         } catch (\Throwable) {
             // Таблица ещё не создана (до миграций) — используем значения из .env.
         }

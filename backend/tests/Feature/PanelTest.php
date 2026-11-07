@@ -5,14 +5,20 @@ namespace Tests\Feature;
 use App\Models\AppSetting;
 use App\Models\Chat;
 use App\Models\DeviceToken;
+use App\Models\Instrument;
 use App\Models\Invoice;
 use App\Models\PanelAdmin;
 use App\Models\Payment;
 use App\Models\Report;
 use App\Models\Subscription;
 use App\Models\User;
+use App\Services\InvoiceService;
+use App\Services\SubscriptionBilling;
+use App\Services\TbankClient;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Laravel\Sanctum\Sanctum;
@@ -42,7 +48,7 @@ class PanelTest extends TestCase
     }
 
     /** Ключ сервисного аккаунта FCM для тестов: токен получаем через подписанный JWT. */
-    private function fakeFcm(): void
+    private function fakeFcm(?\Closure $fcm = null): void
     {
         $key = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
         openssl_pkey_export($key, $pem);
@@ -53,7 +59,7 @@ class PanelTest extends TestCase
         config(['services.fcm.project_id' => 'karta-test', 'services.fcm.credentials' => $path]);
         Http::fake([
             'oauth2.googleapis.com/token' => Http::response(['access_token' => 'tok']),
-            'fcm.googleapis.com/*' => Http::response(['name' => 'message']),
+            'fcm.googleapis.com/*' => $fcm ?? Http::response(['name' => 'message']),
         ]);
     }
 
@@ -214,7 +220,7 @@ class PanelTest extends TestCase
         ]);
 
         $payload = ['TerminalKey' => 'test-terminal', 'OrderId' => 'inv-'.$invoice->id.'-abcdefgh', 'Success' => true, 'Status' => 'CONFIRMED', 'PaymentId' => 'pay-inv-2', 'Amount' => 250000];
-        $payload['Token'] = app(\App\Services\TbankClient::class)->token($payload);
+        $payload['Token'] = app(TbankClient::class)->token($payload);
         $this->postJson('/api/tbank/webhook', $payload)->assertOk();
 
         $this->assertSame('paid', $invoice->fresh()->status);
@@ -253,19 +259,19 @@ class PanelTest extends TestCase
 
         // Оплата счёта продлевает подписку ровно на 45 дней.
         $invoice = Invoice::firstOrFail();
-        app(\App\Services\InvoiceService::class)->markPaid($invoice, ['PaymentId' => 'pay-days-1']);
+        app(InvoiceService::class)->markPaid($invoice, ['PaymentId' => 'pay-days-1']);
         $sub = Subscription::where('user_id', $user->id)->firstOrFail();
         $this->assertSame(
-            \Illuminate\Support\Carbon::parse(Subscription::today())->addDays(45)->toDateString(),
+            Carbon::parse(Subscription::today())->addDays(45)->toDateString(),
             $sub->until->toDateString(),
         );
         $this->assertDatabaseHas('payments', ['user_id' => $user->id, 'kind' => 'invoice', 'days' => 45]);
 
         // Автопродление идёт на тот же срок в днях.
         $until = $sub->until->toDateString();
-        app(\App\Services\SubscriptionBilling::class)->markPaid($user->fresh(), 'pay-days-2');
+        app(SubscriptionBilling::class)->markPaid($user->fresh(), 'pay-days-2');
         $this->assertSame(
-            \Illuminate\Support\Carbon::parse($until)->addDays(45)->toDateString(),
+            Carbon::parse($until)->addDays(45)->toDateString(),
             $sub->fresh()->until->toDateString(),
         );
 
@@ -370,13 +376,196 @@ class PanelTest extends TestCase
         Http::assertSent(fn ($r) => str_contains($r->url(), 'fcm.googleapis.com'));
     }
 
-    public function test_broadcast_requires_configured_push(): void
+    public function test_broadcast_without_fcm_is_not_blocked_and_warns(): void
     {
         config(['services.fcm.project_id' => null]);
+        DeviceToken::create(['user_id' => $this->user()->id, 'token' => 'a-dev', 'platform' => 'android']);
 
         $this->asPanel()->postJson('/admin/api/push', [
             'title' => 'Привет', 'body' => 'Тест', 'audience' => 'all',
-        ])->assertStatus(422);
+        ])->assertOk()
+            ->assertJson(['devices' => 1, 'sent' => 0, 'configured' => false])
+            ->assertJsonPath('warnings.0', fn ($w) => str_contains($w, 'ключ Firebase'));
+    }
+
+    public function test_broadcast_sends_to_android_and_warns_when_apns_is_missing(): void
+    {
+        $this->fakeFcm(function ($request) {
+            // iOS-токен: в Firebase не загружен APNs-ключ Apple.
+            if (($request->data()['message']['token'] ?? '') === 'ios-dev') {
+                return Http::response(['error' => [
+                    'code' => 401, 'status' => 'UNAUTHENTICATED', 'message' => 'Auth error from APNS or Web Push Service',
+                    'details' => [['@type' => 'type.googleapis.com/google.firebase.fcm.v1.FcmError', 'errorCode' => 'THIRD_PARTY_AUTH_ERROR']],
+                ]], 401);
+            }
+
+            return Http::response(['name' => 'message']);
+        });
+        DeviceToken::create(['user_id' => $this->user()->id, 'token' => 'android-dev', 'platform' => 'android']);
+        DeviceToken::create(['user_id' => $this->user()->id, 'token' => 'ios-dev', 'platform' => 'ios']);
+
+        $res = $this->asPanel()->postJson('/admin/api/push', [
+            'title' => 'Привет', 'body' => 'Тест', 'audience' => 'all',
+        ])->assertOk()
+            ->assertJson(['devices' => 2, 'sent' => 1, 'android' => ['devices' => 1, 'sent' => 1], 'ios' => ['devices' => 1, 'sent' => 0]]);
+        $this->assertTrue(collect($res->json('warnings'))->contains(fn ($w) => str_contains($w, 'Apple')));
+        // Android-сообщение уходит с высоким приоритетом в канал приложения.
+        Http::assertSent(fn ($r) => str_contains($r->url(), 'fcm.googleapis.com')
+            && ($r->data()['message']['android']['notification']['channel_id'] ?? null) === 'karta_default');
+    }
+
+    public function test_firebase_key_can_be_uploaded_in_settings(): void
+    {
+        $key = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
+        openssl_pkey_export($key, $pem);
+        $json = json_encode(['type' => 'service_account', 'project_id' => 'karta-admin', 'client_email' => 'svc@karta.iam', 'private_key' => $pem]);
+        config(['services.fcm.project_id' => null]);
+
+        $this->asPanel()->putJson('/admin/api/settings', ['fcm_credentials' => '{"type":"other"}'])
+            ->assertStatus(422)->assertJsonValidationErrors('fcm_credentials');
+
+        $this->asPanel()->putJson('/admin/api/settings', ['fcm_credentials' => $json])->assertOk()
+            ->assertJsonPath('data.fcm_configured', true)
+            ->assertJsonPath('data.fcm_source', 'admin')
+            ->assertJsonPath('data.fcm_project_id', 'karta-admin')
+            ->assertJsonMissingPath('data.fcm_credentials');
+        // В базе ключ зашифрован.
+        $this->assertStringNotContainsString('PRIVATE KEY', (string) AppSetting::find('fcm_credentials')->value);
+
+        Http::fake([
+            'oauth2.googleapis.com/token' => Http::response(['access_token' => 'tok']),
+            'fcm.googleapis.com/*' => Http::response(['name' => 'message']),
+        ]);
+        DeviceToken::create(['user_id' => $this->user()->id, 'token' => 'a-dev', 'platform' => 'android']);
+        $this->asPanel()->postJson('/admin/api/push', ['title' => 'Т', 'body' => 'Т', 'audience' => 'all'])
+            ->assertOk()->assertJson(['sent' => 1]);
+        Http::assertSent(fn ($r) => str_contains($r->url(), 'projects/karta-admin/messages:send'));
+
+        $this->asPanel()->putJson('/admin/api/settings', ['fcm_clear' => true])->assertOk()
+            ->assertJsonPath('data.fcm_configured', false);
+    }
+
+    public function test_mail_settings_are_stored_in_admin_and_applied(): void
+    {
+        $this->asPanel()->putJson('/admin/api/settings', ['mail' => ['mailer' => 'smtp']])
+            ->assertStatus(422)->assertJsonValidationErrors(['mail.host', 'mail.port', 'mail.from_address']);
+
+        $this->asPanel()->putJson('/admin/api/settings', ['mail' => [
+            'mailer' => 'smtp', 'host' => 'smtp.yandex.ru', 'port' => 465, 'encryption' => 'ssl',
+            'username' => 'robot@karta.ru', 'password' => 'app-pass-123',
+            'from_address' => 'robot@karta.ru', 'from_name' => 'Карта ликвидности',
+        ]])->assertOk()
+            ->assertJsonPath('data.mail.mailer', 'smtp')
+            ->assertJsonPath('data.mail.host', 'smtp.yandex.ru')
+            ->assertJsonPath('data.mail.password_set', true)
+            ->assertJsonMissingPath('data.mail.password');
+        $this->assertStringNotContainsString('app-pass-123', (string) AppSetting::find('mail_password')->value);
+
+        $this->assertSame('smtp', config('mail.default'));
+        $this->assertSame('smtps', config('mail.mailers.smtp.scheme'));
+        $this->assertSame('app-pass-123', config('mail.mailers.smtp.password'));
+        $this->assertSame('robot@karta.ru', config('mail.from.address'));
+
+        // Пустой пароль не стирает сохранённый.
+        $this->asPanel()->putJson('/admin/api/settings', ['mail' => [
+            'mailer' => 'smtp', 'host' => 'smtp.mail.ru', 'port' => 587, 'encryption' => 'tls',
+            'from_address' => 'robot@karta.ru',
+        ]])->assertOk()->assertJsonPath('data.mail.password_set', true);
+        $this->assertSame('app-pass-123', config('mail.mailers.smtp.password'));
+        $this->assertSame('smtp', config('mail.mailers.smtp.scheme'));
+
+        // Resend идёт через SMTP-шлюз с API-ключом вместо пароля.
+        $this->asPanel()->putJson('/admin/api/settings', [
+            'email_api_key' => 're_test_key',
+            'mail' => ['mailer' => 'resend', 'from_address' => 'no-reply@karta.ru'],
+        ])->assertOk();
+        $this->assertSame('smtp.resend.com', config('mail.mailers.smtp.host'));
+        $this->assertSame('re_test_key', config('mail.mailers.smtp.password'));
+    }
+
+    public function test_mail_test_endpoint_reports_disabled_mail(): void
+    {
+        $this->asPanel()->putJson('/admin/api/settings', ['mail' => ['mailer' => 'log']])->assertOk();
+        $this->asPanel()->postJson('/admin/api/settings/mail/test', ['email' => 'me@karta.ru'])
+            ->assertOk()->assertJson(['ok' => false]);
+    }
+
+    public function test_panel_chat_view_shows_images_and_previews(): void
+    {
+        $user = $this->user(['name' => 'Matvei']);
+        $chat = Chat::where('type', 'direct')->where('user_id', $user->id)->firstOrFail();
+        $msg = $chat->messages()->create(['user_id' => $user->id, 'author_name' => 'Matvei', 'body' => null]);
+        $msg->attachments()->create(['kind' => 'image', 'path' => 'chat/p.jpg', 'name' => 'p.jpg', 'mime' => 'image/jpeg', 'size' => 1000, 'width' => 10, 'height' => 10]);
+
+        $this->asPanel()->getJson("/admin/api/chats/{$chat->slug}/messages")->assertOk()
+            ->assertJsonPath('data.0.attachments.0.kind', 'image')
+            ->assertJsonPath('data.0.attachments.0.url', fn ($url) => str_contains($url, '/api/chats/attachments/') && str_contains($url, 'signature='));
+
+        $this->asPanel()->getJson('/admin/api/chats/direct')->assertOk()
+            ->assertJsonFragment(['preview' => 'Фото']);
+    }
+
+    public function test_new_report_pushes_subscribers_by_their_notification_settings(): void
+    {
+        $this->fakeFcm();
+        $gold = Instrument::where('key', 'gold')->firstOrFail();
+        $other = Instrument::where('key', '!=', 'gold')->firstOrFail();
+
+        $all = $this->user(['notify_all' => true]);
+        $byGold = $this->user(['notify_all' => false, 'notify_by_instrument' => true]);
+        $byGold->instruments()->sync([$gold->id]);
+        $byOther = $this->user(['notify_all' => false, 'notify_by_instrument' => true]);
+        $byOther->instruments()->sync([$other->id]);
+        $muted = $this->user(['notify_all' => false, 'notify_by_instrument' => false]);
+        $free = $this->user(['notify_all' => true]);
+        foreach ([$all, $byGold, $byOther, $muted] as $u) {
+            Subscription::create(['user_id' => $u->id, 'active' => true, 'until' => now()->addMonth()]);
+        }
+        foreach (['all' => $all, 'gold' => $byGold, 'other' => $byOther, 'muted' => $muted, 'free' => $free] as $name => $u) {
+            DeviceToken::create(['user_id' => $u->id, 'token' => "tok-{$name}", 'platform' => 'android']);
+        }
+
+        $this->asPanel()->post('/admin/api/reports', [
+            'title' => 'Золото: новый отчёт', 'description' => 'Коротко', 'instrument' => 'gold',
+            'cover' => UploadedFile::fake()->image('c.jpg'),
+        ], ['Accept' => 'application/json'])->assertCreated();
+
+        $sentTo = collect(Http::recorded())
+            ->filter(fn ($pair) => str_contains($pair[0]->url(), 'fcm.googleapis.com'))
+            ->map(fn ($pair) => $pair[0]->data()['message']['token'])->sort()->values()->all();
+        $this->assertSame(['tok-all', 'tok-gold'], $sentTo);
+
+        $report = Report::latest('id')->first();
+        $this->assertNotNull($report->notified_at);
+
+        // Повторная публикация того же отчёта второй push не шлёт.
+        $before = count(Http::recorded());
+        $this->asPanel()->postJson("/admin/api/reports/{$report->id}/status", ['status' => 'draft'])->assertOk();
+        $this->asPanel()->postJson("/admin/api/reports/{$report->id}/status", ['status' => 'actual'])->assertOk();
+        $this->assertSame($before, count(Http::recorded()));
+    }
+
+    public function test_reports_feed_is_newest_first_within_the_same_day(): void
+    {
+        Report::query()->delete();
+        $admin = $this->user();
+        Subscription::create(['user_id' => $admin->id, 'active' => true, 'until' => now()->addMonth()]);
+        $instrument = Instrument::firstOrFail();
+        $make = fn (string $title, string $created) => Report::forceCreate([
+            'title' => $title, 'description' => 'd', 'instrument_id' => $instrument->id,
+            'status' => 'actual', 'published_at' => today(), 'created_at' => $created, 'updated_at' => $created,
+        ]);
+        $make('Утро', today()->setTime(9, 0)->toDateTimeString());
+        $make('Вечер', today()->setTime(18, 0)->toDateTimeString());
+        $make('Обед', today()->setTime(13, 0)->toDateTimeString());
+        Report::forceCreate([
+            'title' => 'Вчера', 'description' => 'd', 'instrument_id' => $instrument->id,
+            'status' => 'actual', 'published_at' => today()->subDay(),
+        ]);
+
+        Sanctum::actingAs($admin);
+        $titles = collect($this->getJson('/api/reports')->assertOk()->json('data'))->pluck('title')->all();
+        $this->assertSame(['Вечер', 'Обед', 'Утро', 'Вчера'], $titles);
     }
 
     public function test_broadcast_targets_subscribed_devices(): void

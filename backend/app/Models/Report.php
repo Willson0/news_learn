@@ -16,6 +16,7 @@ class Report extends Model
 
     protected $casts = [
         'published_at' => 'date',
+        'notified_at' => 'datetime',
     ];
 
     public function instrument(): BelongsTo
